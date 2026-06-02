@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Fool's Gambit</title>
+    <link rel="icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/chessground.min.css">
+    <link rel="stylesheet" href="/static/chessground.cburnett.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .app {
+            display: flex;
+            gap: 40px;
+            padding: 30px;
+            max-width: 1100px;
+            width: 100%;
+        }
+
+        .board-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #board {
+            width: 100%;
+            max-width: 560px;
+            aspect-ratio: 1;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .player-bar {
+            width: 100%;
+            max-width: 560px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+
+        .player-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .player-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+
+        .player-icon.white { background: #fff; color: #333; }
+        .player-icon.black { background: #333; color: #fff; }
+
+        .player-name { font-weight: 600; font-size: 15px; }
+
+        .player-captures {
+            font-size: 18px;
+            letter-spacing: 2px;
+            min-height: 24px;
+        }
+
+        .timer {
+            font-size: 22px;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+            padding: 6px 12px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+        }
+
+        .timer.active {
+            background: rgba(233, 69, 96, 0.3);
+            color: #e94560;
+        }
+
+        .sidebar {
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .card h1 {
+            font-size: 22px;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 5px;
+        }
+
+        .card h2 {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+
+        .status-bar {
+            padding: 10px 15px;
+            background: rgba(233, 69, 96, 0.15);
+            border-radius: 8px;
+            font-size: 14px;
+            color: #e94560;
+            font-weight: 500;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .status-bar.check {
+            background: rgba(255, 193, 7, 0.15);
+            color: #ffc107;
+        }
+
+        .status-bar.game-over {
+            background: rgba(76, 175, 80, 0.15);
+            color: #4caf50;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            flex: 1;
+            min-width: 80px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560, #c73e54);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ccc;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .mode-toggle {
+            display: flex;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: transparent;
+            color: #888;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mode-btn.active {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+        }
+
+        .move-history {
+            max-height: 300px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #444 transparent;
+        }
+
+        .move-history::-webkit-scrollbar { width: 6px; }
+        .move-history::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 3px;
+        }
+
+        .moves {
+            display: grid;
+            grid-template-columns: 30px 1fr 1fr;
+            gap: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .move-number {
+            color: #444;
+            text-align: right;
+            padding-right: 8px;
+            padding-top: 4px;
+        }
+
+        .move-cell {
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .move-cell:hover { background: rgba(255, 255, 255, 0.08); }
+        .move-cell.latest {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+            font-weight: 600;
+        }
+        .empty { color: #333; }
+
+        .pgn-box {
+            width: 100%;
+            min-height: 60px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #777;
+            resize: none;
+        }
+
+        @media (max-width: 900px) {
+            .app {
+                flex-direction: column;
+                align-items: center;
+            }
+            .sidebar {
+                width: 100%;
+                max-width: 560px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <div class="board-section">
+            <div class="player-bar">
+                <div class="player-info">
+                    <div class="player-icon black">&#9818;</div>
+                    <span class="player-name" id="black-name">AI</span>
+                </div>
+                <div class="player-captures" id="black-captures"></div>
+                <div class="timer" id="black-timer">10:00</div>
+            </div>
+
+            <div id="board"></div>
+
+            <div class="player-bar">
+                <div class="player-info">
+                    <div class="player-icon white">&#9812;</div>
+                    <span class="player-name" id="white-name">You</span>
+                </div>
+                <div class="player-captures" id="white-captures"></div>
+                <div class="timer active" id="white-timer">10:00</div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="card">
+                <h1>The Fool's Gambit</h1>
+                <div class="status-bar" id="status">Loading...</div>
+            </div>
+
+            <div class="card">
+                <h2>Game Mode</h2>
+                <div class="mode-toggle">
+                    <button class="mode-btn" data-mode="human">vs Human</button>
+                    <button class="mode-btn active" data-mode="ai">vs AI</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="controls">
+                    <button class="btn btn-primary" id="new-game">&#9851; New</button>
+                    <button class="btn btn-secondary" id="undo">&#8630; Undo</button>
+                    <button class="btn btn-secondary" id="flip">&#8645; Flip</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Move History</h2>
+                <div class="move-history" id="move-history-container">
+                    <div class="moves" id="move-history"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>PGN</h2>
+                <textarea class="pgn-box" id="pgn-box" readonly></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/jquery.min.js"></script>
+    <script src="/static/chessground.min.js"></script>
+    <script>
+        var state = {
+            fen: 'start',
+            legalMoves: [],
+            turn: 'white',
+            game_over: false,
+            is_check: false,
+            result: null,
+            moveHistory: [],
+        };
+
+        var board = null;
+        var orientation = 'white';
+        var gameMode = 'ai';
+        var isAiThinking = false;
+
+        function api(path, options) {
+            options = options || {};
+            return fetch(path, options).then(function(res) { return res.json(); });
+        }
+
+        function newGame() {
+            api('/api/new-game', { method: 'POST' }).then(function(data) {
+                Object.assign(state, data);
+                state.moveHistory = [];
+                board = null;
+                renderBoard();
+                renderStatus();
+                renderMoves();
+                updatePgn();
+            });
+        }
+
+        function makeMove(uci) {
+            return api('/api/move', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ move: uci }),
+            }).then(function(data) {
+                if (!data.success) return false;
+                applyState(data);
+                return true;
+            });
+        }
+
+        function undoMove() {
+            api('/api/undo', { method: 'POST' }).then(function(data) {
+                if (!data.success) return;
+                state.moveHistory.pop();
+                applyState(data);
+                updatePgn();
+            });
+        }
+
+        function getAiMove() {
+            return api('/api/ai-move', { method: 'POST' }).then(function(data) {
+                if (!data.success) return;
+                applyState(data);
+                updatePgn();
+            });
+        }
+
+        function applyState(data) {
+            Object.assign(state, data);
+            if (data.move) state.moveHistory.push(data.move);
+            renderBoard();
+            renderStatus();
+            renderMoves();
+        }
+
+        function renderBoard() {
+            var dests = {};
+            for (var i = 0; i < state.legalMoves.length; i++) {
+                var m = state.legalMoves[i];
+                var to = m.substring(2, 4);
+                if (!dests[to]) dests[to] = [];
+                if (m.length > 4) dests[to].push(m[4]);
+            }
+
+            var cfg = {
+                fen: state.fen,
+                orientation: orientation,
+                animation: { enabled: true, duration: 200 },
+                movable: {
+                    free: false,
+                    color: state.turn,
+                    dests: dests,
+                    promote: {
+                        enabled: true,
+                    },
+                },
+                drawable: { enabled: true, deleteOnMouseUp: true },
+                viewOnly: state.game_over || isAiThinking,
+                lastMove: getLastMoveHighlight(),
+                selection: null,
+                addPiece: addPiece,
+            };
+
+            if (!board) {
+                board = Chessground(document.getElementById('board'), cfg);
+                board.onMove(function(from, to, meta) {
+                    onMove(from, to, meta);
+                });
+            } else {
+                board.set(cfg);
+            }
+        }
+
+        function addPiece(role, color) {
+            var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'piece ' + color + '-' + role);
+            svg.setAttribute('viewBox', '0 0 45 45');
+            var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            use.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xlink:href', '/lichess/wiki/chesspieces/wikipedia/' + color + '/' + role + '.svg#x1');
+            svg.appendChild(use);
+            return svg;
+        }
+
+        function getLastMoveHighlight() {
+            if (!state.moveHistory.length) return null;
+            var last = state.moveHistory[state.moveHistory.length - 1];
+            return [last.substring(0, 2), last.substring(2, 4)];
+        }
+
+        function onMove(from, to, meta) {
+            if (state.game_over || isAiThinking) return;
+            var uci = from + to;
+            if (meta.promotion) uci += meta.promotion;
+            makeMove(uci).then(function(ok) {
+                if (!ok) return;
+                if (gameMode === 'ai' && !state.game_over && state.turn === 'black') {
+                    isAiThinking = true;
+                    renderBoard();
+                    renderStatus();
+                    setTimeout(function() {
+                        getAiMove().then(function() { isAiThinking = false; });
+                    }, 300);
+                }
+            });
+        }
+
+        function renderStatus() {
+            var el = document.getElementById('status');
+            el.className = 'status-bar';
+
+            if (state.game_over) {
+                el.textContent = state.result || 'Game Over';
+                el.classList.add('game-over');
+            } else if (state.is_check) {
+                var who = state.turn.charAt(0).toUpperCase() + state.turn.slice(1);
+                el.textContent = who + ' is in check!';
+                el.classList.add('check');
+            } else {
+                var who = state.turn.charAt(0).toUpperCase() + state.turn.slice(1);
+                el.textContent = who + ' to move';
+            }
+
+            $('#white-timer').toggleClass('active', state.turn === 'white' && !state.game_over);
+            $('#black-timer').toggleClass('active', state.turn === 'black' && !state.game_over);
+        }
+
+        function renderMoves() {
+            var el = document.getElementById('move-history');
+            el.innerHTML = '';
+
+            for (var i = 0; i < state.moveHistory.length; i += 2) {
+                var num = Math.floor(i / 2) + 1;
+                var w = state.moveHistory[i];
+                var b = state.moveHistory[i + 1];
+                var last = state.moveHistory.length - 1;
+                var div = document.createElement('div');
+                div.innerHTML =
+                    '<span class="move-number">' + num + '.</span>' +
+                    '<span class="move-cell' + (i === last ? ' latest' : '') + '">' + toSan(w) + '</span>' +
+                    '<span class="move-cell' + (i + 1 === last ? ' latest' : '') + (b ? '' : ' empty') + '">' + (b ? toSan(b) : '') + '</span>';
+                el.appendChild(div);
+            }
+
+            document.getElementById('move-history-container').scrollTop =
+                document.getElementById('move-history-container').scrollHeight;
+        }
+
+        function toSan(uci) {
+            if (!uci || uci.length < 4) return uci || '';
+            var from = String.fromCharCode(97 + parseInt(uci[0])) + uci[1];
+            var to = String.fromCharCode(97 + parseInt(uci[2])) + uci[3];
+            var promo = uci[4] ? uci[4].toUpperCase() : '';
+            return from + '-' + to + promo;
+        }
+
+        function updatePgn() {
+            api('/api/state').then(function(data) {
+                if (data.pgn) {
+                    document.getElementById('pgn-box').value = data.pgn;
+                }
+            });
+        }
+
+        document.getElementById('new-game').addEventListener('click', newGame);
+        document.getElementById('undo').addEventListener('click', undoMove);
+        document.getElementById('flip').addEventListener('click', function() {
+            orientation = orientation === 'white' ? 'black' : 'white';
+            if (board) board.set({ orientation: orientation });
+        });
+
+        document.querySelectorAll('.mode-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                gameMode = btn.dataset.mode;
+                document.getElementById('black-name').textContent =
+                    gameMode === 'ai' ? 'AI' : 'Black';
+            });
+        });
+
+        window.addEventListener('load', newGame);
+    </script>
+</body>
+</html>
