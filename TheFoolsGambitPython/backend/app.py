@@ -1,77 +1,56 @@
-from typing import Optional
-from flask import Flask, render_template, request, jsonify
-from game import ChessGame
+from flask import Flask, render_template, jsonify, request
+from game import game_manager
 from ai import ai
 
-app = Flask(__name__)
-
-games = {}
-active_game_id = None
+app = Flask(__name__, static_folder="static", template_folder="templates")
 
 
-def get_game() -> Optional[ChessGame]:
-    return games.get(active_game_id)
-
-
-@app.route('/')
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
 
-@app.route('/api/new-game', methods=['POST'])
+@app.route("/api/new-game", methods=["POST"])
 def new_game():
-    global active_game_id
-    game_id = f"game_{len(games) + 1}"
-    games[game_id] = ChessGame()
-    active_game_id = game_id
-    return jsonify(games[game_id].get_state())
+    """Start a fresh game. Accepts optional { 'aiDepth': 3 }."""
+    data = request.get_json(silent=True) or {}
+    ai_depth = data.get("aiDepth", 3)
+    ai.depth = ai_depth
+    result = game_manager.new_game()
+    return jsonify(result)
 
 
-@app.route('/api/move', methods=['POST'])
+@app.route("/api/make-move", methods=["POST"])
 def make_move():
-    game = get_game()
-    if game is None:
-        return jsonify({"error": "No active game"}), 400
+    """Submit a move as UCI string (e.g. 'e2e4'). Returns updated state."""
+    data = request.get_json(silent=True) or {}
+    uci = data.get("uci")
+    if not uci:
+        return jsonify({"error": "Missing uci"}), 400
 
-    move_uci = request.json.get('move')
-    if not move_uci:
-        return jsonify({"error": "No move provided"}), 400
-
-    return jsonify(game.make_move(move_uci))
-
-
-@app.route('/api/undo', methods=['POST'])
-def undo_move():
-    game = get_game()
-    if game is None:
-        return jsonify({"error": "No active game"}), 400
-
-    return jsonify(game.undo_move())
+    result = game_manager.make_move(uci)
+    return jsonify(result)
 
 
-@app.route('/api/state')
-def get_state():
-    game = get_game()
-    if game is None:
-        return jsonify({"error": "No active game"}), 400
-
-    s = game.get_state()
-    s['pgn'] = game.get_pgn()
-    return jsonify(s)
-
-
-@app.route('/api/ai-move', methods=['POST'])
+@app.route("/api/ai-move", methods=["POST"])
 def ai_move():
-    game = get_game()
-    if game is None:
-        return jsonify({"error": "No active game"}), 400
-
-    move = ai.generate(game.board)
-    if not move:
-        return jsonify({"error": "No legal moves for AI"}), 400
-
-    return jsonify(game.make_move(move))
+    """Request AI to play. Returns updated state."""
+    result = game_manager.ai_move()
+    return jsonify(result)
 
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+@app.route("/api/state")
+def state():
+    """Get current game state."""
+    return jsonify(game_manager.state())
+
+
+@app.route("/api/undo", methods=["POST"])
+def undo():
+    """Undo the last move (one ply)."""
+    result = game_manager.undo()
+    return jsonify(result)
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
