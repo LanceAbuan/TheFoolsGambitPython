@@ -203,10 +203,8 @@ module.exports = async (req, res) => {
   }
 
   let body = {};
-  try {
-    body = JSON.parse(req.body || '{}');
-  } catch {
-    body = {};
+  if (req.body) {
+    body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
   }
 
   const path = req.url;
