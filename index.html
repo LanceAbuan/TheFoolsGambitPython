@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Fool's Gambit — Play Chess</title>
+    <title>The Fool's Gambit</title>
     <link rel="icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/chessground.min.css">
     <link rel="stylesheet" href="/static/chessground.cburnett.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
@@ -18,6 +19,7 @@
             justify-content: center;
             align-items: center;
         }
+
         .app {
             display: flex;
             gap: 40px;
@@ -25,6 +27,7 @@
             max-width: 1100px;
             width: 100%;
         }
+
         .board-section {
             flex: 1;
             display: flex;
@@ -32,14 +35,16 @@
             align-items: center;
             gap: 15px;
         }
+
         #board {
             width: 100%;
             max-width: 560px;
             aspect-ratio: 1;
             border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
         }
+
         .player-bar {
             width: 100%;
             max-width: 560px;
@@ -47,43 +52,68 @@
             align-items: center;
             justify-content: space-between;
             padding: 10px 15px;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
             backdrop-filter: blur(10px);
         }
-        .player-info { display: flex; align-items: center; gap: 10px; }
+
+        .player-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .player-icon {
-            width: 32px; height: 32px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-size: 18px;
         }
+
         .player-icon.white { background: #fff; color: #333; }
         .player-icon.black { background: #333; color: #fff; }
+
         .player-name { font-weight: 600; font-size: 15px; }
+
+        .player-captures {
+            font-size: 18px;
+            letter-spacing: 2px;
+            min-height: 24px;
+        }
+
         .timer {
             font-size: 22px;
             font-weight: 700;
             font-family: 'Courier New', monospace;
             padding: 6px 12px;
             border-radius: 6px;
-            background: rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.1);
             transition: all 0.3s;
         }
-        .timer.active { background: rgba(233,69,96,0.3); color: #e94560; }
+
+        .timer.active {
+            background: rgba(233, 69, 96, 0.3);
+            color: #e94560;
+        }
+
         .sidebar {
             width: 320px;
             display: flex;
             flex-direction: column;
             gap: 20px;
         }
+
         .card {
-            background: rgba(255,255,255,0.06);
+            background: rgba(255, 255, 255, 0.06);
             border-radius: 12px;
             padding: 20px;
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
+
         .card h1 {
             font-size: 22px;
             background: linear-gradient(90deg, #e94560, #ff6b6b);
@@ -92,6 +122,7 @@
             background-clip: text;
             margin-bottom: 5px;
         }
+
         .card h2 {
             font-size: 14px;
             color: #888;
@@ -99,9 +130,10 @@
             letter-spacing: 1px;
             margin-bottom: 12px;
         }
+
         .status-bar {
             padding: 10px 15px;
-            background: rgba(233,69,96,0.15);
+            background: rgba(233, 69, 96, 0.15);
             border-radius: 8px;
             font-size: 14px;
             color: #e94560;
@@ -109,27 +141,83 @@
             text-align: center;
             transition: all 0.3s;
         }
-        .status-bar.check { background: rgba(255,193,7,0.15); color: #ffc107; }
-        .status-bar.game-over { background: rgba(76,175,80,0.15); color: #4caf50; }
-        .status-bar.thinking { background: rgba(100,149,237,0.15); color: #6495ed; }
-        .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .status-bar.check {
+            background: rgba(255, 193, 7, 0.15);
+            color: #ffc107;
+        }
+
+        .status-bar.game-over {
+            background: rgba(76, 175, 80, 0.15);
+            color: #4caf50;
+        }
+
+        .status-bar.thinking {
+            background: rgba(100, 149, 237, 0.15);
+            color: #6495ed;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
         .btn {
-            flex: 1; min-width: 80px;
+            flex: 1;
+            min-width: 80px;
             padding: 10px 16px;
-            border: none; border-radius: 8px;
-            font-size: 13px; font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
-            display: flex; align-items: center; justify-content: center; gap: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
-        .btn-primary { background: linear-gradient(135deg, #e94560, #c73e54); color: white; }
-        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(233,69,96,0.4); }
-        .btn-secondary { background: rgba(255,255,255,0.1); color: #ccc; }
-        .btn-secondary:hover { background: rgba(255,255,255,0.15); color: #fff; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .move-history { max-height: 300px; overflow-y: auto; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #e94560, #c73e54);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ccc;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .move-history {
+            max-height: 300px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #444 transparent;
+        }
+
         .move-history::-webkit-scrollbar { width: 6px; }
-        .move-history::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .move-history::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 3px;
+        }
+
         .moves {
             display: grid;
             grid-template-columns: 30px 1fr 1fr;
@@ -137,61 +225,137 @@
             font-family: 'Courier New', monospace;
             font-size: 13px;
         }
-        .move-number { color: #555; text-align: right; padding-right: 8px; padding-top: 4px; }
-        .move-cell { padding: 4px 8px; border-radius: 4px; transition: background 0.15s; }
-        .move-cell:hover { background: rgba(255,255,255,0.08); }
-        .move-cell.latest { background: rgba(233,69,96,0.2); color: #e94560; font-weight: 600; }
+
+        .move-number {
+            color: #555;
+            text-align: right;
+            padding-right: 8px;
+            padding-top: 4px;
+        }
+
+        .move-cell {
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.15s;
+        }
+
+        .move-cell:hover { background: rgba(255, 255, 255, 0.08); }
+        .move-cell.latest {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+            font-weight: 600;
+        }
+
         .pgn-box {
-            width: 100%; min-height: 60px;
-            background: rgba(0,0,0,0.2);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 6px; padding: 8px;
+            width: 100%;
+            min-height: 60px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 8px;
             font-family: 'Courier New', monospace;
-            font-size: 11px; color: #777;
-            resize: none; margin-top: 10px;
+            font-size: 11px;
+            color: #777;
+            resize: none;
+            margin-top: 10px;
         }
+
+        /* Promotion modal */
         .promotion-overlay {
-            display: none; position: fixed;
+            display: none;
+            position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0, 0, 0, 0.7);
             z-index: 100;
-            justify-content: center; align-items: center;
+            justify-content: center;
+            align-items: center;
         }
-        .promotion-overlay.active { display: flex; }
+
+        .promotion-overlay.active {
+            display: flex;
+        }
+
         .promotion-dialog {
-            background: #1e1e2e; border-radius: 12px; padding: 20px;
-            border: 1px solid rgba(255,255,255,0.1);
+            background: #1e1e2e;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        .promotion-dialog h3 { text-align: center; margin-bottom: 15px; color: #e0e0e0; }
-        .promotion-pieces { display: flex; gap: 10px; }
-        .promotion-piece {
-            width: 64px; height: 64px;
-            background: rgba(255,255,255,0.1); border-radius: 8px;
-            cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 48px;
-            transition: all 0.2s; border: 2px solid transparent;
-        }
-        .promotion-piece:hover { background: rgba(233,69,96,0.2); border-color: #e94560; }
-        .gameover-overlay {
-            display: none; position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 99;
-            justify-content: center; align-items: center;
-        }
-        .gameover-overlay.active { display: flex; }
-        .gameover-dialog {
-            background: #1e1e2e; border-radius: 16px; padding: 40px;
+
+        .promotion-dialog h3 {
             text-align: center;
-            border: 1px solid rgba(255,255,255,0.1);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            margin-bottom: 15px;
+            color: #e0e0e0;
         }
-        .gameover-dialog h2 { font-size: 28px; margin-bottom: 10px; color: #e94560; }
-        .gameover-dialog p { color: #999; margin-bottom: 20px; }
+
+        .promotion-pieces {
+            display: flex;
+            gap: 10px;
+        }
+
+        .promotion-piece {
+            width: 64px;
+            height: 64px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .promotion-piece:hover {
+            background: rgba(233, 69, 96, 0.2);
+            border-color: #e94560;
+        }
+
+        /* Game over overlay */
+        .gameover-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 99;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .gameover-overlay.active {
+            display: flex;
+        }
+
+        .gameover-dialog {
+            background: #1e1e2e;
+            border-radius: 16px;
+            padding: 40px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .gameover-dialog h2 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: #e94560;
+        }
+
+        .gameover-dialog p {
+            color: #999;
+            margin-bottom: 20px;
+        }
+
         @media (max-width: 900px) {
-            .app { flex-direction: column; align-items: center; }
-            .sidebar { width: 100%; max-width: 560px; }
+            .app {
+                flex-direction: column;
+                align-items: center;
+            }
+            .sidebar {
+                width: 100%;
+                max-width: 560px;
+            }
         }
     </style>
 </head>
@@ -201,11 +365,13 @@
             <div class="player-bar">
                 <div class="player-info">
                     <div class="player-icon black">&#9818;</div>
-                    <span class="player-name">AI (Minimax)</span>
+                    <span class="player-name">AI (Depth 3)</span>
                 </div>
                 <div class="timer" id="black-timer">10:00</div>
             </div>
+
             <div id="board"></div>
+
             <div class="player-bar">
                 <div class="player-info">
                     <div class="player-icon white">&#9820;</div>
@@ -213,23 +379,28 @@
                 </div>
                 <div class="timer" id="white-timer">10:00</div>
             </div>
+
             <div class="player-bar" style="justify-content: center; padding: 5px 15px;">
                 <span class="player-captures" id="captured-white"></span>
             </div>
         </div>
+
         <div class="sidebar">
             <div class="card">
                 <h1>The Fool's Gambit</h1>
                 <h2>Chess vs AI</h2>
                 <div class="status-bar" id="status">Loading...</div>
             </div>
+
             <div class="card">
                 <h2>Controls</h2>
                 <div class="controls">
                     <button class="btn btn-primary" id="new-game">&#9876; New</button>
+                    <button class="btn btn-secondary" id="undo-btn">&#8630; Undo</button>
                     <button class="btn btn-secondary" id="flip-btn">&#8645; Flip</button>
                 </div>
             </div>
+
             <div class="card">
                 <h2>Move History</h2>
                 <div class="move-history" id="move-history">
@@ -240,6 +411,7 @@
         </div>
     </div>
 
+    <!-- Promotion modal -->
     <div class="promotion-overlay" id="promotion-overlay">
         <div class="promotion-dialog">
             <h3>Promote pawn to:</h3>
@@ -252,102 +424,149 @@
         </div>
     </div>
 
+    <!-- Game over overlay -->
     <div class="gameover-overlay" id="gameover-overlay">
         <div class="gameover-dialog">
             <h2 id="gameover-title">Game Over</h2>
             <p id="gameover-message"></p>
-            <button class="btn btn-primary" id="play-again" style="min-width:160px;">&#9876; Play Again</button>
+            <button class="btn btn-primary" id="play-again" style="min-width: 160px;">&#9876; Play Again</button>
         </div>
     </div>
 
     <script src="/static/jquery.min.js"></script>
     <script src="/static/chessground.min.js"></script>
     <script>
-        var state = {
+           var state = {
             fen: null,
             turn: 'white',
             legal: [],
             game_over: false,
             result: null,
-            in_check: false,
-            moveList: [],
+            pgn: '',
+            uciHistory: [],
             sanList: [],
+            in_check: false,
+            fenHistory: [],
         };
+
         var board = null;
         var orientation = 'white';
         var isAiThinking = false;
         var pendingPromotion = null;
+
+        // Timer state
         var timers = { white: 600, black: 600 };
         var timerInterval = null;
 
-        function formatTime(s) {
-            var m = Math.floor(s / 60);
-            var sec = s % 60;
-            return m + ':' + (sec < 10 ? '0' : '') + sec;
+        function formatTime(seconds) {
+            var m = Math.floor(seconds / 60);
+            var s = seconds % 60;
+            return m + ':' + (s < 10 ? '0' : '') + s;
         }
 
         function startTimer() {
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(function() {
-                if (state.game_over) { clearInterval(timerInterval); return; }
+                if (state.game_over) {
+                    clearInterval(timerInterval);
+                    return;
+                }
                 if (state.turn === 'white') {
                     timers.white = Math.max(0, timers.white - 1);
-                    if (timers.white === 0) endByTime('Black');
+                    if (timers.white === 0) endGameByTime('black');
                 } else {
                     timers.black = Math.max(0, timers.black - 1);
-                    if (timers.black === 0) endByTime('White');
+                    if (timers.black === 0) endGameByTime('white');
                 }
                 $('#white-timer').text(formatTime(timers.white));
                 $('#black-timer').text(formatTime(timers.black));
+                $('#white-timer').toggleClass('active', state.turn === 'white' && !state.game_over);
+                $('#black-timer').toggleClass('active', state.turn === 'black' && !state.game_over);
             }, 1000);
         }
 
-        function endByTime(winner) {
+        function endGameByTime(winner) {
             state.game_over = true;
-            state.result = winner + ' wins on time!';
+            state.result = winner.charAt(0).toUpperCase() + winner.slice(1) + ' wins on time!';
             clearInterval(timerInterval);
-            renderBoard(); renderStatus(); showGameOver();
+            renderBoard();
+            renderStatus();
+            showGameOver();
         }
 
         function resetTimers() {
             timers = { white: 600, black: 600 };
             $('#white-timer').text('10:00');
             $('#black-timer').text('10:00');
+            if (timerInterval) clearInterval(timerInterval);
             startTimer();
         }
 
-        // Build destination map from legal UCI list
-        function legalToDests(legal) {
-            var d = {};
-            for (var i = 0; i < legal.length; i++) {
-                var m = legal[i];
-                var from = m.substring(0, 2);
-                var to = m.substring(2, 4);
-                if (!d[from]) d[from] = [];
-                d[from].push(to);
+        // --- FEN parser ---
+        function fenToPieces(fen) {
+            var pieces = {};
+            var rows = fen.split(' ')[0].split('/');
+            for (var r = 0; r < 8; r++) {
+                var file = 0;
+                for (var i = 0; i < rows[r].length; i++) {
+                    var c = rows[r][i];
+                    if (/\d/.test(c)) {
+                        file += parseInt(c);
+                    } else {
+                        var color = (c === c.toUpperCase()) ? 'w' : 'b';
+                        var role = c.toLowerCase();
+                        var key = String.fromCharCode(97 + file) + (8 - r);
+                        pieces[key] = { role: role, color: color };
+                        file++;
+                    }
+                }
             }
-            return d;
+            return pieces;
         }
 
+        // --- Last move highlight ---
+        function getLastMoveHighlight() {
+            if (state.uciHistory.length === 0) return null;
+            var lastUci = state.uciHistory[state.uciHistory.length - 1];
+            if (lastUci.length < 4) return null;
+            var from = lastUci.substring(0, 2);
+            var to = lastUci.substring(2, 4);
+            return [from, to];
+        }
+
+        // --- Render board ---
         function renderBoard() {
             if (!state.fen) return;
-            var last = null;
-            if (state.moveList.length > 0) {
-                var lastM = state.moveList[state.moveList.length - 1];
-                last = [lastM.substring(0, 2), lastM.substring(2, 4)];
+
+            var pieces = fenToPieces(state.fen);
+            var dests = {};
+            for (var i = 0; i < state.legal.length; i++) {
+                var m = state.legal[i];
+                var from = m.substring(0, 2);
+                var to = m.substring(2, 4);
+                if (!dests[from]) dests[from] = [];
+                dests[from].push(to);
             }
 
             var cfg = {
+                debug: {
+                    ces9by3: null,
+                },
                 fen: state.fen,
                 orientation: orientation,
                 turnColor: state.turn,
                 check: state.in_check,
-                move: { last: last },
-                highlight: { lastMove: true, check: true },
+                move: {
+                    last: getLastMoveHighlight(),
+                },
+                highlight: {
+                    lastMove: true,
+                    check: true,
+                },
                 animation: { enabled: true },
                 movable: {
                     color: 'white',
-                    dests: legalToDests(state.legal),
+                    dests: dests,
                     events: {
                         after: function(from, to, meta) {
                             onPlayerMove(from, to, meta);
@@ -355,9 +574,22 @@
                     },
                     free: false,
                     requireControl: true,
+                    // Promotion
+                    promote: {
+                        enabled: true,
+                        // Chessground auto-promotes to queen if not overridden
+                        // We'll intercept via premove/ontouch
+                    },
                 },
-                premove: { enabled: false },
-                drawable: { enabled: false },
+                premove: {
+                    enabled: false,
+                    move: function(from, to) {
+                        // Premoves disabled during AI turn
+                    },
+                },
+                drawable: {
+                    enabled: false,
+                },
                 viewOnly: state.game_over || isAiThinking,
             };
 
@@ -368,17 +600,42 @@
             }
         }
 
+        // --- Player move ---
         function onPlayerMove(from, to, meta) {
             if (state.game_over || isAiThinking || state.turn !== 'white') return;
 
-            var fromRank = parseInt(from[1]);
-            var toRank = parseInt(to[1]);
-            if (fromRank === 2 && toRank === 8) {
+            var uci = from + to;
+
+            // Check if this is a promotion
+            var sourceSquare = from;
+            var fenParts = state.fen.split(' ');
+            var boardStr = fenParts[0];
+            var rowIdx = 8 - parseInt(from[1]);
+            var colIdx = from.charCodeAt(0) - 97;
+            var charIdx = 0;
+            var pieceChar = '';
+            for (var r = 0; r < 8; r++) {
+                for (var i = 0; i < boardStr.split('/')[r].length; i++) {
+                    var ch = boardStr.split('/')[r][i];
+                    if (r === rowIdx) {
+                        // find col
+                    }
+                }
+            }
+
+            // Simpler: check if pawn is on 7th rank moving to 1st
+            if (from[1] === '2' && to[1] === '8') {
+                // Pawn promotion — ask user
                 pendingPromotion = { from: from, to: to };
-                $('#promotion-overlay').addClass('active');
+                showPromotionDialog();
                 return;
             }
-            makeMove(from + to);
+
+            makeMove(uci);
+        }
+
+        function showPromotionDialog() {
+            $('#promotion-overlay').addClass('active');
         }
 
         $('#promotion-pieces .promotion-piece').on('click', function() {
@@ -391,46 +648,54 @@
             }
         });
 
-        function apiCall(url, body) {
-            // All /api/* routes hit the same Vercel serverless function.
-            // Pass __path so the handler knows which route was intended.
-            body.__path = url.replace('/api/', '/');
-            // Vercel normalizes /api/new-game → /api/index.py, so we always call /api
-            return $.ajax({
-                url: '/api',
+        // --- API calls (stateless — frontend sends FEN each time) ---
+        function makeMove(uci) {
+            $.ajax({
+                url: '/api/make-move',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify(body),
+                data: JSON.stringify({ uci: uci, fen: state.fen, legal: state.legal }),
+                success: function(res) {
+                    if (res.error) {
+                        console.error('Move error:', res.error);
+                        return;
+                    }
+                    updateState(res, uci);
+
+                    if (!state.game_over && state.turn === 'black') {
+                        isAiThinking = true;
+                        renderBoard();
+                        renderStatus();
+                        setTimeout(function() {
+                            requestAiMove();
+                        }, 200);
+                    }
+                },
+                error: function() {
+                    console.error('Request failed');
+                }
             });
         }
 
-        function makeMove(uci) {
-            apiCall('/api/make-move', { uci: uci, fen: state.fen, legal: state.legal })
-                .done(function(res) {
-                    if (res.error) { console.error(res.error); return; }
-                    applyResult(res, uci);
-                    if (!state.game_over && state.turn === 'black') {
-                        isAiThinking = true;
-                        renderBoard(); renderStatus();
-                        setTimeout(function() { requestAiMove(); }, 200);
-                    }
-                })
-                .fail(function() { console.error('Move failed'); });
-        }
-
         function requestAiMove() {
-            apiCall('/api/ai-move', { fen: state.fen, legal: state.legal, depth: 3 })
-                .done(function(res) {
+            $.ajax({
+                url: '/api/ai-move',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ fen: state.fen, legal: state.legal }),
+                success: function(res) {
                     isAiThinking = false;
-                    // We don't have the UCI from the AI directly, but we can diff FENs
-                    // The server returns the new state; just apply it
-                    applyResult(res, null);
-                })
-                .fail(function() { isAiThinking = false; console.error('AI failed'); });
+                    updateState(res, null);
+                },
+                error: function() {
+                    isAiThinking = false;
+                    console.error('AI move failed');
+                }
+            });
         }
 
-        function applyResult(res, playerUci) {
-            var oldFen = state.fen;
+        function updateState(res, uci) {
+            state.fenHistory.push(state.fen);
             state.fen = res.fen;
             state.legal = res.legal;
             state.turn = res.turn;
@@ -441,24 +706,32 @@
                 state.result = res.result || 'Game Over';
             }
 
-            // Track SAN from server (pgn field has last move SAN)
-            if (res.pgn && res.pgn.trim()) {
-                state.sanList.push(res.pgn.trim());
+            // Track UCI for board highlighting
+            if (uci) {
+                state.uciHistory.push(uci);
             }
 
-            // Track UCI for highlighting
-            if (playerUci) {
-                state.moveList.push(playerUci);
-            } else if (isAiThinking === false) {
-                // AI move — figure out from FEN diff (approximate)
-                // We'll just skip UCI tracking for AI moves
-                // The last move highlight still works via Chessground's FEN parsing
+            // Track SAN from server response for move display
+            if (res.pgn && res.pgn.trim()) {
+                // res.pgn is the SAN of the last move
+                var lastSan = res.pgn.trim().split(' ').pop();
+                state.sanList.push(lastSan);
+                state.pgn = state.sanList.join(' ');
             }
 
             renderBoard();
             renderStatus();
             renderMoves();
-            if (state.game_over) showGameOver();
+
+            if (state.game_over) {
+                showGameOver();
+            }
+        }
+
+        function showGameOver() {
+            $('#gameover-overlay').addClass('active');
+            $('#gameover-title').text(state.result || 'Game Over');
+            $('#gameover-message').text('');
         }
 
         function renderStatus() {
@@ -479,79 +752,125 @@
                 var who = state.turn.charAt(0).toUpperCase() + state.turn.slice(1);
                 el.textContent = who + ' to move';
             }
+
+            $('#white-timer').toggleClass('active', state.turn === 'white' && !state.game_over && !isAiThinking);
+            $('#black-timer').toggleClass('active', state.turn === 'black' && !state.game_over && !isAiThinking);
         }
 
-        function renderMoves() {
+      function renderMoves() {
             var el = document.getElementById('moves');
             el.innerHTML = '';
+
             var moves = state.sanList;
             for (var i = 0; i < moves.length; i += 2) {
                 var num = Math.floor(i / 2) + 1;
                 var row = document.createElement('div');
 
-                var nc = document.createElement('div');
-                nc.className = 'move-number'; nc.textContent = num + '.';
-                row.appendChild(nc);
+                var numCell = document.createElement('div');
+                numCell.className = 'move-number';
+                numCell.textContent = num + '.';
+                row.appendChild(numCell);
 
-                var wc = document.createElement('div');
-                wc.className = 'move-cell';
-                if (i === moves.length - 1) wc.classList.add('latest');
-                wc.textContent = moves[i];
-                row.appendChild(wc);
-
-                var bc = document.createElement('div');
-                bc.className = 'move-cell';
-                if (i + 1 < moves.length) {
-                    if (i + 1 === moves.length - 1) bc.classList.add('latest');
-                    bc.textContent = moves[i + 1];
+                var whiteCell = document.createElement('div');
+                whiteCell.className = 'move-cell';
+                if (i === moves.length - 1 || (i + 1 === moves.length - 1 && moves.length % 2 === 0)) {
+                    whiteCell.classList.add('latest');
                 }
-                row.appendChild(bc);
+                whiteCell.textContent = moves[i];
+                row.appendChild(whiteCell);
+
+                var blackCell = document.createElement('div');
+                blackCell.className = 'move-cell';
+                if (i + 1 < moves.length) {
+                    if (i + 1 === moves.length - 1) {
+                        blackCell.classList.add('latest');
+                    }
+                    blackCell.textContent = moves[i + 1];
+                }
+                row.appendChild(blackCell);
+
                 el.appendChild(row);
             }
-            document.getElementById('move-history').scrollTop =
-                document.getElementById('move-history').scrollHeight;
-            document.getElementById('pgn-box').value = state.sanList.join(' ') || '';
+
+            // Scroll to bottom
+            var container = document.getElementById('move-history');
+            container.scrollTop = container.scrollHeight;
+
+            // Update PGN box
+            document.getElementById('pgn-box').value = state.pgn || '';
         }
 
-        function showGameOver() {
-            $('#gameover-overlay').addClass('active');
-            $('#gameover-title').text(state.result || 'Game Over');
-        }
-
+        // --- New game ---
         function startNewGame() {
             isAiThinking = false;
             state.game_over = false;
             state.result = null;
-            state.moveList = [];
+           state.uciHistory = [];
             state.sanList = [];
-            pendingPromotion = null;
+            state.pgn = '';
             $('#gameover-overlay').removeClass('active');
             $('#promotion-overlay').removeClass('active');
+            pendingPromotion = null;
 
-            apiCall('/api/new-game', {})
-                .done(function(res) {
+            $.ajax({
+                url: '/api/new-game',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({}),
+                success: function(res) {
                     state.fen = res.fen;
                     state.legal = res.legal;
                     state.turn = 'white';
+                    state.pgn = '';
                     state.in_check = false;
                     resetTimers();
-                    renderBoard(); renderStatus(); renderMoves();
-                })
-                .fail(function() {
-                    document.getElementById('status').textContent = 'Failed to start game';
-                });
+                    renderBoard();
+                    renderStatus();
+                    renderMoves();
+                },
+                error: function() {
+                    console.error('Failed to start game');
+                }
+            });
         }
 
+          // --- Undo (stateless — frontend reverts to previous FEN from history) ---
+        function undoMove() {
+            if (state.game_over || isAiThinking || state.uciHistory.length < 2) return;
+
+            // Revert 2 plies (player move + AI response)
+            var targetIdx = state.fenHistory.length - 2;
+            if (targetIdx < 0) targetIdx = 0;
+            var prevFen = state.fenHistory[targetIdx];
+
+            // Rebuild state from the FEN at that point
+            $.ajax({
+                url: '/api/undo',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ fen: prevFen }),
+                success: function(res) {
+                    state.uciHistory.splice(-2, 2);
+                    state.sanList.splice(-2, 2);
+                    state.fenHistory.splice(-2, 2);
+                    updateState(res, null);
+                }
+            });
+        }
+
+        // --- Flip ---
         function flipBoard() {
             orientation = orientation === 'white' ? 'black' : 'white';
             renderBoard();
         }
 
+        // --- Event listeners ---
         $('#new-game').on('click', startNewGame);
+        $('#undo-btn').on('click', undoMove);
         $('#flip-btn').on('click', flipBoard);
         $('#play-again').on('click', startNewGame);
 
-        // Boot
+        // --- Init ---
         startNewGame();
     </script>
 </body>
