@@ -427,6 +427,17 @@
                 <div class="panel-title">Board Theme</div>
                 <div class="theme-name" id="theme-name">Classic</div>
                 <div class="theme-selector" id="theme-selector"></div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">Training</div>
+                <div class="theme-name" id="train-status">Not connected</div>
+                <div id="train-metrics" style="font-size:12px; color:#888; line-height:1.8;"></div>
+                <div class="buttons" style="margin-top:8px;">
+                    <button class="btn btn-secondary" id="btn-train-start">Start Training</button>
+                    <button class="btn btn-secondary" id="btn-train-stop" disabled>Stop Training</button>
+                    <button class="btn btn-secondary" id="btn-train-play">Play 1 Game</button>
+                </div>
                 <div class="thinking" id="thinking" style="display:none;">
                     <div class="thinking-dots"><span></span><span></span><span></span></div>
                     <span>AI thinking...</span>
@@ -890,6 +901,84 @@
         $('#btn-new-gameover').on('click', newGame);
         $('#btn-undo').on('click', undoMove);
         $('#btn-flip').on('click', flipBoard);
+        $('#btn-train-start').on('click', trainStart);
+        $('#btn-train-stop').on('click', trainStop);
+        $('#btn-train-play').on('click', trainPlay);
+
+        // --- Training ---
+        var trainPollInterval = null;
+
+        function fetchTrainStatus() {
+            $.ajax({
+                url: '/api/train/status',
+                method: 'GET',
+                timeout: 3000,
+                success: function(status) {
+                    $('#train-status').text(
+                        status.status.charAt(0).toUpperCase() + status.status.slice(1)
+                    );
+                    $('#train-metrics').html(
+                        '<div>Step: ' + status.step + '</div>' +
+                        '<div>Games: ' + status.games_played + '</div>' +
+                        '<div>Buffer: ' + status.buffer_size + '</div>' +
+                        '<div>Loss: ' + (status.loss ? status.loss.toFixed(4) : 'N/A') + '</div>'
+                    );
+                    $('#btn-train-start').prop('disabled', status.status === 'playing' || status.status === 'training');
+                    $('#btn-train-stop').prop('disabled', status.status === 'idle' || status.status === 'stopped');
+                },
+                error: function() {
+                    $('#train-status').text('Disconnected');
+                }
+            });
+        }
+
+        function trainStart() {
+            $.ajax({
+                url: '/api/train/start',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ games_per_cycle: 5, steps_per_cycle: 50 }),
+                success: function() {
+                    if (!trainPollInterval) {
+                        trainPollInterval = setInterval(fetchTrainStatus, 2000);
+                    }
+                    fetchTrainStatus();
+                },
+                error: function() { $('#train-status').text('Error starting'); }
+            });
+        }
+
+        function trainStop() {
+            $.ajax({
+                url: '/api/train/stop',
+                method: 'POST',
+                contentType: 'application/json',
+                success: function() {
+                    clearInterval(trainPollInterval);
+                    trainPollInterval = null;
+                    fetchTrainStatus();
+                },
+                error: function() { $('#train-status').text('Error stopping'); }
+            });
+        }
+
+        function trainPlay() {
+            $.ajax({
+                url: '/api/train/play',
+                method: 'POST',
+                contentType: 'application/json',
+                success: function(res) {
+                    $('#train-status').text('Game ' + res.games_played + ' played');
+                    if (!trainPollInterval) {
+                        fetchTrainStatus();
+                    }
+                },
+                error: function() { $('#train-status').text('Error playing game'); }
+            });
+        }
+
+        // Initial status check
+        fetchTrainStatus();
 
         // --- Init ---
         initThemeSelector();
