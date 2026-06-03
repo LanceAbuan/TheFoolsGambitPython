@@ -20,12 +20,12 @@ NUM_CHANNELS = NUM_PIECE_CHANNELS + NUM_AUX_CHANNELS  # 16
 
 
 def board_to_tensor(board):
-    """Convert a chess.Board to a numpy tensor of shape (16, 8, 8).
+    """Convert a chess.Board to a numpy tensor of shape (8, 8, 16) channels-last.
     
     Returns:
-        numpy.ndarray: Tensor of shape (16, 8, 8) with float32 values.
+        numpy.ndarray: Tensor of shape (8, 8, 16) with float32 values.
     """
-    tensor = np.zeros((NUM_CHANNELS, 8, 8), dtype=np.float32)
+    tensor = np.zeros((8, 8, NUM_CHANNELS), dtype=np.float32)
     
     for pt_idx, piece_type in enumerate(PIECE_ORDER):
         for sq in chess.SQUARES:
@@ -33,12 +33,12 @@ def board_to_tensor(board):
             if piece and piece.piece_type == piece_type:
                 rank, file = chess.square_rank(sq), chess.square_file(sq)
                 if piece.color == chess.WHITE:
-                    tensor[pt_idx, rank, file] = 1.0
+                    tensor[rank, file, pt_idx] = 1.0
                 else:
-                    tensor[pt_idx + 6, rank, file] = 1.0
+                    tensor[rank, file, pt_idx + 6] = 1.0
     
     side_to_move = 1.0 if board.turn == chess.WHITE else -1.0
-    tensor[12, :, :] = side_to_move
+    tensor[:, :, 12] = side_to_move
     
     _encode_castling(tensor, board)
     _encode_en_passant(tensor, board)
@@ -50,8 +50,6 @@ def board_to_tensor(board):
 def _encode_castling(tensor, board):
     """Encode castling rights as a single channel with values in [-1, 1]."""
     castling = 0.0
-    if board.has_knight_promotion():
-        castling += 0.0
     
     if board.castling_rights:
         if board.has_queenside_castling_rights(chess.WHITE):
@@ -63,20 +61,20 @@ def _encode_castling(tensor, board):
         if board.has_kingside_castling_rights(chess.BLACK):
             castling += 0.25
     
-    tensor[13, :, :] = castling
+    tensor[:, :, 13] = castling
 
 
 def _encode_en_passant(tensor, board):
     """Encode en passant target square."""
     if board.ep_square is not None:
         rank, file = chess.square_rank(board.ep_square), chess.square_file(board.ep_square)
-        tensor[14, rank, file] = 1.0
+        tensor[rank, file, 14] = 1.0
 
 
 def _encode_halfmove(tensor, board):
     """Encode halfmove clock normalized to [0, 1]."""
     normalized = min(board.halfmove_clock / 100.0, 1.0)
-    tensor[15, :, :] = normalized
+    tensor[:, :, 15] = normalized
 
 
 def legal_moves_mask(board):

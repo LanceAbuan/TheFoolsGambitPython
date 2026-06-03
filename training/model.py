@@ -70,17 +70,17 @@ class ChessNet(nn.Module):
         self.value_fc2 = nn.Linear(VALUE_HEAD_CHANNELS, 1)
     
     def forward(self, x):
-        x = x.permute(0, 3, 1, 2)
+        x = x.permute(0, 3, 1, 2).contiguous()
         
         out = F.relu(self.input_bn(self.input_conv(x)))
         out = self.residual_tower(out)
         
         policy = F.relu(self.policy_bn(self.policy_conv(out)))
-        policy = policy.view(-1, POLICY_HEAD_CHANNELS * 64)
+        policy = policy.reshape(-1, POLICY_HEAD_CHANNELS * 64)
         policy = self.policy_fc(policy)
         
         value = F.relu(self.value_bn(self.value_conv(out)))
-        value = value.view(-1, VALUE_HEAD_CHANNELS * 64)
+        value = value.reshape(-1, VALUE_HEAD_CHANNELS * 64)
         value = F.relu(self.value_fc1(value))
         value = torch.tanh(self.value_fc2(value))
         

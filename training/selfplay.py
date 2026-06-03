@@ -87,10 +87,11 @@ class MCTS:
             selected = self._select_child(node)
             path.append((node, selected))
 
+            board.push(selected['move'])
+
             if not selected['expanded']:
                 self._expand(selected, board)
 
-            board.push(selected['move'])
             node = selected
 
         value = self._evaluate(board)
