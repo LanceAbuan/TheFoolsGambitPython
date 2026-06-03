@@ -367,7 +367,6 @@
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
                     if (data.moves) updateLiveBoard(data.moves);
-                    $('#live-status').text('Status: ' + data.status + ' | ' + (data.moves ? data.moves.length : 0) + ' moves');
                 });
                 source.addEventListener('train_step', function(e) {
                     var data = JSON.parse(e.data);

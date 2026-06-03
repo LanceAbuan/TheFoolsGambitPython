@@ -269,7 +269,7 @@ class SelfPlayGame:
                 b.push(move)
             except:
                 break
-        pgn = game.to_pgn()
+        pgn = game.accept(chess.pgn.StringExporter())
 
         if board.is_checkmate():
             result = '1-0' if board.turn == chess.BLACK else '0-1'
