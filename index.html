@@ -240,6 +240,10 @@
             background: rgba(255,255,255,0.06);
         }
         .promo-piece:hover { background: rgba(99, 102, 241, 0.3); }
+        #live-board {
+            width: 180px;
+            margin: 0 auto;
+        }
         @media (max-width: 768px) {
             .container { flex-direction: column; align-items: center; }
             #myBoard { width: min(560px, 90vw); }
@@ -300,6 +304,19 @@
                 </div>
             </div>
 
+            <div class="panel">
+                <div class="panel-title">Live Training Board</div>
+                <div id="live-board"></div>
+                <div id="live-board-status" style="font-size:11px; color:#888; text-align:center; padding:4px;">Waiting for training...</div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">Training Games</div>
+                <div id="train-games" style="max-height:240px; overflow-y:auto; font-size:12px;">
+                    <div style="color:#555; font-style:italic;">No training games yet</div>
+                </div>
+            </div>
+
             <div class="thinking" id="thinking" style="display:none;">
                 <div class="thinking-dots"><span></span><span></span><span></span></div>
                 <span>AI thinking...</span>
@@ -326,6 +343,7 @@
 
     <script src="/static/jquery.min.js"></script>
     <script src="/static/chessboard.js"></script>
+    <script src="/static/chess.js"></script>
     <script>
     (function () {
         var state = {
@@ -698,9 +716,144 @@
                     var isRunning = status.status === 'playing' || status.status === 'training';
                     $('#btn-train-start').prop('disabled', isRunning);
                     $('#btn-train-stop').prop('disabled', !isRunning);
+                    if (status.recent_games && status.recent_games.length > 0) {
+                        renderTrainGames(status.recent_games);
+                    }
+                    if (status.hf_repo) {
+                        $('#train-metrics').append('<div style="color:#6366f1;">HF: ' + status.hf_repo + '</div>');
+                    }
                 },
                 error: function () { }
             });
+        }
+
+        function renderTrainGames(games) {
+            var html = '';
+            for (var i = 0; i < games.length; i++) {
+                var g = games[i];
+                var resultColor = '#888';
+                if (g.result === '1-0') resultColor = '#4ade80';
+                else if (g.result === '0-1') resultColor = '#f87171';
+                else if (g.result === '1/2-1/2') resultColor = '#fbbf24';
+                var mode = (g.mode || 'self-play').charAt(0).toUpperCase() + (g.mode || 'self-play').slice(1);
+
+                var moves = '';
+                if (g.pgn) {
+                    var parts = g.pgn.split(' ').filter(function(s) { return s; });
+                    moves = parts.slice(-6).join(' ') + (parts.length > 6 ? '...' : '');
+                }
+
+                html += '<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">';
+                html += '<div style="display:flex; justify-content:space-between; margin-bottom:2px;">';
+                html += '<span style="color:#666;">#' + g.game_num + ' <span style="color:#6366f1;">[' + mode + ']</span></span>';
+                html += '<span style="color:' + resultColor + '; font-weight:700;">' + g.result + '</span>';
+                html += '</div>';
+                if (moves) {
+                    html += '<div style="color:#555; font-family:monospace; font-size:11px;">' + moves + '</div>';
+                }
+                html += '</div>';
+            }
+            $('#train-games').html(html);
+        }
+
+        /* ---------- Live Training Board ---------- */
+
+        var liveBoard = null;
+        var liveBoardFen = 'start';
+        var liveMoves = [];
+
+        function initLiveBoard() {
+            var config = {
+                position: 'start',
+                orientation: 'white',
+                pieceTheme: function (piece) {
+                    return '/static/img/chesspieces/wikipedia/' + piece + '.png';
+                },
+                draggable: false,
+                showNotation: true
+            };
+            liveBoard = Chessboard('live-board', config);
+        }
+
+        function updateLiveBoard(moves) {
+            if (!moves || moves.length === 0) return;
+            liveMoves = moves;
+            var board = new chessjs();
+            for (var i = 0; i < moves.length; i++) {
+                try {
+                    board.move(moves[i]);
+                } catch(e) {
+                    break;
+                }
+            }
+            var fen = board.fen();
+            liveBoard.position(fen);
+            var moveCount = moves.length;
+            var lastMove = moves[moves.length - 1] || '';
+            $('#live-board-status').text('Live: ' + moveCount + ' moves | Last: ' + lastMove);
+        }
+
+        function connectSSE() {
+            try {
+                var source = new EventSource('/api/train/stream');
+                source.addEventListener('game_progress', function(e) {
+                    var data = JSON.parse(e.data);
+                    if (data.moves) updateLiveBoard(data.moves);
+                    $('#live-board-status').text('Status: ' + data.status);
+                });
+                source.addEventListener('train_step', function(e) {
+                    var data = JSON.parse(e.data);
+                    if (data.data) {
+                        $('#train-metrics').html(
+                            '<div>Step: ' + data.data.step + '</div>' +
+                            '<div>Games: ' + (data.data.buffer_size || 0) + '</div>' +
+                            '<div>Loss: ' + (data.data.loss ? data.data.loss.toFixed(4) : 'N/A') + '</div>'
+                        );
+                    }
+                });
+                source.addEventListener('game_start', function(e) {
+                    var data = JSON.parse(e.data);
+                    $('#live-board-status').text('New ' + data.mode + ' game starting...');
+                    liveBoard.position('start');
+                    liveMoves = [];
+                });
+                source.addEventListener('training_stopped', function(e) {
+                    $('#live-board-status').text('Training stopped');
+                });
+                source.onerror = function() {
+                    // SSE reconnects automatically
+                };
+            } catch(e) {
+                // SSE not supported
+            }
+        }
+
+        function renderTrainGames(games) {
+            var html = '';
+            for (var i = 0; i < games.length; i++) {
+                var g = games[i];
+                var resultColor = '#888';
+                if (g.result === '1-0') resultColor = '#4ade80';
+                else if (g.result === '0-1') resultColor = '#f87171';
+                else if (g.result === '1/2-1/2') resultColor = '#fbbf24';
+
+                var moves = '';
+                if (g.pgn) {
+                    var parts = g.pgn.split(' ').filter(function(s) { return s; });
+                    moves = parts.slice(-6).join(' ') + (parts.length > 6 ? '...' : '');
+                }
+
+                html += '<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">';
+                html += '<div style="display:flex; justify-content:space-between; margin-bottom:2px;">';
+                html += '<span style="color:#666;">Game #' + g.game_num + '</span>';
+                html += '<span style="color:' + resultColor + '; font-weight:700;">' + g.result + '</span>';
+                html += '</div>';
+                if (moves) {
+                    html += '<div style="color:#555; font-family:monospace; font-size:11px;">' + moves + '</div>';
+                }
+                html += '</div>';
+            }
+            $('#train-games').html(html);
         }
 
         function trainStart() {
@@ -746,7 +899,7 @@
             });
         }
 
-        /* ---------- Init ---------- */
+       /* ---------- Init ---------- */
 
         $(function () {
             $('#btn-new').on('click', newGame);
@@ -758,8 +911,10 @@
             $('#btn-train-play').on('click', trainPlay);
 
             initBoard();
+            initLiveBoard();
             newGame();
             fetchTrainStatus();
+            connectSSE();
         });
     })();
     </script>

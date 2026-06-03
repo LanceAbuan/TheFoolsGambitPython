@@ -1,178 +1,248 @@
 # The Fool's Gambit
 
-> A custom chess AI platform — train your own model, let people play against it, and watch it learn in real time.
+> A custom chess AI platform — train your own model with self-play + Stockfish, deploy it online, and watch it learn in real time.
 
 [![CI](https://github.com/LanceAbuan/TheFoolsGambitPython/actions/workflows/ci.yml/badge.svg)](https://github.com/LanceAbuan/TheFoolsGambitPython/actions/workflows/ci.yml)
 [![Deployed on Vercel](https://img.shields.io/badge/Deployed-Vercel-black?style=flat&logo=vercel)](https://gambit.lanceabuan.tech)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## High-Level Goal
-
-This repository has two core objectives:
-
-1. **Host a chess game and train a custom chess model** — The model trains by playing matches against strong engines like Stockfish, using Stockfish's evaluations as a reward signal to guide learning.
-2. **Host a website where people can:**
-   - **Play against the model** in real time through a web interface
-   - **Watch the model train** by observing live matches as it plays against Stockfish
-
-The vision is a single repo containing both the training pipeline and the web app, with everything deployable and playable.
+**Live Demo:** [https://gambit.lanceabuan.tech](https://gambit.lanceabuan.tech)
 
 ---
 
-## Links
+## What This Is
 
-| Resource | URL |
-|----------|-----|
-| **Live Site** | [https://gambit.lanceabuan.tech](https://gambit.lanceabuan.tech) |
-| **GitHub Repo** | [LanceAbuan/TheFoolsGambitPython](https://github.com/LanceAbuan/TheFoolsGambitPython) |
-| **Vercel Dashboard** | [vercel.com › thefoolsgambitpython](https://vercel.com/lanceabuans-projects/thefoolsgambitpython) |
-| **CI/CD Pipeline** | [GitHub Actions](https://github.com/LanceAbuan/TheFoolsGambitPython/actions) |
+The Fool's Gambit combines **three systems** into one repository:
 
----
+| Component | Where It Runs | Purpose |
+|-----------|---------------|---------|
+| **Web App** | Vercel (free) | Play against the AI, watch live training |
+| **Training Server** | Local GPU machine | Run self-play games, train neural network |
+| **Model Registry** | Hugging Face Hub | Persist trained checkpoints across sessions |
 
-## Project Overview
-
-The Fool's Gambit is a web-based chess application where players face off against an AI opponent. The frontend renders an interactive board using Chessground, while the backend handles game logic, move validation, and AI decision-making.
-
-Currently the AI uses a **minimax algorithm with alpha-beta pruning** (depth 3), **piece-square tables (PST)** for positional evaluation, and a **mobility bonus** for piece activity. The long-term goal is to replace this with a custom-trained neural network model.
+The AI improves by playing chess games against itself (MCTS + neural net) and against Stockfish (engine teacher). Games feed a replay buffer. The neural network trains on that buffer. Checkpoints push to Hugging Face automatically.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Frontend                          │
-│  index.html  │  Chessground  │  jQuery  │  CSS      │
-│  (vanilla JS game state management, board rendering) │
-└──────────────────────┬──────────────────────────────┘
-                       │  POST /api/*  (FEN + move data)
-                       ▼
-┌─────────────────────────────────────────────────────┐
-│                   API Layer                          │
-│  api/index.py  (Python serverless on Vercel)        │
-│                                                     │
-│  Routes:                                            │
-│    POST /api/new-game    → start fresh game         │
-│    POST /api/make-move   → apply player move        │
-│    POST /api/ai-move     → generate AI move         │
-│    POST /api/undo        → undo last move           │
-└──────────────────────┬──────────────────────────────┘
-                       │  imports
-                       ▼
-┌─────────────────────────────────────────────────────┐
-│                 Game Engine                           │
-│  game.py  (stateless: FEN + UCI → new state)        │
-│  ai.py    (minimax, alpha-beta, PST evaluation)     │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         FRONTEND                                │
+│  index.html  │  chessboard.js  │  chess.js  │  jQuery          │
+│  Play board + Live training board (SSE) + Training status panel │
+└───────────┬───────────────────────────────┬─────────────────────┘
+            │ POST /api/*                   │ GET /api/train/*
+            │ (game logic + AI moves)       │ (training controls)
+            ▼                               ▼
+┌──────────────────────┐      ┌──────────────────────────────────┐
+│   API (Vercel)       │      │  TRAINING SERVER (Local GPU)     │
+│  api/index.js        │      │  training/server.py (Flask)      │
+│                      │      │                                  │
+│  • New game          │      │  • /api/train/status             │
+│  • Make move         │      │  • /api/train/start              │
+│  • AI move (minimax) │      │  • /api/train/stop               │
+│  • Undo              │      │  • /api/train/play               │
+│  • Proxy /api/train* │      │  • /api/train/play-stockfish     │
+│    → Cloudflare Tunnel│      │  • /api/train/step               │
+│                      │      │  • /api/train/stream (SSE)       │
+└──────────┬───────────┘      └──────────┬───────────────────────┘
+           │                             │
+           │ imports                     │ uses
+           ▼                             ▼
+┌──────────────────────┐      ┌──────────────────────────────────┐
+│  Game Logic          │      │  TRAINING PIPELINE               │
+│  (chess.js in Node)  │      │                                  │
+└──────────────────────┘      │  trainer.py  → self-play loop    │
+                              │  selfplay.py → MCTS engine       │
+                              │  model.py    → neural net        │
+                              │  tensorize.py → board → tensor   │
+                              │  stockfish_engine.py → SF teacher│
+                              │                                  │
+                              │  Hugging Face Hub                │
+                              │  (auto-push every 50 steps)      │
+                              └──────────────────────────────────┘
 ```
 
-### Stateless Design
+### Key Design Decisions
 
-The frontend maintains all game state (FEN, legal moves, move history). Every API call is independent — no server-side sessions. This enables horizontal scaling and zero cold-start penalty on state restoration.
-
-| Field | Description |
-|-------|-------------|
-| `fen` | FEN string of the current position |
-| `legal` | List of legal moves in UCI format |
-| `turn` | `"white"` or `"black"` |
-| `pgn` | SAN notation of the last move played |
-| `status` | `"active"`, `"checkmate"`, `"stalemate"`, `"draw"` |
-| `result` | Human-readable game result (null if active) |
-| `in_check` | Whether the side to move is in check |
-
-### Data Flow
-
-1. Player clicks on the board → frontend sends `POST /api/make-move` with UCI move + current FEN + legal moves
-2. API validates and applies the move → returns new game state
-3. Frontend updates board and triggers `POST /api/ai-move` with FEN + legal moves
-4. API runs minimax search → returns new state with AI's move applied
-5. Frontend renders AI's move and repeats
+- **Stateless frontend** — sends FEN with every request, no server sessions
+- **Vercel handles game API** — serverless, scales to zero, free tier
+- **Local GPU trains** — RTX 3090 runs self-play + backprop
+- **Cloudflare Tunnel** — exposes local training server to Vercel without port forwarding
+- **HF Hub persistence** — checkpoints survive local machine restarts
+- **SSE streaming** — live training board updates without WebSockets
 
 ---
 
-## Tech Stack
-
-### Frontend
-- **HTML/CSS/JS** — vanilla, no framework
-- **[Chessground](https://github.com/lichess-org/chessground)** — interactive board widget (from Lichess)
-- **jQuery** — AJAX calls and DOM manipulation
-
-### Backend
-- **[python-chess](https://github.com/niklasf/python-chess)** — game logic, move validation, FEN/PGN
-
-### AI Engine
-- **Minimax with alpha-beta pruning** — depth 3, capture-first move ordering
-- **Piece-square tables (PST)** — positional evaluation per piece type
-- **Mobility bonus** — rewards positions with more legal moves
-
-### Deployment
-- **[Vercel](https://vercel.com)** — Python serverless function for `/api/*`, automatic deploy on push to `main`
-- **GitHub Actions** — CI pipeline runs lint + smoke tests on every PR and push
-
----
-
-## Setup & Local Development
+## Quick Start (3 Minutes)
 
 ### Prerequisites
-- Python 3.10+
-- Node.js 18+ (for Vercel CLI)
 
-### Install Dependencies
+- **Python 3.10+**
+- **Node.js 18+**
+- **Git**
+- **GPU (recommended)** — any NVIDIA GPU with CUDA support; RTX 3090 tested
+
+### 1. Clone and Install
+
+```bash
+git clone https://github.com/LanceAbuan/TheFoolsGambitPython.git
+cd TheFoolsGambitPython
+```
+
+### 2. Install Python Dependencies
 
 ```bash
 pip install -r requirements.txt
+pip install stockfish  # Stockfish Python wrapper
 ```
 
-### Running Locally with Flask
+### 3. Get Stockfish Engine
 
 ```bash
-cd TheFoolsGambitPython/backend
-pip install flask gunicorn
-python -m flask --app app run
+# Option A: Download pre-built binary
+wget https://stockfishchess.org/files/stockfish_16_linux_x64.bz2
+bzip2 -d stockfish_16_linux_x64.bz2
+chmod +x stockfish_16_linux_x64
+mv stockfish_16_linux_x64 /home/$USER/.local/bin/stockfish
+
+# Option B: Install from package manager
+sudo apt install stockfish
 ```
 
-The app will be available at `http://localhost:5000`.
+### 4. Configure Environment
 
-### Running with Vercel CLI
+Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+HF_TOKEN=hf_your_token_here     # Hugging Face write token
+HF_REPO=your_username/model     # HF repo name
+MODEL_DIR=~/.chess-models       # Local checkpoint directory
+TRAINING_URL=http://localhost:8000  # Local training server URL
+STOCKFISH_PATH=~/.local/bin/stockfish  # Path to Stockfish binary
+```
+
+#### Getting a Hugging Face Token
+
+1. Go to https://huggingface.co/settings/tokens
+2. Create a new token with **Write** scope
+3. Optionally create a repo at https://huggingface.co/new for your model
+
+### 5. Start the Training Server
+
+```bash
+source .env
+python -m training.server
+```
+
+The training server runs on `http://localhost:8000`.
+
+### 6. Start the Frontend (Local Dev)
 
 ```bash
 npx vercel dev
 ```
 
-This starts a local preview at `http://localhost:3000` with the full app (frontend + API).
+Or serve the static files directly:
 
-### Running the Python Engine Standalone
+```bash
+npx serve -p 3000
+```
 
-```python
-import sys
-sys.path.insert(0, "TheFoolsGambitPython/backend")
-from game import new_game, make_move, ai_move
+Open **http://localhost:3000** in your browser.
 
-# Start a new game
-state = new_game()
-print(state["fen"])
+---
 
-# Play a move
-state = make_move(state["fen"], "e2e4")
-print(state["legal"])
+## Full Setup Guide
 
-# Get an AI move
-state = ai_move(state["fen"], ai_depth=3)
-print(state["pgn"])
+### Deploying the Web App on Vercel
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Login and deploy
+vercel login
+vercel deploy --prod
+```
+
+Set these environment variables in your Vercel project settings:
+- `TRAINING_URL` — the public URL of your training server (see Cloudflare Tunnel below)
+
+### Setting Up Cloudflare Tunnel
+
+This exposes your local training server so Vercel can reach it:
+
+```bash
+# Install cloudflared
+curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+chmod +x /usr/local/bin/cloudflared
+
+# Start tunnel (uses .env vars)
+./start_tunnel.sh
+```
+
+The tunnel prints a URL like `https://random-name.trycloudflare.com`. Set this as `TRAINING_URL` in your Vercel project.
+
+### Starting Training
+
+Via the web UI: click "Start Training" in the training panel.
+
+Via API:
+```bash
+curl -X POST http://localhost:8000/api/train/start \
+  -H "Content-Type: application/json" \
+  -d '{"games_per_cycle": 10, "steps_per_cycle": 100, "mcts_simulations": 800, "use_stockfish": true}'
+```
+
+Via curl to check status:
+```bash
+curl http://localhost:8000/api/train/status
 ```
 
 ---
 
-## API Endpoints
+## Project Structure
 
-All routes are handled by `api/index.py`. The frontend sends FEN + move data with every request.
+```
+TheFoolsGambitPython/
+├── api/
+│   └── index.js          # Node.js serverless handler (Vercel)
+├── training/
+│   ├── server.py         # Flask API for training endpoints + SSE
+│   ├── trainer.py        # Training loop, HF push/download, replay buffer
+│   ├── selfplay.py       # MCTS engine, self-play game generation
+│   ├── model.py          # AlphaZero-style residual neural network
+│   ├── tensorize.py      # Board → tensor conversion
+│   └── stockfish_engine.py # Stockfish wrapper for evaluation + play
+├── static/
+│   ├── chessboard.js     # Board rendering library
+│   ├── chessboard.css    # Board styles
+│   ├── chess.js          # Chess logic library (client-side)
+│   ├── jquery.min.js     # jQuery
+│   └── img/chesspieces/  # Wikipedia piece images
+├── index.html            # Frontend (game board + training panel)
+├── start_tunnel.sh       # Launch training server + Cloudflare Tunnel
+├── vercel.json           # Vercel routing config
+├── requirements.txt      # Python dependencies
+├── .env.example          # Template for environment variables
+└── .github/
+    └── workflows/ci.yml  # CI pipeline (tests + lint)
+```
 
-### `POST /api/new-game`
+---
 
-**Request:** `{ "aiDepth": 3 }` (optional)
-**Response:**
+## API Reference
+
+### Game Endpoints (Vercel)
+
+#### `POST /api/new-game`
+Start a new game.
 ```json
+// Request
+{ "aiDepth": 3 }
+// Response
 {
   "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
   "legal": ["a2a3", "a2a4", "b1a3", ...],
@@ -184,10 +254,10 @@ All routes are handled by `api/index.py`. The frontend sends FEN + move data wit
 }
 ```
 
-### `POST /api/make-move`
-
-**Request:**
+#### `POST /api/make-move`
+Apply a player move.
 ```json
+// Request
 {
   "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
   "uci": "e2e4",
@@ -195,10 +265,10 @@ All routes are handled by `api/index.py`. The frontend sends FEN + move data wit
 }
 ```
 
-### `POST /api/ai-move`
-
-**Request:**
+#### `POST /api/ai-move`
+Get AI's best move.
 ```json
+// Request
 {
   "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
   "legal": ["e7e5", "e7e6", ...],
@@ -206,71 +276,136 @@ All routes are handled by `api/index.py`. The frontend sends FEN + move data wit
 }
 ```
 
-### `POST /api/undo`
+#### `POST /api/undo`
+Undo the last move.
 
-**Request:**
+### Training Endpoints (Local Server)
+
+#### `GET /api/train/status`
+Get training status, metrics, and recent games.
+
+#### `POST /api/train/start`
+Start the training loop.
 ```json
 {
-  "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+  "games_per_cycle": 10,
+  "steps_per_cycle": 100,
+  "mcts_simulations": 800,
+  "use_stockfish": true
 }
 ```
 
-### Response State Object
+#### `POST /api/train/stop`
+Stop training and push latest checkpoint to HF.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `fen` | string | FEN string of the current position |
-| `legal` | string[] | Legal moves in UCI format |
-| `turn` | string | `"white"` or `"black"` |
-| `pgn` | string | SAN notation of the last move |
-| `status` | string | `"active"`, `"checkmate"`, `"stalemate"`, `"draw"` |
-| `result` | string \| null | Human-readable game result |
-| `in_check` | boolean | Whether the side to move is in check |
+#### `POST /api/train/play`
+Play a single self-play game.
+
+#### `POST /api/train/play-stockfish`
+Play a Stockfish vs neural network game.
+
+#### `GET /api/train/stream`
+Server-Sent Events endpoint for real-time training updates.
+Events: `game_start`, `game_progress`, `train_step`, `training_stopped`
+
+#### `POST /api/train/step`
+Run a single training step.
+
+#### `POST /api/train/evaluate`
+Get neural network + Stockfish evaluation for a position.
+
+#### `GET /api/train/games`
+List recent training games.
+
+#### `POST /api/train/push`
+Manually push checkpoint to Hugging Face.
+
+#### `POST /api/train/reset`
+Clear all checkpoints and replay buffer.
 
 ---
 
-## Deployment
+## Training Pipeline Details
 
-### Automatic Deploy (Push to `main`)
+### How It Works
 
-Every push to `main` triggers a Vercel production deploy. The `vercel.json` rewrites route all `/api/*` requests to `api/index.py`.
+1. **Self-Play**: The neural network plays against itself using MCTS (Monte Carlo Tree Search). Each game produces board states, policy targets, and value targets.
+2. **Stockfish Games**: Stockfish plays against the neural network, providing strong expert moves.
+3. **Replay Buffer**: All game data is stored in a buffer.
+4. **Training Step**: Mini-batches are sampled from the buffer. The network learns to predict both the best move (policy) and the game outcome (value).
+5. **Checkpoint**: After each cycle, the model saves locally and pushes to Hugging Face.
 
-```json
-{
-  "version": 2,
-  "github": { "enabled": true },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" }
-  ]
-}
-```
+### Neural Network Architecture
 
-### Manual Deploy
+AlphaZero-style ResNet with:
+- 12 input channels (piece types × color)
+- 4 residual blocks with 64 filters
+- Shared trunk for policy + value heads
+- ~2M parameters
 
+### Hyperparameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `num_mcts_simulations` | 800 | MCTS simulations per move |
+| `c_puct` | 1.0 | Exploration constant |
+| `batch_size` | 64 | Training batch size |
+| `lr` | 0.001 | Learning rate |
+| `buffer_size` | 50,000 | Max replay buffer size |
+| `push_interval` | 50 | Steps between HF pushes |
+
+---
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `HF_TOKEN` | Yes | — | Hugging Face write token |
+| `HF_REPO` | Yes | — | HF repo (e.g., `user/model`) |
+| `MODEL_DIR` | No | `~/.chess-models` | Local checkpoint directory |
+| `TRAINING_URL` | No | `http://localhost:8000` | Training server URL |
+| `STOCKFISH_PATH` | No | `~/.local/bin/stockfish` | Stockfish binary path |
+
+---
+
+## Running Without GPU
+
+The training server works without GPU but will be slow:
 ```bash
-# Preview
-vercel deploy
-
-# Production
-vercel deploy --prod
+# Force CPU mode
+export CUDA_VISIBLE_DEVICES=""
+python -m training.server
 ```
 
-### CI/CD Pipeline
-
-GitHub Actions runs on every PR and push to `main`:
-1. **Lint** — flake8 on all Python files
-2. **Smoke tests** — validate game engine (new game, moves, AI, illegal moves)
-3. **Flask tests** — verify API endpoints respond correctly
-
-PRs cannot merge if the CI pipeline fails. The `main` branch is protected — no direct pushes allowed.
+The web app and game API work perfectly without a GPU — they don't do any training.
 
 ---
 
-## Future Roadmap
+## Running Without Hugging Face
 
-- [x] **Convert API to Python** — replace `api/index.js` with Python serverless (#2, #9)
-- [ ] **Custom model training pipeline** — train a neural network by playing against Stockfish (#3)
-- [ ] **Live training matches** — let visitors watch the model play against Stockfish in real time (#4)
-- [ ] **Model serving** — replace minimax AI with the trained model for online play (#5)
-- [ ] **Player matchmaking** — support human vs human games (#6)
-- [ ] **Game replay** — full PGN export and move-by-move replay (#7)
+Training works without HF — checkpoints stay local only:
+```bash
+# Don't set HF_TOKEN or HF_REPO
+python -m training.server
+```
+
+Auto-push is skipped. Use `/api/train/push` manually if you later add credentials.
+
+---
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Stockfish not found | Set `STOCKFISH_PATH` or install: `sudo apt install stockfish` |
+| CUDA out of memory | Reduce `batch_size` in `trainer.py` |
+| SSE not working | Ensure `TRAINING_URL` is correct and tunnel is running |
+| HF push fails | Check token has Write scope at huggingface.co/settings/tokens |
+| Vercel can't reach training | Verify Cloudflare Tunnel is running; check `TRAINING_URL` |
+| Frontend shows "Training unavailable" | Training server not running or `TRAINING_URL` misconfigured |
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
