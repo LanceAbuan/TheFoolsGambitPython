@@ -77,19 +77,18 @@ def stream_status_update():
 @training_bp.route('/api/train/stream')
 def sse_stream():
     """SSE endpoint for real-time training updates."""
+    client_socket = request.environ.get('werkzeug.socket')
+    sse_clients.add(client_socket)
     def generate():
         import time as _time
-        while True:
-            try:
-                if request.environ.get('werkzeug.socket'):
-                    pass
-                else:
-                    break
+        try:
+            while True:
                 yield ''
                 _time.sleep(0.5)
-            except GeneratorExit:
-                sse_clients.discard(request.environ.get('werkzeug.socket'))
-                break
+        except GeneratorExit:
+            pass
+        finally:
+            sse_clients.discard(client_socket)
     return Response(generate(), mimetype='text/event-stream')
 
 
@@ -126,7 +125,7 @@ def train_start():
 
     def run_training():
         try:
-            print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}')
+            print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}', flush=True)
             while t.running:
                 for i in range(games_per_cycle):
                     if not t.running:
@@ -134,11 +133,11 @@ def train_start():
                     global current_game_moves
                     current_game_moves = []
                     current_game_status = "self-play"
-                    print(f'[TRAIN] Starting game {i+1}/{games_per_cycle}')
+                    print(f'[TRAIN] Starting game {i+1}/{games_per_cycle}', flush=True)
                     send_sse({'type': 'game_start', 'mode': 'self-play'})
 
                     game_data = t.play_game()
-                    print(f'[TRAIN] Game {i+1} done, moves: {len(game_data.get("moves", []))}')
+                    print(f'[TRAIN] Game {i+1} done, moves: {len(game_data.get("moves", []))}', flush=True)
                 current_game_moves = game_data.get('moves', [])
 
                 if game_data.get('pgn'):
@@ -180,11 +179,11 @@ def train_start():
                 if result:
                     send_sse({'type': 'train_step', 'data': result})
 
-              t.save_checkpoint()
-                    current_game_status = "checkpoint"
-                    time.sleep(0.1)
+            t.save_checkpoint()
+            current_game_status = "checkpoint"
+            time.sleep(0.1)
         except Exception as e:
-            print(f'[TRAIN] ERROR: {e}')
+            print(f'[TRAIN] ERROR: {e}', flush=True)
             import traceback
             traceback.print_exc()
             current_game_status = "error"

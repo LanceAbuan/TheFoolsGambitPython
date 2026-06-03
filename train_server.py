@@ -45,4 +45,4 @@ def auto_start_training():
 if __name__ == '__main__':
     t = threading.Thread(target=auto_start_training, daemon=True)
     t.start()
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=False, host='0.0.0.0', port=5001)

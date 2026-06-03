@@ -122,7 +122,7 @@ class StockfishPlayer:
 
         if board.is_checkmate():
             result = '1-0' if board.turn == chess.BLACK else '0-1'
-        elif board.is_draw():
+        elif board.is_insufficient_material() or board.is_fivefold_repetition() or board.can_claim_draw():
             result = '1/2-1/2'
         else:
             result = '1/2-1/2'
