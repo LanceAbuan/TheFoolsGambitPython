@@ -125,17 +125,20 @@ def train_start():
     current_game_status = "starting"
 
     def run_training():
-        while t.running:
-            # Self-play games
-            for i in range(games_per_cycle):
-                if not t.running:
-                    break
-                global current_game_moves
-                current_game_moves = []
-                current_game_status = "self-play"
-                send_sse({'type': 'game_start', 'mode': 'self-play'})
+        try:
+            print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}')
+            while t.running:
+                for i in range(games_per_cycle):
+                    if not t.running:
+                        break
+                    global current_game_moves
+                    current_game_moves = []
+                    current_game_status = "self-play"
+                    print(f'[TRAIN] Starting game {i+1}/{games_per_cycle}')
+                    send_sse({'type': 'game_start', 'mode': 'self-play'})
 
-                game_data = t.play_game()
+                    game_data = t.play_game()
+                    print(f'[TRAIN] Game {i+1} done, moves: {len(game_data.get("moves", []))}')
                 current_game_moves = game_data.get('moves', [])
 
                 if game_data.get('pgn'):
@@ -177,9 +180,14 @@ def train_start():
                 if result:
                     send_sse({'type': 'train_step', 'data': result})
 
-            t.save_checkpoint()
-            current_game_status = "checkpoint"
-            time.sleep(0.1)
+              t.save_checkpoint()
+                    current_game_status = "checkpoint"
+                    time.sleep(0.1)
+        except Exception as e:
+            print(f'[TRAIN] ERROR: {e}')
+            import traceback
+            traceback.print_exc()
+            current_game_status = "error"
 
     training_thread = threading.Thread(target=run_training, daemon=True)
     training_thread.start()

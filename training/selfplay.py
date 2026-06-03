@@ -45,8 +45,10 @@ class MCTS:
         self.model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
+            device = next(self.model.parameters()).device
+            x = x.to(device)
             policy_logits, _ = self.model(x)
-            policy_logits = policy_logits.squeeze(0).numpy()
+            policy_logits = policy_logits.squeeze(0).cpu().numpy()
 
         mask = legal_mask
         policy_logits = policy_logits + (1 - mask) * -1e10
@@ -139,8 +141,10 @@ class MCTS:
         self.model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
+            device = next(self.model.parameters()).device
+            x = x.to(device)
             policy_logits, _ = self.model(x)
-            policy_logits = policy_logits.squeeze(0).numpy()
+            policy_logits = policy_logits.squeeze(0).cpu().numpy()
 
         mask = legal_mask
         policy_logits = policy_logits + (1 - mask) * -1e10
@@ -170,8 +174,10 @@ class MCTS:
         self.model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
+            device = next(self.model.parameters()).device
+            x = x.to(device)
             _, value = self.model(x)
-            return float(value.squeeze())
+            return float(value.squeeze().cpu())
 
 
 class SelfPlayGame:

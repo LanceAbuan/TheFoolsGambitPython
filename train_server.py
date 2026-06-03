@@ -33,8 +33,8 @@ def auto_start_training():
     try:
         _req.post('http://localhost:5001/api/train/start', json={
             'games_per_cycle': 10,
-            'steps_per_cycle': 100,
-            'mcts_simulations': 800,
+            'steps_per_cycle': 50,
+            'mcts_simulations': 100,
             'use_stockfish': False
         }, timeout=5)
         print('[AUTO] Training started automatically.')
