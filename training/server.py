@@ -128,7 +128,12 @@ def sse_stream():
             pass
         finally:
             sse_clients.discard(client_socket)
-    return Response(generate(), mimetype='text/event-stream')
+    resp = Response(generate(), mimetype='text/event-stream')
+    resp.headers['Cache-Control'] = 'no-cache'
+    resp.headers['X-Accel-Buffering'] = 'no'
+    resp.headers['Connection'] = 'keep-alive'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
 
 
 @training_bp.route('/api/train/status')
