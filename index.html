@@ -275,15 +275,20 @@
         }
 
         function updateLiveBoard(moves) {
-            if (!moves || moves.length === 0) return;
+            if (!moves || moves.length === 0) {
+                liveBoard.position('start');
+                $('#live-status').text('Waiting for game...');
+                return;
+            }
             liveMoves = moves;
             var c = new Chess();
+            var played = 0;
             for (var i = 0; i < moves.length; i++) {
-                try { c.move(moves[i]); } catch(e) { break; }
+                try { c.move(moves[i]); played++; } catch(e) { break; }
             }
             liveBoard.position(c.fen());
             var last = moves[moves.length - 1] || '';
-            $('#live-status').text(liveMoves.length + ' moves | Last: ' + last);
+            $('#live-status').text(played + '/' + moves.length + ' moves | Last: ' + last);
         }
 
         /* ---------- Status ---------- */
