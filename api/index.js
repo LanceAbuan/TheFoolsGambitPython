@@ -1,0 +1,265 @@
+const { Chess } = require('chess.js');
+
+const PST = {
+  p: [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [50, 50, 50, 50, 50, 50, 50, 50],
+    [10, 10, 20, 30, 30, 20, 10, 10],
+    [5,  5, 10, 25, 25, 10,  5,  5],
+    [0,  0,  0, 20, 20,  0,  0,  0],
+    [5, -5,-10,  0,  0,-10, -5,  5],
+    [5, 10, 10,-20,-20, 10, 10,  5],
+    [0,  0,  0,  0,  0,  0,  0,  0]
+  ],
+  n: [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,  0,  0,  0,  0,-20,-40],
+    [-30,  0, 10, 15, 15, 10,  0,-30],
+    [-30,  5, 15, 20, 20, 15,  5,-30],
+    [-30,  0, 15, 20, 20, 15,  0,-30],
+    [-30,  5, 10, 15, 15, 10,  5,-30],
+    [-40,-20,  0,  5,  5,  0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50]
+  ],
+  b: [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5, 10, 10,  5,  0,-10],
+    [-10,  5,  5, 10, 10,  5,  5,-10],
+    [-10,  0, 10, 10, 10, 10,  0,-10],
+    [-10, 10, 10, 10, 10, 10, 10,-10],
+    [-10,  5,  0,  0,  0,  0,  5,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20]
+  ],
+  r: [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [5, 10, 10, 10, 10, 10, 10,  5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [0,  0,  0,  5,  5,  0,  0,  0]
+  ],
+  q: [
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5,  5,  5,  5,  0,-10],
+    [-5,  0,  5,  5,  5,  5,  0, -5],
+    [0,  0,  5,  5,  5,  5,  0, -5],
+    [-10,  5,  5,  5,  5,  5,  0,-10],
+    [-10,  0,  5,  0,  0,  0,  0,-10],
+    [-20,-10,-10, -5, -5,-10,-10,-20]
+  ],
+  k: [
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [20, 20,  0,  0,  0,  0, 20, 20],
+    [20, 30, 10,  0,  0, 10, 30, 20]
+  ]
+};
+
+const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+
+function evaluate(fen) {
+  const game = new Chess();
+  game.load(fen);
+  const board = game.board();
+  let score = 0;
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (!piece) continue;
+      const row = piece.color === 'w' ? r : 7 - r;
+      const val = PIECE_VALUES[piece.type] + PST[piece.type][row][c];
+      score += piece.color === 'w' ? val : -val;
+    }
+  }
+
+  const legalMoves = game.moves();
+  const mobility = legalMoves.length * 2;
+  score += game.turn() === 'w' ? mobility : -mobility;
+
+  return score;
+}
+
+function minimax(game, depth, alpha, beta, maximizing) {
+  if (depth === 0 || game.isGameOver()) {
+    return evaluate(game.fen());
+  }
+
+  const moves = game.moves({ verbose: true }).sort((a, b) => {
+    const aCapture = a.flags.includes('c');
+    const bCapture = b.flags.includes('c');
+    if (aCapture && !bCapture) return -1;
+    if (!aCapture && bCapture) return 1;
+    return 0;
+  });
+
+  if (maximizing) {
+    let maxEval = -Infinity;
+    for (const move of moves) {
+      game.move(move.san);
+      const eval_ = minimax(game, depth - 1, alpha, beta, false);
+      game.undo();
+      maxEval = Math.max(maxEval, eval_);
+      alpha = Math.max(alpha, eval_);
+      if (beta <= alpha) break;
+    }
+    return maxEval;
+  } else {
+    let minEval = Infinity;
+    for (const move of moves) {
+      game.move(move.san);
+      const eval_ = minimax(game, depth - 1, alpha, beta, true);
+      game.undo();
+      minEval = Math.min(minEval, eval_);
+      beta = Math.min(beta, eval_);
+      if (beta <= alpha) break;
+    }
+    return minEval;
+  }
+}
+
+function getAIMove(fen, aiDepth = 3) {
+  const game = new Chess();
+  game.load(fen);
+  const moves = game.moves({ verbose: true }).sort((a, b) => {
+    const aCapture = a.flags.includes('c');
+    const bCapture = b.flags.includes('c');
+    if (aCapture && !bCapture) return -1;
+    if (!aCapture && bCapture) return 1;
+    return 0;
+  });
+
+  if (moves.length === 0) return null;
+
+  const isMaximizing = game.turn() === 'w';
+  let bestMove = moves[0].lan;
+  let bestEval = isMaximizing ? -Infinity : Infinity;
+
+  for (const move of moves) {
+    game.move(move.san);
+    const eval_ = minimax(game, aiDepth - 1, -Infinity, Infinity, !isMaximizing);
+    game.undo();
+
+    if (isMaximizing && eval_ > bestEval) {
+      bestEval = eval_;
+      bestMove = move.lan;
+    } else if (!isMaximizing && eval_ < bestEval) {
+      bestEval = eval_;
+      bestMove = move.lan;
+    }
+  }
+
+  return bestMove;
+}
+
+function getStatus(game) {
+  if (game.isCheckmate()) return 'checkmate';
+  if (game.isDraw() || game.isStalemate() || game.isThreefoldRepetition()) return 'draw';
+  return 'active';
+}
+
+function getResult(game) {
+  if (game.isCheckmate()) return `${game.turn() === 'w' ? 'Black' : 'White'} wins by checkmate`;
+  if (game.isStalemate()) return 'Draw by stalemate';
+  if (game.isDraw()) return 'Draw';
+  return null;
+}
+
+function newState(game) {
+  const history = game.history();
+  return {
+    fen: game.fen(),
+    legal: game.moves({ verbose: true }).map(m => m.lan),
+    turn: game.turn() === 'w' ? 'white' : 'black',
+    pgn: history[history.length - 1] || '',
+    status: getStatus(game),
+    result: getResult(game),
+    in_check: game.inCheck()
+  };
+}
+
+module.exports = async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(204).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  let body = {};
+  try {
+    body = JSON.parse(req.body) || {};
+  } catch {
+    body = {};
+  }
+
+  const path = req.url;
+
+  try {
+    if (path.includes('new-game')) {
+      const game = new Chess();
+      res.status(200).json(newState(game));
+    } else if (path.includes('make-move')) {
+      const { uci, fen } = body;
+      if (!uci || !fen) {
+        return res.status(400).json({ error: 'Missing uci or fen' });
+      }
+      const game = new Chess();
+      game.load(fen);
+      const from = uci.slice(0, 2);
+      const to = uci.slice(2, 4);
+      const promotion = uci.length > 4 ? uci[4] : undefined;
+      let move;
+      try {
+        move = game.move({ from, to, promotion });
+      } catch {
+        move = null;
+      }
+      if (!move) {
+        return res.status(200).json({ error: 'Illegal move', fen, legal: game.moves({ verbose: true }).map(m => m.lan), turn: game.turn() === 'w' ? 'white' : 'black', status: 'active' });
+      }
+      res.status(200).json(newState(game));
+    } else if (path.includes('ai-move')) {
+      const { fen, aiDepth = 3 } = body;
+      if (!fen) {
+        return res.status(400).json({ error: 'Missing fen' });
+      }
+      const game = new Chess();
+      game.load(fen);
+      const lan = getAIMove(fen, aiDepth);
+      if (lan) {
+        game.move({ from: lan.slice(0, 2), to: lan.slice(2, 4), promotion: lan.length > 4 ? lan[4] : undefined });
+      }
+      res.status(200).json(newState(game));
+    } else if (path.includes('undo')) {
+      const { fen } = body;
+      if (!fen) {
+        return res.status(400).json({ error: 'Missing fen' });
+      }
+      const game = new Chess();
+      game.load(fen);
+      game.undo();
+      game.undo();
+      res.status(200).json(newState(game));
+    } else {
+      const game = new Chess();
+      res.status(200).json(newState(game));
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
