@@ -1,1 +1,1 @@
-web: python TheFoolsGambitPython/backend/app.py
+web: gunicorn train_server:app --bind 0.0.0.0:$PORT --timeout 120
