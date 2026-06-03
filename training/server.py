@@ -54,6 +54,44 @@ def send_sse(data, event=None):
         sse_clients.discard(client)
 
 
+# Thread-safe queue for MCTS progress events
+import queue
+mcts_progress_queue = queue.Queue(maxsize=100)
+
+def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
+    """Send MCTS search progress to dashboard."""
+    try:
+        mcts_progress_queue.put_nowait({
+            'type': 'mcts_progress',
+            'move': move_num,
+            'sims': sim_count,
+            'total': total_sims,
+            'top_moves': top_moves[:5],
+            'timestamp': time.time()
+        })
+    except queue.Full:
+        pass  # Drop if dashboard is slow
+
+
+# Thread-safe queue for MCTS progress events
+import queue
+mcts_progress_queue = queue.Queue(maxsize=100)
+
+def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
+    """Send MCTS search progress to dashboard."""
+    try:
+        mcts_progress_queue.put_nowait({
+            'type': 'mcts_progress',
+            'move': move_num,
+            'sims': sim_count,
+            'total': total_sims,
+            'top_moves': top_moves[:5],
+            'timestamp': time.time()
+        })
+    except queue.Full:
+        pass  # Drop if dashboard is slow
+
+
 def stream_game_progress():
     global current_game_moves, current_game_status
     send_sse({
