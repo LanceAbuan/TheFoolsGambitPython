@@ -1,8 +1,19 @@
 """Flask application — serves frontend and stateless chess API."""
+import sys
+import os
 from flask import Flask, render_template, jsonify, request
 from game import new_game, make_move, ai_move, undo  # noqa: E402
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
+
+# Register training blueprint if torch is available
+try:
+    import torch  # noqa: F401
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from training.server import training_bp  # noqa: E402
+    app.register_blueprint(training_bp)
+except ImportError:
+    pass
 
 
 @app.route("/")
