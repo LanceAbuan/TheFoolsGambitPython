@@ -22,7 +22,7 @@ SF_HASH = 256
 class StockfishPlayer:
     def __init__(self, depth=SF_DEPTH, threads=SF_THREADS, hash_mb=SF_HASH):
         self.engine = SF(
-            stockfish_path=STOCKFISH_PATH,
+            path=STOCKFISH_PATH,
             depth=depth,
             parameters={
                 "Threads": threads,
@@ -57,6 +57,21 @@ class StockfishPlayer:
         elif info['type'] == 'mate':
             return info['value'] * 10000
         return 0
+
+    def evaluate_move(self, board, move):
+        """Evaluate the position AFTER making a move. Returns centipawn score."""
+        board.push(move)
+        eval_ = self.get_evaluation(board)
+        board.pop()
+        return eval_
+
+    def evaluate_legal_moves(self, board):
+        """Evaluate every legal move. Returns list of (move, san, eval_cp)."""
+        results = []
+        for m in board.legal_moves:
+            cp = self.evaluate_move(board, m)
+            results.append((m, board.san(m), cp))
+        return results
 
     def get_top_moves(self, board, num_moves=5):
         """Get Stockfish's top N moves with evaluations."""
