@@ -18,19 +18,21 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install -r TheFoolsGambitPython/requirements.txt
+          pip install flask gunicorn flake8
 
       - name: Lint with flake8
         run: |
-          pip install flake8
-          flake8 TheFoolsGambitPython/backend/ ai.py --max-line-length=120 --ignore=E501,W503 || true
+          flake8 TheFoolsGambitPython/backend/ api/ --max-line-length=120 --ignore=E501,W503
 
       - name: Smoke test engine
         run: |
           python3 -c "
           import sys
           sys.path.insert(0, 'TheFoolsGambitPython/backend')
-          from game import new_game, make_move, ai_move
+          from game import new_game, make_move, ai_move, undo
 
           # New game
           g = new_game()
@@ -39,18 +41,104 @@ jobs:
           assert g['fen'].startswith('rnbqkbnr')
 
           # Play e4
-          r = make_move(g['fen'], 'e2e4')
+          r = make_move(g['fen'], 'e2e4', legal=g['legal'])
           assert r['status'] == 'active'
           assert r['turn'] == 'black'
 
           # AI responds
-          r2 = ai_move(r['fen'], ai_depth=3)
+          r2 = ai_move(r['fen'], legal=r['legal'], ai_depth=3)
           assert r2['status'] == 'active'
           assert r2['turn'] == 'white'
 
+          # Undo
+          r3 = undo(r2['fen'])
+          assert r3['status'] == 'active'
+
           # Illegal move should fail
-          r3 = make_move(g['fen'], 'e2e8')
-          assert 'error' in r3
+          r4 = make_move(g['fen'], 'e2e8', legal=g['legal'])
+          assert 'error' in r4
 
           print('All smoke tests passed')
           "
+
+      - name: Flask API tests
+        run: |
+          python3 -c "
+          import sys, json
+          sys.path.insert(0, 'TheFoolsGambitPython/backend')
+          from app import app
+
+          client = app.test_client()
+
+          # Test new game
+          res = client.post('/api/new-game', json={})
+          assert res.status_code == 200
+          data = json.loads(res.data)
+          assert data['status'] == 'active'
+          assert data['turn'] == 'white'
+
+          # Test make move
+          res = client.post('/api/make-move', json={
+              'fen': data['fen'],
+              'uci': 'e2e4',
+              'legal': data['legal']
+          })
+          assert res.status_code == 200
+          move_data = json.loads(res.data)
+          assert move_data['turn'] == 'black'
+
+          # Test AI move
+          res = client.post('/api/ai-move', json={
+              'fen': move_data['fen'],
+              'legal': move_data['legal'],
+              'aiDepth': 3
+          })
+          assert res.status_code == 200
+          ai_data = json.loads(res.data)
+          assert ai_data['turn'] == 'white'
+
+          # Test undo
+          res = client.post('/api/undo', json={
+              'fen': ai_data['fen']
+          })
+          assert res.status_code == 200
+
+          # Test frontend serves
+          res = client.get('/')
+          assert res.status_code == 200
+          assert b'chess' in res.data.lower()
+
+          print('All Flask API tests passed')
+          "
+
+      - name: Verify Vercel config
+        run: |
+          python3 -c "
+          import json
+          with open('vercel.json') as f:
+            config = json.load(f)
+          assert config['version'] == 2
+          assert any('/api/' in r.get('source', '') for r in config.get('rewrites', []))
+          print('Vercel config valid')
+          "
+
+  deploy-check:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Vercel deployment status
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--confirm'
+        continue-on-error: true
+
+      - name: Health check live site
+        run: |
+          echo "Checking live deployment..."
+          curl -sf https://gambit.lanceabuan.tech || echo "Site not reachable yet (Vercel deploy may still be propagating)"

@@ -2,6 +2,10 @@
 
 > A custom chess AI platform — train your own model, let people play against it, and watch it learn in real time.
 
+[![CI](https://github.com/LanceAbuan/TheFoolsGambitPython/actions/workflows/ci.yml/badge.svg)](https://github.com/LanceAbuan/TheFoolsGambitPython/actions/workflows/ci.yml)
+[![Deployed on Vercel](https://img.shields.io/badge/Deployed-Vercel-black?style=flat&logo=vercel)](https://gambit.lanceabuan.tech)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ## High-Level Goal
 
 This repository has two core objectives:
@@ -12,6 +16,17 @@ This repository has two core objectives:
    - **Watch the model train** by observing live matches as it plays against Stockfish
 
 The vision is a single repo containing both the training pipeline and the web app, with everything deployable and playable.
+
+---
+
+## Links
+
+| Resource | URL |
+|----------|-----|
+| **Live Site** | [https://gambit.lanceabuan.tech](https://gambit.lanceabuan.tech) |
+| **GitHub Repo** | [LanceAbuan/TheFoolsGambitPython](https://github.com/LanceAbuan/TheFoolsGambitPython) |
+| **Vercel Dashboard** | [vercel.com › thefoolsgambitpython](https://vercel.com/lanceabuans-projects/thefoolsgambitpython) |
+| **CI/CD Pipeline** | [GitHub Actions](https://github.com/LanceAbuan/TheFoolsGambitPython/actions) |
 
 ---
 
@@ -31,45 +46,46 @@ Currently the AI uses a **minimax algorithm with alpha-beta pruning** (depth 3),
 │  index.html  │  Chessground  │  jQuery  │  CSS      │
 │  (vanilla JS game state management, board rendering) │
 └──────────────────────┬──────────────────────────────┘
-                       │  POST /api/*
+                       │  POST /api/*  (FEN + move data)
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │                   API Layer                          │
-│  api/index.js  (Node.js Edge runtime on Vercel)     │
+│  api/index.py  (Python serverless on Vercel)        │
 │                                                     │
 │  Routes:                                            │
 │    POST /api/new-game    → start fresh game         │
 │    POST /api/make-move   → apply player move        │
 │    POST /api/ai-move     → generate AI move         │
+│    POST /api/undo        → undo last move           │
 └──────────────────────┬──────────────────────────────┘
-                       │  (logic currently duplicated in JS)
+                       │  imports
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │                 Game Engine                           │
-│  engine.py  (stateless: FEN + UCI → new state)      │
-│  ai.py      (minimax, alpha-beta, PST evaluation)   │
-│                                                     │
-│  Python files represent the intended backend —       │
-│  currently the logic is ported to JS in api/index.js │
-│  for Vercel Edge runtime compatibility.              │
+│  game.py  (stateless: FEN + UCI → new state)        │
+│  ai.py    (minimax, alpha-beta, PST evaluation)     │
 └─────────────────────────────────────────────────────┘
 ```
 
-### Component Breakdown
+### Stateless Design
 
-| Layer | Files | Description |
-|-------|-------|-------------|
-| **Frontend** | `index.html`, `static/` | Single-page app with Chessground board, move history, timers, promotion dialog, game-over overlay |
-| **API** | `api/index.js` | Vercel Edge function handling all game requests; currently contains the full chess logic in JS |
-| **Game Engine** | `engine.py` | Stateless engine: `new_game()`, `play_move(fen, uci)`, `ai_move(fen)` — returns state dict with FEN, legal moves, turn, status |
-| **AI** | `ai.py` | `AIMoveGenerator` class with configurable depth; minimax + alpha-beta pruning, PST-based evaluation, capture-first move ordering |
-| **Config** | `vercel.json`, `package.json`, `requirements.txt` | Deployment config, Node dependencies (`chess.js`), Python dependencies (`chess`) |
+The frontend maintains all game state (FEN, legal moves, move history). Every API call is independent — no server-side sessions. This enables horizontal scaling and zero cold-start penalty on state restoration.
+
+| Field | Description |
+|-------|-------------|
+| `fen` | FEN string of the current position |
+| `legal` | List of legal moves in UCI format |
+| `turn` | `"white"` or `"black"` |
+| `pgn` | SAN notation of the last move played |
+| `status` | `"active"`, `"checkmate"`, `"stalemate"`, `"draw"` |
+| `result` | Human-readable game result (null if active) |
+| `in_check` | Whether the side to move is in check |
 
 ### Data Flow
 
-1. Player clicks on the board → frontend sends `POST /api/make-move` with UCI move + current FEN
-2. API validates and applies the move → returns new game state (FEN, legal moves, turn, status)
-3. Frontend updates board and triggers `POST /api/ai-move`
+1. Player clicks on the board → frontend sends `POST /api/make-move` with UCI move + current FEN + legal moves
+2. API validates and applies the move → returns new game state
+3. Frontend updates board and triggers `POST /api/ai-move` with FEN + legal moves
 4. API runs minimax search → returns new state with AI's move applied
 5. Frontend renders AI's move and repeats
 
@@ -83,8 +99,7 @@ Currently the AI uses a **minimax algorithm with alpha-beta pruning** (depth 3),
 - **jQuery** — AJAX calls and DOM manipulation
 
 ### Backend
-- **[chess.js](https://github.com/jhlywa/chess.js)** — game logic, move validation, FEN/PGN (Node.js, used in API)
-- **[python-chess](https://github.com/niklasf/python-chess)** — same logic in Python (target backend)
+- **[python-chess](https://github.com/niklasf/python-chess)** — game logic, move validation, FEN/PGN
 
 ### AI Engine
 - **Minimax with alpha-beta pruning** — depth 3, capture-first move ordering
@@ -92,54 +107,58 @@ Currently the AI uses a **minimax algorithm with alpha-beta pruning** (depth 3),
 - **Mobility bonus** — rewards positions with more legal moves
 
 ### Deployment
-- **[Vercel](https://vercel.com)** — Edge runtime, serverless function for `/api/*`, GitHub integration for deploy on push
+- **[Vercel](https://vercel.com)** — Python serverless function for `/api/*`, automatic deploy on push to `main`
+- **GitHub Actions** — CI pipeline runs lint + smoke tests on every PR and push
 
 ---
 
 ## Setup & Local Development
 
 ### Prerequisites
-- Node.js 18+
 - Python 3.10+
-- [Vercel CLI](https://vercel.com/docs/cli) (optional, for local preview)
+- Node.js 18+ (for Vercel CLI)
 
 ### Install Dependencies
 
 ```bash
-# Node dependencies (chess.js for the API layer)
-npm install
-
-# Python dependencies (for engine.py and ai.py)
 pip install -r requirements.txt
 ```
 
-### Running Locally
+### Running Locally with Flask
 
-The API runs as a Vercel Edge function. To preview locally:
+```bash
+cd TheFoolsGambitPython/backend
+pip install flask gunicorn
+python -m flask --app app run
+```
+
+The app will be available at `http://localhost:5000`.
+
+### Running with Vercel CLI
 
 ```bash
 npx vercel dev
 ```
 
-This starts a local server at `http://localhost:3000` with the full app (frontend + API).
+This starts a local preview at `http://localhost:3000` with the full app (frontend + API).
 
 ### Running the Python Engine Standalone
 
-The Python modules can be used independently:
-
 ```python
-from engine import new_game, play_move, ai_move
+import sys
+sys.path.insert(0, "TheFoolsGambitPython/backend")
+from game import new_game, make_move, ai_move
 
 # Start a new game
 state = new_game()
 print(state["fen"])
 
 # Play a move
-state = play_move(state["fen"], "e2e4")
+state = make_move(state["fen"], "e2e4")
 print(state["legal"])
 
 # Get an AI move
-state = ai_move(state["fen"], depth=3)
+state = ai_move(state["fen"], ai_depth=3)
 print(state["pgn"])
 ```
 
@@ -147,13 +166,11 @@ print(state["pgn"])
 
 ## API Endpoints
 
-All routes are handled by a single Vercel Edge function at `api/index.js`. The frontend routes requests by passing `__path` in the request body.
+All routes are handled by `api/index.py`. The frontend sends FEN + move data with every request.
 
 ### `POST /api/new-game`
 
-Starts a fresh game.
-
-**Request:** `{}`
+**Request:** `{ "aiDepth": 3 }` (optional)
 **Response:**
 ```json
 {
@@ -169,8 +186,6 @@ Starts a fresh game.
 
 ### `POST /api/make-move`
 
-Applies a player move to the current position.
-
 **Request:**
 ```json
 {
@@ -179,58 +194,83 @@ Applies a player move to the current position.
   "legal": ["e2e3", "e2e4", ...]
 }
 ```
-**Response:** Same state object as above, with updated FEN and `pgn` set to the SAN of the played move.
 
 ### `POST /api/ai-move`
-
-Generates an AI move at the given position.
 
 **Request:**
 ```json
 {
   "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1",
-  "depth": 3
+  "legal": ["e7e5", "e7e6", ...],
+  "aiDepth": 3
 }
 ```
-**Response:** Same state object with the AI's move applied.
+
+### `POST /api/undo`
+
+**Request:**
+```json
+{
+  "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+}
+```
 
 ### Response State Object
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `fen` | string | FEN string of the current position |
-| `legal` | string[] | List of legal moves in UCI format |
+| `legal` | string[] | Legal moves in UCI format |
 | `turn` | string | `"white"` or `"black"` |
-| `pgn` | string | SAN notation of the last move played |
+| `pgn` | string | SAN notation of the last move |
 | `status` | string | `"active"`, `"checkmate"`, `"stalemate"`, `"draw"` |
-| `result` | string \| null | Human-readable game result (null if active) |
+| `result` | string \| null | Human-readable game result |
 | `in_check` | boolean | Whether the side to move is in check |
 
 ---
 
 ## Deployment
 
-The project is configured for Vercel with GitHub integration:
+### Automatic Deploy (Push to `main`)
+
+Every push to `main` triggers a Vercel production deploy. The `vercel.json` rewrites route all `/api/*` requests to `api/index.py`.
 
 ```json
 {
   "version": 2,
   "github": { "enabled": true },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/index" }
+    { "source": "/api/(.*)", "destination": "/api/index" }
   ]
 }
 ```
 
-All `/api/*` requests are routed to `api/index.js` (Edge runtime). Push to `main` to trigger automatic deployment.
+### Manual Deploy
+
+```bash
+# Preview
+vercel deploy
+
+# Production
+vercel deploy --prod
+```
+
+### CI/CD Pipeline
+
+GitHub Actions runs on every PR and push to `main`:
+1. **Lint** — flake8 on all Python files
+2. **Smoke tests** — validate game engine (new game, moves, AI, illegal moves)
+3. **Flask tests** — verify API endpoints respond correctly
+
+PRs cannot merge if the CI pipeline fails. The `main` branch is protected — no direct pushes allowed.
 
 ---
 
 ## Future Roadmap
 
-- [ ] **Convert API to Python** — replace `api/index.js` with a Python serverless function that wires `engine.py` and `ai.py` (see [#2](https://github.com/LanceAbuan/TheFoolsGambitPython/issues/2))
-- [ ] **Custom model training pipeline** — train a neural network by playing against Stockfish, using Stockfish evaluations as reward signal
-- [ ] **Live training matches** — let visitors watch the model play against Stockfish in real time
-- [ ] **Model serving** — replace minimax AI with the trained model for online play
-- [ ] **Player matchmaking** — support human vs human games
-- [ ] **Game replay** — full PGN export and move-by-move replay
+- [x] **Convert API to Python** — replace `api/index.js` with Python serverless (#2, #9)
+- [ ] **Custom model training pipeline** — train a neural network by playing against Stockfish (#3)
+- [ ] **Live training matches** — let visitors watch the model play against Stockfish in real time (#4)
+- [ ] **Model serving** — replace minimax AI with the trained model for online play (#5)
+- [ ] **Player matchmaking** — support human vs human games (#6)
+- [ ] **Game replay** — full PGN export and move-by-move replay (#7)
