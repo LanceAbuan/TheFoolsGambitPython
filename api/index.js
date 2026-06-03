@@ -193,18 +193,20 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(204).end();
   }
 
-  if (req.method !== 'POST') {
+  if (req.method !== 'POST' && req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   let body = {};
   try {
-    body = JSON.parse(req.body) || {};
+    if (req.method === 'POST' && req.body) {
+      body = JSON.parse(req.body) || {};
+    }
   } catch {
     body = {};
   }
@@ -248,20 +250,24 @@ module.exports = async (req, res) => {
       }
       res.status(200).json(newState(game));
     } else if (path.includes('train')) {
-       const trainingPath = path.replace('/api/', '');
-       const url = `${TRAINING_URL}/api/${trainingPath}`;
-       
-       try {
-         const response = await fetch(url, {
-           method: req.method,
-           headers: { 'Content-Type': 'application/json' },
-           body: req.body || undefined
-         });
-         const data = await response.json();
-         res.status(response.status).json(data);
-       } catch (e) {
-         res.status(502).json({ error: 'Training server unavailable', detail: e.message });
-       }
+        const trainingPath = path.replace('/api/', '');
+        const url = `${TRAINING_URL}/api/${trainingPath}`;
+        
+        const options = {
+          method: req.method,
+          headers: { 'Content-Type': 'application/json' }
+        };
+        if (req.method === 'POST' && req.body) {
+          options.body = req.body;
+        }
+        
+        try {
+          const response = await fetch(url, options);
+          const data = await response.json();
+          res.status(response.status).json(data);
+        } catch (e) {
+          res.status(502).json({ error: 'Training server unavailable', detail: e.message });
+        }
        
      } else if (path.includes('undo')) {
       const { fen } = body;
