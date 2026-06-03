@@ -1,5 +1,12 @@
 {
   "version": 2,
+  "framework": null,
+  "functions": {
+    "api/**/*.js": {
+      "memory": 3008,
+      "maxDuration": 10
+    }
+  },
   "github": {
     "enabled": true
   },

@@ -158,6 +158,9 @@ Open **http://localhost:3000** in your browser.
 
 ### Deploying the Web App on Vercel
 
+**Automatic (via GitHub):** Pushing to `main` triggers a Vercel deployment automatically. Ensure your Vercel project is linked to this GitHub repository.
+
+**Manual:**
 ```bash
 # Install Vercel CLI
 npm i -g vercel
@@ -170,7 +173,25 @@ vercel deploy --prod
 Set these environment variables in your Vercel project settings:
 - `TRAINING_URL` — the public URL of your training server (see Cloudflare Tunnel below)
 
-### Setting Up Cloudflare Tunnel
+### Deploying the Training Server on Railway
+
+**Automatic:** Link your Railway project to this GitHub repository. Railway will deploy on push to `main` using the `railway.json` config.
+
+**Manual:**
+```bash
+railway login
+railway up
+```
+
+Set these environment variables in your Railway project settings:
+- `HF_TOKEN` — your Hugging Face write token
+- `HF_REPO` — your HF model repo name
+- `MODEL_DIR` — local checkpoint directory (default: `~/.chess-models`)
+- `STOCKFISH_PATH` — path to Stockfish binary
+
+### Setting Up Cloudflare Tunnel (Local Development Only)
+
+> **Note:** If you deploy the training server on Railway, you don't need a tunnel. Use the Railway URL directly as `TRAINING_URL`.
 
 This exposes your local training server so Vercel can reach it:
 
@@ -403,6 +424,8 @@ Auto-push is skipped. Use `/api/train/push` manually if you later add credential
 | HF push fails | Check token has Write scope at huggingface.co/settings/tokens |
 | Vercel can't reach training | Verify Cloudflare Tunnel is running; check `TRAINING_URL` |
 | Frontend shows "Training unavailable" | Training server not running or `TRAINING_URL` misconfigured |
+| Vercel not deploying on merge | Check Vercel dashboard → Project Settings → Git → Deployment Protection; ensure "main" branch is set for production |
+| Railway deployment fails | Check Railway logs; verify `railway.json` startCommand works; ensure Python deps are in `requirements.txt` |
 
 ---
 

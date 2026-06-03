@@ -31,4 +31,4 @@ trap cleanup SIGINT SIGTERM
 sleep 3
 
 echo "Starting training server..."
-python train_server.py
+python3 train_server.py
