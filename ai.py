@@ -183,10 +183,12 @@ class AIMoveGenerator:
     def __init__(self, depth=3):
         self.depth = depth
 
-    def generate(self, board):
+    def generate(self, board, depth=None):
         legal = list(board.legal_moves)
         if not legal:
             return None
+
+        depth = depth if depth is not None else self.depth
 
         # If game is nearly over (checkmate in 1), just take it
         for m in legal:
@@ -196,10 +198,7 @@ class AIMoveGenerator:
                 return m.uci()
             board.pop()
 
-        _, best = minimax(board, self.depth, -math.inf, math.inf, board.turn == chess.WHITE)
+        _, best = minimax(board, depth, -math.inf, math.inf, board.turn == chess.WHITE)
         if best:
             return best.uci()
         return legal[0].uci()
-
-
-ai = AIMoveGenerator(depth=3)

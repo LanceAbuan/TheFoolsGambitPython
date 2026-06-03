@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "github": {
+    "enabled": true
+  },
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" }
+  ]
+}
