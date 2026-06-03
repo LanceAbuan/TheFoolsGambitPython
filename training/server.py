@@ -97,7 +97,7 @@ def stream_game_progress():
     global current_game_moves, current_game_status
     send_sse({
         'type': 'game_progress',
-        'moves': current_game_moves[-50:],
+        'moves': list(current_game_moves),
         'status': current_game_status,
         'timestamp': time.time()
     })
@@ -142,7 +142,7 @@ def train_status():
     status = t.get_status()
     status['recent_games'] = recent_games[:5]
     status['current_game'] = {
-        'moves': current_game_moves[-20:],
+        'moves': list(current_game_moves),
         'status': current_game_status
     }
     return jsonify(status)
