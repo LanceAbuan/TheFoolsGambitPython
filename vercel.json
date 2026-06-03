@@ -4,6 +4,6 @@
     "enabled": true
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/index" }
+    { "source": "/api/(.*)", "destination": "/api/index" }
   ]
 }
