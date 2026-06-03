@@ -70,7 +70,6 @@ function evaluate(fen) {
   game.load(fen);
   const board = game.board();
   let score = 0;
-
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
       const piece = board[r][c];
@@ -80,11 +79,9 @@ function evaluate(fen) {
       score += piece.color === 'w' ? val : -val;
     }
   }
-
   const legalMoves = game.moves();
   const mobility = legalMoves.length * 2;
   score += game.turn() === 'w' ? mobility : -mobility;
-
   return score;
 }
 
@@ -92,7 +89,6 @@ function minimax(game, depth, alpha, beta, maximizing) {
   if (depth === 0 || game.isGameOver()) {
     return evaluate(game.fen());
   }
-
   const moves = game.moves({ verbose: true }).sort((a, b) => {
     const aCapture = a.flags.includes('c');
     const bCapture = b.flags.includes('c');
@@ -100,7 +96,6 @@ function minimax(game, depth, alpha, beta, maximizing) {
     if (!aCapture && bCapture) return 1;
     return 0;
   });
-
   if (maximizing) {
     let maxEval = -Infinity;
     for (const move of moves) {
@@ -126,7 +121,7 @@ function minimax(game, depth, alpha, beta, maximizing) {
   }
 }
 
-function getAIMove(fen, aiDepth = 3) {
+function getAIMoveMinimax(fen, aiDepth = 3) {
   const game = new Chess();
   game.load(fen);
   const moves = game.moves({ verbose: true }).sort((a, b) => {
@@ -136,18 +131,14 @@ function getAIMove(fen, aiDepth = 3) {
     if (!aCapture && bCapture) return 1;
     return 0;
   });
-
   if (moves.length === 0) return null;
-
   const isMaximizing = game.turn() === 'w';
   let bestMove = moves[0].lan;
   let bestEval = isMaximizing ? -Infinity : Infinity;
-
   for (const move of moves) {
     game.move(move.san);
     const eval_ = minimax(game, aiDepth - 1, -Infinity, Infinity, !isMaximizing);
     game.undo();
-
     if (isMaximizing && eval_ > bestEval) {
       bestEval = eval_;
       bestMove = move.lan;
@@ -156,7 +147,6 @@ function getAIMove(fen, aiDepth = 3) {
       bestMove = move.lan;
     }
   }
-
   return bestMove;
 }
 
@@ -187,6 +177,27 @@ function newState(game) {
 }
 
 const TRAINING_URL = process.env.TRAINING_URL || 'http://localhost:5001';
+
+async function getNNMove(fen) {
+  try {
+    const url = `${TRAINING_URL}/api/train/evaluate`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fen })
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.top_moves && data.top_moves.length > 0) {
+        const best = data.top_moves[0];
+        return best.uci;
+      }
+    }
+  } catch (e) {
+    console.log('NN move failed, falling back to minimax:', e.message);
+  }
+  return null;
+}
 
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
@@ -240,32 +251,36 @@ module.exports = async (req, res) => {
       }
       const game = new Chess();
       game.load(fen);
-      const lan = getAIMove(fen, aiDepth);
+      let lan;
+      const nnMove = await getNNMove(fen);
+      if (nnMove) {
+        lan = nnMove.slice(0, 2) + nnMove.slice(2, 4);
+        if (nnMove.length > 4) lan += nnMove[4];
+      } else {
+        lan = getAIMoveMinimax(fen, aiDepth);
+      }
       if (lan) {
         game.move({ from: lan.slice(0, 2), to: lan.slice(2, 4), promotion: lan.length > 4 ? lan[4] : undefined });
       }
       res.status(200).json(newState(game));
     } else if (path.includes('train')) {
-        const trainingPath = path.replace('/api/', '');
-        const url = `${TRAINING_URL}/api/${trainingPath}`;
-        
-        const options = {
-          method: req.method,
-          headers: { 'Content-Type': 'application/json' }
-        };
-        if (req.method === 'POST' && req.body) {
-          options.body = req.body;
-        }
-        
-        try {
-          const response = await fetch(url, options);
-          const data = await response.json();
-          res.status(response.status).json(data);
-        } catch (e) {
-          res.status(502).json({ error: 'Training server unavailable', detail: e.message });
-        }
-       
-     } else if (path.includes('undo')) {
+      const trainingPath = path.replace('/api/', '');
+      const url = `${TRAINING_URL}/api/${trainingPath}`;
+      const options = {
+        method: req.method,
+        headers: { 'Content-Type': 'application/json' }
+      };
+      if (req.method === 'POST' && req.body) {
+        options.body = req.body;
+      }
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        res.status(response.status).json(data);
+      } catch (e) {
+        res.status(502).json({ error: 'Training server unavailable', detail: e.message });
+      }
+    } else if (path.includes('undo')) {
       const { fen } = body;
       if (!fen) {
         return res.status(400).json({ error: 'Missing fen' });

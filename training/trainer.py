@@ -1,37 +1,26 @@
-"""Training loop with data management and progress tracking.
+"""Training loop with Hugging Face persistence.
 
-The trainer:
-1. Manages a replay buffer of self-play training examples
-2. Runs training steps with mini-batch SGD/Adam
-3. Saves/checkpoints the model periodically
-4. Tracks training metrics: loss, game results, etc.
-5. Exposes status via a simple status dict for the API
-
-Data flows:
-- Self-play generates examples -> replay buffer
-- Trainer samples batches from buffer -> updates model
-- Model improvements feed back into self-play
-
-Loss function:
-- Policy loss: cross-entropy between predicted and target policy
-- Value loss: MSE between predicted and target value
-- Total loss: policy_loss + value_loss + l2_reg
+Auto-pushes model checkpoints to HF Hub. Model persists if local machine goes down.
 """
 import os
 import json
 import time
+import shutil
 import torch
 import torch.optim as optim
 import numpy as np
 from collections import deque
+from datetime import datetime
 
 from .model import ChessNet
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .selfplay import SelfPlayGame
 
-MODEL_DIR = os.environ.get('MODEL_DIR', '/tmp/chess-models')
-CHECKPOINT_INTERVAL = 100  # Steps between checkpoints
-MAX_BUFFER_SIZE = 100000  # Max training examples in buffer
+HF_REPO = os.environ.get('HF_REPO', 'LanceAbuan/chess-alpha-zero')
+HF_TOKEN = os.environ.get('HF_TOKEN', '')
+HF_PUSH_INTERVAL = 50
+LOCAL_MODEL_DIR = os.environ.get('MODEL_DIR', '/tmp/chess-models')
+MAX_BUFFER_SIZE = 100000
 BATCH_SIZE = 64
 LEARNING_RATE = 0.001
 POLICY_WEIGHT = 1.0
@@ -39,68 +28,91 @@ VALUE_WEIGHT = 1.0
 L2_REG = 1e-4
 
 
+def push_to_hf(model_path, metadata=None):
+    if not HF_TOKEN:
+        print("[HF] No token set - skipping push")
+        return False
+    try:
+        from huggingface_hub import HfApi, upload_file
+        api = HfApi(token=HF_TOKEN)
+        try:
+            api.create_repo(repo_id=HF_REPO, repo_type="model", exist_ok=True)
+        except Exception:
+            pass
+        upload_file(
+            path_or_fileobj=model_path,
+            path_in_repo="checkpoint.pt",
+            repo_id=HF_REPO,
+            token=HF_TOKEN
+        )
+        if metadata:
+            meta_path = os.path.join(LOCAL_MODEL_DIR, 'metadata.json')
+            with open(meta_path, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            upload_file(
+                path_or_fileobj=meta_path,
+                path_in_repo="metadata.json",
+                repo_id=HF_REPO,
+                token=HF_TOKEN
+            )
+            os.remove(meta_path)
+        print(f"[HF] Pushed to {HF_REPO}")
+        return True
+    except Exception as e:
+        print(f"[HF] Push failed: {e}")
+        return False
+
+
+def download_from_hf():
+    if not HF_TOKEN:
+        return False
+    try:
+        from huggingface_hub import hf_hub_download
+        os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
+        local_path = hf_hub_download(
+            repo_id=HF_REPO,
+            filename="checkpoint.pt",
+            token=HF_TOKEN
+        )
+        shutil.copy2(local_path, os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt'))
+        print(f"[HF] Downloaded from {HF_REPO}")
+        return True
+    except Exception as e:
+        print(f"[HF] Download failed: {e}")
+        return False
+
+
 class TrainingBuffer:
-    """Stores self-play training examples for batched training."""
-    
     def __init__(self, max_size=MAX_BUFFER_SIZE):
         self.buffer = deque(maxlen=max_size)
-    
+
     def add(self, examples):
-        """Add a batch of training examples."""
         self.buffer.extend(examples)
-    
+
     def sample(self, batch_size):
-        """Sample a random batch from the buffer."""
         if len(self.buffer) < batch_size:
             return None
-        
         indices = np.random.choice(len(self.buffer), batch_size, replace=False)
         batch = [self.buffer[i] for i in indices]
-        
-        tensors = torch.stack([
-            torch.FloatTensor(ex['board_tensor']) for ex in batch
-        ])
-        policies = torch.stack([
-            torch.FloatTensor(ex['policy']) for ex in batch
-        ])
+        tensors = torch.stack([torch.FloatTensor(ex['board_tensor']) for ex in batch])
+        policies = torch.stack([torch.FloatTensor(ex['policy']) for ex in batch])
         values = torch.FloatTensor([ex['value'] for ex in batch])
-        
         return tensors, policies, values
-    
+
     def __len__(self):
         return len(self.buffer)
-    
+
     def clear(self):
         self.buffer.clear()
 
 
 class Trainer:
-    """Manages the complete training loop.
-    
-    Status dict (exposed to API):
-    {
-        "status": "idle" | "playing" | "training",
-        "step": int,           # total training steps
-        "games_played": int,   # self-play games completed
-        "buffer_size": int,    # examples in replay buffer
-        "loss": float,         # current training loss
-        "policy_loss": float,  # policy head loss
-        "value_loss": float,   # value head loss
-        "learning_rate": float,
-        "model_size": int,     # model file size in bytes
-        "started_at": float,   # unix timestamp
-        "last_update": float,  # unix timestamp
-    }
-    """
-    
     def __init__(self, num_residual_blocks=2, residual_filters=32):
-        os.makedirs(MODEL_DIR, exist_ok=True)
-        
+        os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
         self.model = ChessNet(num_residual_blocks, residual_filters)
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
         self.selfplay = SelfPlayGame(self.model)
-        
         self.step = 0
         self.games_played = 0
         self.status = "idle"
@@ -110,81 +122,102 @@ class Trainer:
         self.started_at = time.time()
         self.last_update = time.time()
         self.running = False
-        
+        self.last_hf_push = 0
+        self.last_game_pgn = ""
+        self.last_game_result = ""
+        self.last_game_moves = []
+
         self._load_checkpoint()
-    
+        checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
+        if not os.path.exists(checkpoint_path) and HF_TOKEN:
+            print("[HF] No local checkpoint - downloading from HF...")
+            download_from_hf()
+            self._load_checkpoint()
+        if HF_TOKEN:
+            print(f"[HF] Connected to repo: {HF_REPO}")
+
     def _load_checkpoint(self):
-        """Load model from disk if available."""
-        checkpoint_path = os.path.join(MODEL_DIR, 'checkpoint.pt')
+        checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
         if os.path.exists(checkpoint_path):
-            data = torch.load(checkpoint_path)
+            data = torch.load(checkpoint_path, map_location='cpu')
             self.model.load_state_dict(data['model_state'])
             self.step = data.get('step', 0)
             self.games_played = data.get('games_played', 0)
-    
+            print(f"[Checkpoint] Loaded step={self.step}, games={self.games_played}")
+
     def save_checkpoint(self):
-        """Save model and training state to disk."""
-        checkpoint_path = os.path.join(MODEL_DIR, 'checkpoint.pt')
+        checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
         torch.save({
             'model_state': self.model.state_dict(),
             'step': self.step,
             'games_played': self.games_played,
             'buffer_size': len(self.buffer),
+            'loss': self.loss,
         }, checkpoint_path)
-    
-    def save_model(self, filename='model.pt'):
-        """Save just the model weights."""
-        path = os.path.join(MODEL_DIR, filename)
-        torch.save(self.model.state_dict(), path)
-        return path
-    
+
+    def push_checkpoint(self):
+        checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
+        if not os.path.exists(checkpoint_path):
+            self.save_checkpoint()
+        metadata = {
+            'step': self.step,
+            'games_played': self.games_played,
+            'buffer_size': len(self.buffer),
+            'loss': self.loss,
+            'policy_loss': self.policy_loss,
+            'value_loss': self.value_loss,
+            'last_game_pgn': self.last_game_pgn[:500],
+            'last_game_result': self.last_game_result,
+            'pushed_at': datetime.utcnow().isoformat(),
+            'model_version': 'v1',
+        }
+        return push_to_hf(checkpoint_path, metadata)
+
     def play_game(self):
-        """Play a single self-play game and add examples to buffer."""
         self.status = "playing"
         self.last_update = time.time()
-        
-        examples = self.selfplay.play()
+        game_data = self.selfplay.play()
+        examples = game_data['examples']
         self.buffer.add(examples)
         self.games_played += 1
-        
+        self.last_game_pgn = game_data.get('pgn', '')
+        self.last_game_result = game_data.get('result', '*')
+        self.last_game_moves = game_data.get('moves', [])
         return {
             'games_played': self.games_played,
             'buffer_size': len(self.buffer),
-            'examples_collected': len(examples)
+            'examples_collected': len(examples),
+            'pgn': self.last_game_pgn[:200],
+            'result': self.last_game_result,
         }
-    
+
     def train_step(self):
-        """Run a single training step (one batch)."""
         self.status = "training"
         self.last_update = time.time()
-        
         batch = self.buffer.sample(BATCH_SIZE)
         if batch is None:
             self.status = "idle"
             return None
-        
         tensors, policies, values = batch
         self.model.train()
         self.optimizer.zero_grad()
-        
         pred_policy, pred_value = self.model(tensors)
-        
         p_loss = torch.nn.functional.cross_entropy(pred_policy, policies)
         v_loss = torch.nn.functional.mse_loss(pred_value.squeeze(), values)
         l2 = sum(p.pow(2).sum() for p in self.model.parameters()) * L2_REG
         loss = POLICY_WEIGHT * p_loss + VALUE_WEIGHT * v_loss + l2
-        
         loss.backward()
         self.optimizer.step()
-        
         self.step += 1
         self.loss = loss.item()
         self.policy_loss = p_loss.item()
         self.value_loss = v_loss.item()
-        
-        if self.step % CHECKPOINT_INTERVAL == 0:
+        if self.step % 100 == 0:
             self.save_checkpoint()
-        
+        if self.step > 0 and (self.step - self.last_hf_push) >= HF_PUSH_INTERVAL:
+            self.save_checkpoint()
+            self.push_checkpoint()
+            self.last_hf_push = self.step
         return {
             'step': self.step,
             'loss': self.loss,
@@ -192,12 +225,10 @@ class Trainer:
             'value_loss': self.value_loss,
             'buffer_size': len(self.buffer)
         }
-    
+
     def get_status(self):
-        """Get current training status dict."""
-        model_path = os.path.join(MODEL_DIR, 'checkpoint.pt')
+        model_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
         model_size = os.path.getsize(model_path) if os.path.exists(model_path) else 0
-        
         return {
             'status': self.status,
             'step': self.step,
@@ -210,4 +241,8 @@ class Trainer:
             'model_size': model_size,
             'started_at': self.started_at,
             'last_update': self.last_update,
+            'hf_repo': HF_REPO if HF_TOKEN else None,
+            'last_game_pgn': self.last_game_pgn[:200],
+            'last_game_result': self.last_game_result,
+            'last_game_moves': self.last_game_moves[:20],
         }
