@@ -356,7 +356,7 @@
 
         function connectSSE() {
             try {
-                var source = new EventSource('/api/train/stream');
+                var source = new EventSource('https://api.lanceabuan.tech/api/train/stream');
                 source.addEventListener('game_start', function(e) {
                     var data = JSON.parse(e.data);
                     $('#live-status').text('New ' + data.mode + ' game starting...');
@@ -394,7 +394,7 @@
 
         function pollStatus() {
             $.ajax({
-                url: '/api/train/status',
+                url: 'https://api.lanceabuan.tech/api/train/status',
                 method: 'GET',
                 timeout: 5000,
                 success: function(status) {
