@@ -12,103 +12,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: "20"
 
-      - name: Install dependencies
+      - name: Install API dependencies
+        run: npm install
+
+      - name: API smoke tests
         run: |
-          pip install -r requirements.txt
-          pip install -r TheFoolsGambitPython/requirements.txt
-          pip install flask gunicorn flake8
+          node -e "
+          const handler = require('./api/index.js');
 
-      - name: Lint with flake8
-        run: |
-          flake8 TheFoolsGambitPython/backend/ api/ --max-line-length=120 --ignore=E501,W503
+          const makeReq = (url, body) => ({ method: 'POST', url, body: typeof body === 'string' ? body : JSON.stringify(body) });
+          const makeRes = () => { const r = { _body: null }; r.setHeader = () => r; r.status = (s) => r; r.json = (d) => { r._body = d; return r; }; r.end = () => r; return r; };
+          const call = (url, body) => new Promise(resolve => { const r = makeRes(); handler(makeReq(url, body), r).then(() => resolve(r._body)); });
 
-      - name: Smoke test engine
-        run: |
-          python3 -c "
-          import sys
-          sys.path.insert(0, 'TheFoolsGambitPython/backend')
-          from game import new_game, make_move, ai_move, undo
+          (async () => {
+            // 1. New game
+            let state = await call('/api/new-game', {});
+            if (state.status !== 'active') throw new Error('new-game: expected active');
+            if (state.turn !== 'white') throw new Error('new-game: expected white to move');
 
-          # New game
-          g = new_game()
-          assert g['status'] == 'active'
-          assert g['turn'] == 'white'
-          assert g['fen'].startswith('rnbqkbnr')
+            // 2. Make move
+            state = await call('/api/make-move', { fen: state.fen, uci: 'e2e4' });
+            if (state.status !== 'active') throw new Error('make-move: expected active');
+            if (state.turn !== 'black') throw new Error('make-move: expected black to move');
+            if (state.pgn !== 'e4') throw new Error('make-move: expected e4');
 
-          # Play e4
-          r = make_move(g['fen'], 'e2e4', legal=g['legal'])
-          assert r['status'] == 'active'
-          assert r['turn'] == 'black'
+            // 3. AI move
+            state = await call('/api/ai-move', { fen: state.fen, aiDepth: 2 });
+            if (state.status !== 'active') throw new Error('ai-move: expected active');
+            if (state.turn !== 'white') throw new Error('ai-move: expected white to move');
 
-          # AI responds
-          r2 = ai_move(r['fen'], legal=r['legal'], ai_depth=3)
-          assert r2['status'] == 'active'
-          assert r2['turn'] == 'white'
+            // 4. Illegal move
+            state = await call('/api/make-move', { fen: state.fen, uci: 'e2e8' });
+            if (!state.error) throw new Error('illegal: expected error');
 
-          # Undo
-          r3 = undo(r2['fen'])
-          assert r3['status'] == 'active'
+            // 5. Undo
+            state = await call('/api/undo', { fen: (await call('/api/new-game', {})).fen });
+            if (state.status !== 'active') throw new Error('undo: expected active');
 
-          # Illegal move should fail
-          r4 = make_move(g['fen'], 'e2e8', legal=g['legal'])
-          assert 'error' in r4
-
-          print('All smoke tests passed')
-          "
-
-      - name: Flask API tests
-        run: |
-          python3 -c "
-          import sys, json
-          sys.path.insert(0, 'TheFoolsGambitPython/backend')
-          from app import app
-
-          client = app.test_client()
-
-          # Test new game
-          res = client.post('/api/new-game', json={})
-          assert res.status_code == 200
-          data = json.loads(res.data)
-          assert data['status'] == 'active'
-          assert data['turn'] == 'white'
-
-          # Test make move
-          res = client.post('/api/make-move', json={
-              'fen': data['fen'],
-              'uci': 'e2e4',
-              'legal': data['legal']
-          })
-          assert res.status_code == 200
-          move_data = json.loads(res.data)
-          assert move_data['turn'] == 'black'
-
-          # Test AI move
-          res = client.post('/api/ai-move', json={
-              'fen': move_data['fen'],
-              'legal': move_data['legal'],
-              'aiDepth': 3
-          })
-          assert res.status_code == 200
-          ai_data = json.loads(res.data)
-          assert ai_data['turn'] == 'white'
-
-          # Test undo
-          res = client.post('/api/undo', json={
-              'fen': ai_data['fen']
-          })
-          assert res.status_code == 200
-
-          # Test frontend serves
-          res = client.get('/')
-          assert res.status_code == 200
-          assert b'chess' in res.data.lower()
-
-          print('All Flask API tests passed')
+            console.log('All API tests passed');
+          })().catch(e => { console.error('Test failed:', e.message); process.exit(1); });
           "
 
       - name: Verify Vercel config
@@ -129,16 +76,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check Vercel deployment status
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--confirm'
-        continue-on-error: true
-
       - name: Health check live site
         run: |
           echo "Checking live deployment..."
-          curl -sf https://gambit.lanceabuan.tech || echo "Site not reachable yet (Vercel deploy may still be propagating)"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://gambit.lanceabuan.tech)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Site returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "Live site is healthy"
