@@ -12,6 +12,7 @@ from huggingface_hub import HfApi, login
 from .trainer import Trainer, LOCAL_MODEL_DIR
 from .tensorize import board_to_tensor
 from .stockfish_engine import StockfishPlayer
+from .critic_game import CriticGame
 
 training_bp = Blueprint('training', __name__)
 
@@ -22,6 +23,9 @@ recent_games = []
 sse_clients = set()
 current_game_moves = []
 current_game_status = "idle"
+
+# Default play mode: 'critic' (Stockfish-guided) or 'selfplay' (MCTS)
+play_mode = 'critic'
 
 
 def get_trainer():
@@ -180,10 +184,35 @@ def train_start():
                     print(f'[TRAIN] Starting game {i+1}/{games_per_cycle}', flush=True)
                     send_sse({'type': 'game_start', 'mode': 'self-play'})
 
-                    game_data = t.play_game(on_move=lambda moves: (
-                        setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
-                        stream_game_progress()
-                    ))
+                    if use_stockfish:
+                        # Supervised mode: NN vs Stockfish, collect SF-guided examples
+                        sf = get_stockfish()
+                        if sf:
+                            current_game_status = "supervised"
+                            send_sse({'type': 'game_start', 'mode': 'critic'})
+                            from .critic_game import CriticGame
+                            sg = CriticGame(t.model, sf, temperature=0.15)
+                            game_data = sg.play(on_move=lambda moves: (
+                                setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+                                stream_game_progress()
+                            ))
+                            # Feed examples into training buffer
+                            t.buffer.add(game_data.get('examples', []))
+                            t.games_played += 1
+                            t.last_game_pgn = game_data.get('pgn', '')
+                            t.last_game_result = game_data.get('result', '*')
+                            t.last_game_moves = game_data.get('moves', [])
+                        else:
+                            # Fallback to MCTS if SF unavailable
+                            game_data = t.play_game(on_move=lambda moves: (
+                                setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+                                stream_game_progress()
+                            ))
+                    else:
+                        game_data = t.play_game(on_move=lambda moves: (
+                            setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+                            stream_game_progress()
+                        ))
                     print(f'[TRAIN] Game {i+1} done, moves: {len(game_data.get("moves", []))}', flush=True)
                 current_game_moves = game_data.get('moves', [])
 
@@ -279,6 +308,53 @@ def train_play():
         stream_game_progress()
 
     return jsonify(game_data)
+
+
+@training_bp.route('/api/train/play-supervised', methods=['POST'])
+def train_play_supervised():
+    """Play one supervised game: NN vs Stockfish, collect training data."""
+    global current_game_moves, current_game_status
+    t = get_trainer()
+    sf = get_stockfish()
+    if not sf:
+        return jsonify({"error": "Stockfish not available"}), 500
+
+    current_game_moves = []
+    current_game_status = "supervised"
+    send_sse({'type': 'game_start', 'mode': 'critic'})
+
+    from .critic_game import CriticGame
+    sg = CriticGame(t.model, sf, temperature=0.15)
+    game_data = sg.play(on_move=lambda moves: (
+        setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+        stream_game_progress()
+    ))
+    current_game_moves = game_data.get('moves', [])
+
+    # Feed examples into training buffer
+    t.buffer.add(game_data.get('examples', []))
+    t.games_played += 1
+    t.last_game_pgn = game_data.get('pgn', '')
+    t.last_game_result = game_data.get('result', '*')
+    t.last_game_moves = game_data.get('moves', [])
+
+    recent_games.append({
+        'game_num': t.games_played,
+        'pgn': game_data.get('pgn', ''),
+        'result': game_data.get('result', '*'),
+        'mode': 'critic',
+        'timestamp': time.time()
+    })
+    stream_game_progress()
+
+    return jsonify({
+        'moves': game_data.get('moves', []),
+        'pgn': game_data.get('pgn', ''),
+        'result': game_data.get('result', '*'),
+        'examples': len(game_data.get('examples', [])),
+        'buffer_size': len(t.buffer),
+        'games_played': t.games_played,
+    })
 
 
 @training_bp.route('/api/train/play-stockfish', methods=['POST'])
