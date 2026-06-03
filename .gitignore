@@ -4,3 +4,9 @@ node_modules/
 .env
 .DS_Store
 .vercel
+# Model checkpoints (stored locally, pushed to HF instead)
+*.pt
+*.pth
+*.bin
+chess-models/
+model_dir/
