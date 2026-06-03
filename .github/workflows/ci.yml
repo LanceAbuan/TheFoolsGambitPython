@@ -1,4 +1,4 @@
-name: CI/CD
+name: CI
 
 on:
   push:
@@ -23,12 +23,14 @@ jobs:
       - name: Lint with flake8
         run: |
           pip install flake8
-          flake8 ai.py engine.py --max-line-length=120 --ignore=E501,W503 || true
+          flake8 TheFoolsGambitPython/backend/ ai.py --max-line-length=120 --ignore=E501,W503 || true
 
       - name: Smoke test engine
         run: |
           python3 -c "
-          from engine import new_game, play_move, ai_move
+          import sys
+          sys.path.insert(0, 'TheFoolsGambitPython/backend')
+          from game import new_game, make_move, ai_move
 
           # New game
           g = new_game()
@@ -37,33 +39,18 @@ jobs:
           assert g['fen'].startswith('rnbqkbnr')
 
           # Play e4
-          r = play_move(g['fen'], 'e2e4')
+          r = make_move(g['fen'], 'e2e4')
           assert r['status'] == 'active'
           assert r['turn'] == 'black'
 
           # AI responds
-          r2 = ai_move(r['fen'], r['legal'], depth=3)
+          r2 = ai_move(r['fen'], ai_depth=3)
           assert r2['status'] == 'active'
           assert r2['turn'] == 'white'
 
           # Illegal move should fail
-          r3 = play_move(g['fen'], 'e2e8')
+          r3 = make_move(g['fen'], 'e2e8')
           assert 'error' in r3
 
           print('All smoke tests passed')
           "
-
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: "--prod"
