@@ -343,7 +343,13 @@
 
     <script src="/static/jquery.min.js"></script>
     <script src="/static/chessboard.js"></script>
+    <script>
+    var module = { exports: {} };
+    </script>
     <script src="/static/chess.js"></script>
+    <script>
+    var Chess = module.exports.Chess || module.exports;
+    </script>
     <script>
     (function () {
         var state = {
@@ -778,7 +784,7 @@
         function updateLiveBoard(moves) {
             if (!moves || moves.length === 0) return;
             liveMoves = moves;
-            var board = new chessjs();
+            var board = new Chess();
             for (var i = 0; i < moves.length; i++) {
                 try {
                     board.move(moves[i]);
