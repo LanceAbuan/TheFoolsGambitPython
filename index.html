@@ -135,6 +135,12 @@
             margin-bottom: 12px;
         }
 
+        .theme-name {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
         .moves-list {
             max-height: 320px;
             overflow-y: auto;
@@ -218,6 +224,31 @@
         .btn:disabled {
             opacity: 0.4;
             cursor: not-allowed;
+        }
+
+        .theme-selector {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .theme-swatch {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.15s;
+            position: relative;
+        }
+
+        .theme-swatch:hover {
+            transform: scale(1.15);
+        }
+
+        .theme-swatch.active {
+            border-color: #6366f1;
+            box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
         }
 
         .thinking {
@@ -324,9 +355,6 @@
         }
 
         /* Chessground overrides */
-        .cg-board {
-            background: #779556 !important;
-        }
 
         .cg-wrap, .cg-board, .cg-board > * {
             border-radius: 0 !important;
@@ -393,6 +421,12 @@
                     <button class="btn btn-secondary" id="btn-undo">Undo</button>
                     <button class="btn btn-secondary" id="btn-flip">Flip Board</button>
                 </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">Board Theme</div>
+                <div class="theme-name" id="theme-name">Classic</div>
+                <div class="theme-selector" id="theme-selector"></div>
                 <div class="thinking" id="thinking" style="display:none;">
                     <div class="thinking-dots"><span></span><span></span><span></span></div>
                     <span>AI thinking...</span>
@@ -418,9 +452,9 @@
         </div>
     </div>
 
+    <link rel="stylesheet" href="/static/chessground.cburnett.css">
     <script src="/static/jquery.min.js"></script>
     <script src="/static/chessground.min.js"></script>
-    <script src="/static/chessground.cburnett.css"></script>
     <script>
     (function() {
         const Chessground = window.Chessground;
@@ -446,6 +480,68 @@
         var whiteTime = 600, blackTime = 600;
         var timerInterval = null;
         var lastUci = null;
+        var currentTheme = 'classic';
+
+        var themes = {
+            classic: { light: '#F0D9B5', dark: '#B58863', name: 'Classic' },
+            blue: { light: '#DEEBFF', dark: '#7393B2', name: 'Blue' },
+            desert: { light: '#EDC9A8', dark: '#AB7C52', name: 'Desert' },
+            maple: { light: '#F0D3B0', dark: '#B8662E', name: 'Maple' },
+            night: { light: '#B0C4B8', dark: '#5C7060', name: 'Night' },
+            purple: { light: '#E8D5F5', dark: '#9B72B0', name: 'Purple' },
+            ruby: { light: '#F0D0D0', dark: '#C06060', name: 'Ruby' },
+            slate: { light: '#B0C4D8', dark: '#506070', name: 'Slate' }
+        };
+
+        function applyTheme(key) {
+            currentTheme = key;
+            var theme = themes[key];
+            $('#theme-name').text(theme.name);
+            $('.theme-swatch').removeClass('active');
+            $('.theme-swatch[data-theme="' + key + '"]').addClass('active');
+
+            // Update board square colors
+            var $boardEl = $('#board');
+            $boardEl.find('.cg-board .cg-square').each(function() {
+                // Chessground renders squares as divs, update their colors
+            });
+
+            // Set CSS variables on the board container for square colors
+            $boardEl.css('--cg-light', theme.light).css('--cg-dark', theme.dark);
+
+            // Direct DOM manipulation for Chessground squares
+            var boardDiv = $boardEl.find('.cg-board')[0];
+            if (boardDiv) {
+                var squares = boardDiv.children;
+                for (var i = 0; i < squares.length; i++) {
+                    var sq = squares[i];
+                    if (sq.classList && (sq.classList.contains('light') || sq.classList.contains('dark'))) {
+                        sq.style.backgroundColor = sq.classList.contains('light') ? theme.light : theme.dark;
+                    }
+                }
+                // Background element (Chessground uses a background div for color)
+                var bg = boardDiv.querySelector('.cg-board-bg');
+                if (bg) {
+                    bg.style.backgroundColor = theme.dark;
+                }
+            }
+
+            // Re-render board to apply theme
+            renderBoard();
+        }
+
+        function initThemeSelector() {
+            var html = '';
+            for (var key in themes) {
+                var t = themes[key];
+                var active = key === 'classic' ? ' active' : '';
+                html += '<div class="theme-swatch' + active + '" data-theme="' + key + '" style="background: linear-gradient(135deg, ' + t.light + ' 50%, ' + t.dark + ' 50%);" title="' + t.name + '"></div>';
+            }
+            $('#theme-selector').html(html);
+            $('.theme-swatch').on('click', function() {
+                applyTheme($(this).data('theme'));
+            });
+        }
 
         // --- Board rendering ---
         function fenToPieces(fen) {
@@ -527,7 +623,8 @@
                     horizontal: true
                 },
                 colors: {
-                    classic: true
+                    light: themes[currentTheme].light,
+                    dark: themes[currentTheme].dark
                 }
             };
 
@@ -795,6 +892,7 @@
         $('#btn-flip').on('click', flipBoard);
 
         // --- Init ---
+        initThemeSelector();
         newGame();
     })();
     </script>
