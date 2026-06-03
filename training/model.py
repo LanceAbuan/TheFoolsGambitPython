@@ -70,6 +70,7 @@ class ChessNet(nn.Module):
         self.value_fc2 = nn.Linear(VALUE_HEAD_CHANNELS, 1)
     
     def forward(self, x):
+        x = x.to(self.input_conv.weight.device)
         x = x.permute(0, 3, 1, 2).contiguous()
         
         out = F.relu(self.input_bn(self.input_conv(x)))
@@ -100,6 +101,8 @@ class ChessNet(nn.Module):
         self.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
+            device = next(self.parameters()).device
+            x = x.to(device)
             policy_logits, value = self(x)
             
             if legal_mask is not None:
