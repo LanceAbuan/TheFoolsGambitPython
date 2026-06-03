@@ -3,25 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Fool's Gambit — Training</title>
+    <title>The Fool's Gambit — AI Learning Chess</title>
     <link rel="icon" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/chessboard.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #0a0a1a;
+            background: #08081a;
             color: #e0e0e0;
             min-height: 100vh;
         }
-        .header {
+
+        .hero {
             text-align: center;
-            padding: 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding: 32px 20px 20px;
+            background: linear-gradient(180deg, rgba(99,102,241,0.08) 0%, transparent 100%);
         }
-        .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-        .header p { color: #666; font-size: 13px; margin-top: 4px; }
-        .main {
+        .hero h1 {
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, #a5b4fc, #6366f1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            color: #666;
+            font-size: 14px;
+            margin-top: 6px;
+            max-width: 520px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.5;
+        }
+
+        .layout {
             display: flex;
             gap: 24px;
             padding: 24px;
@@ -29,61 +47,53 @@
             margin: 0 auto;
             align-items: flex-start;
         }
-        .train-main {
+
+        .board-section {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .info-section {
             flex: 1;
             min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
-        .train-sidebar {
-            display: none;
-        }
+
         .panel {
             background: #12122a;
-            border-radius: 12px;
+            border-radius: 14px;
             padding: 20px;
             border: 1px solid rgba(255,255,255,0.06);
         }
+
         .panel-title {
-            font-size: 11px;
-            font-weight: 700;
+            font-size: 10px;
+            font-weight: 800;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
             color: #555;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
         }
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-        .metric-card {
-            background: rgba(255,255,255,0.03);
-            border-radius: 8px;
-            padding: 12px;
-            text-align: center;
-        }
-        .metric-value {
-            font-size: 28px;
-            font-weight: 700;
-            font-family: 'Courier New', monospace;
-            color: #a5b4fc;
-        }
-        .metric-label {
-            font-size: 11px;
-            color: #666;
-            margin-top: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+
+        /* Status */
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
         }
         .status-badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            padding: 4px 12px;
+            padding: 5px 14px;
             border-radius: 20px;
             font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 16px;
+            font-weight: 700;
         }
         .status-badge.playing { background: rgba(74,222,128,0.15); color: #4ade80; }
         .status-badge.training { background: rgba(99,102,241,0.15); color: #818cf8; }
@@ -100,144 +110,241 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
-        .live-board-wrap {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 16px;
-        }
-        #live-board { width: 280px; }
-        .live-status {
-            text-align: center;
-            font-size: 12px;
+        .what-happening {
+            font-size: 13px;
             color: #888;
-            padding: 8px;
-            background: rgba(255,255,255,0.02);
-            border-radius: 8px;
-            margin-bottom: 16px;
+            line-height: 1.6;
+            padding: 10px 0;
         }
+        .what-happening strong { color: #a5b4fc; }
+
+        /* Board */
+        #live-board {
+            width: 420px;
+        }
+        .board-nav {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 12px;
+        }
+        .nav-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #aaa;
+            font-size: 16px;
+            padding: 6px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .nav-btn:hover { background: rgba(99,102,241,0.2); color: #fff; }
+        .nav-btn:active { transform: scale(0.95); }
+        .move-label {
+            font-size: 12px;
+            color: #666;
+            font-family: 'Courier New', monospace;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        /* Move list */
+        .move-list-wrap {
+            margin-top: 12px;
+            max-width: 420px;
+        }
+        .move-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            max-height: 120px;
+            overflow-y: auto;
+            padding: 8px;
+            background: #08081a;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .move-list::-webkit-scrollbar { width: 3px; }
+        .move-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+        .move-num { color: #444; margin-right: 2px; }
+        .move-san {
+            color: #888;
+            cursor: pointer;
+            padding: 1px 4px;
+            border-radius: 3px;
+            transition: all 0.1s;
+        }
+        .move-san:hover { background: rgba(99,102,241,0.2); color: #fff; }
+        .move-san.active { background: rgba(99,102,241,0.3); color: #fff; font-weight: 700; }
+        .move-san.far { color: #333; }
+
+        /* Metrics */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .metric-card {
+            background: rgba(255,255,255,0.03);
+            border-radius: 10px;
+            padding: 14px;
+            position: relative;
+        }
+        .metric-value {
+            font-size: 26px;
+            font-weight: 800;
+            font-family: 'Courier New', monospace;
+            color: #a5b4fc;
+        }
+        .metric-label {
+            font-size: 10px;
+            color: #555;
+            margin-top: 2px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .metric-desc {
+            font-size: 10px;
+            color: #444;
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+
+        /* Progress bar */
+        .smartness-bar {
+            margin-top: 14px;
+        }
+        .smartness-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #555;
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .smartness-track {
+            height: 6px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .smartness-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #a5b4fc, #4ade80);
+            transition: width 1s ease;
+            border-radius: 3px;
+        }
+
+        /* Recent games */
         .game-list {
-            max-height: 300px;
+            max-height: 220px;
             overflow-y: auto;
         }
-        .game-list::-webkit-scrollbar { width: 4px; }
-        .game-list::-webkit-scrollbar-track { background: transparent; }
+        .game-list::-webkit-scrollbar { width: 3px; }
         .game-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
         .game-item {
             padding: 10px 0;
             border-bottom: 1px solid rgba(255,255,255,0.04);
         }
-        .game-header {
+        .game-top {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             margin-bottom: 4px;
         }
         .game-num { color: #555; font-size: 12px; }
-        .game-mode { font-size: 10px; color: #6366f1; background: rgba(99,102,241,0.1); padding: 1px 6px; border-radius: 4px; }
-        .game-result { font-weight: 700; font-size: 13px; }
+        .game-result { font-weight: 800; font-size: 13px; }
         .game-result.w { color: #4ade80; }
         .game-result.l { color: #f87171; }
         .game-result.d { color: #fbbf24; }
-        .game-moves { color: #555; font-family: monospace; font-size: 11px; }
-        .loss-bar {
-            height: 4px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 2px;
-            margin-top: 12px;
-            overflow: hidden;
-        }
-        .loss-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #6366f1, #a5b4fc);
-            transition: width 0.5s;
-        }
-        .log-box {
-            background: #08081a;
-            border-radius: 8px;
-            padding: 12px;
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
-            color: #666;
-            max-height: 200px;
-            overflow-y: auto;
-            line-height: 1.6;
-        }
-        .log-entry { border-bottom: 1px solid rgba(255,255,255,0.02); padding: 2px 0; }
-        .log-time { color: #444; }
-        @media (max-width: 768px) {
-            .main { flex-direction: column; padding: 16px; }
-            .train-sidebar { width: 100%; }
-            #live-board { width: 240px; }
+        .game-moves { color: #444; font-family: monospace; font-size: 11px; }
+
+        @media (max-width: 900px) {
+            .layout { flex-direction: column; align-items: center; padding: 16px; }
+            .board-section { order: -1; }
+            #live-board { width: 320px; }
+            .move-list-wrap { max-width: 320px; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
+    <div class="hero">
         <h1>The Fool's Gambit</h1>
-        <p>Training a chess AI from scratch using AlphaZero</p>
+        <p>Watching a chess AI learn from scratch through self-play. No human data. No Stockfish. Just a neural network playing against itself, getting smarter with every game.</p>
     </div>
 
-    <div class="main">
-        <div class="train-main">
-            <div class="panel">
-                <div class="panel-title">Live Training</div>
-                <div id="status-badge" class="status-badge idle">
-                    <span class="status-dot"></span>
-                    <span id="status-text">Connecting...</span>
-                </div>
-                <div class="metrics-grid">
-                    <div class="metric-card">
-                        <div class="metric-value" id="m-step">—</div>
-                        <div class="metric-label">Training Step</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value" id="m-games">—</div>
-                        <div class="metric-label">Games Played</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value" id="m-buffer">—</div>
-                        <div class="metric-label">Buffer Size</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value" id="m-loss">—</div>
-                        <div class="metric-label">Loss</div>
+    <div class="layout">
+        <div class="board-section">
+            <div class="panel" style="width: 460px;">
+                <div class="status-row">
+                    <div id="status-badge" class="status-badge idle">
+                        <span class="status-dot"></span>
+                        <span id="status-text">Connecting...</span>
                     </div>
                 </div>
-                <div class="loss-bar"><div class="loss-fill" id="loss-fill" style="width:100%"></div></div>
+                <div class="what-happening" id="what-happening">Waiting for data...</div>
 
-                <div class="live-board-wrap">
-                    <div id="live-board"></div>
-                </div>
-                <div class="live-status" id="live-status">Waiting for game...</div>
-            </div>
+                <div id="live-board"></div>
 
-            <div class="panel" style="margin-top:16px;">
-                <div class="panel-title">Recent Games</div>
-                <div class="game-list" id="game-list">
-                    <div style="color:#555; font-style:italic; padding:12px 0;">No games yet</div>
+                <div class="board-nav">
+                    <button class="nav-btn" id="btn-back" onclick="navMove(-1)">&#8592;</button>
+                    <span class="move-label" id="move-label">Move 0/0</span>
+                    <button class="nav-btn" id="btn-fwd" onclick="navMove(1)">&#8594;</button>
+                    <button class="nav-btn" id="btn-play" onclick="togglePlay()" style="font-size:12px;">&#9654;</button>
                 </div>
-            </div>
 
-            <div class="panel" style="margin-top:16px;">
-                <div class="panel-title">Training Log</div>
-                <div class="log-box" id="log-box"></div>
+                <div class="move-list-wrap">
+                    <div class="move-list" id="move-list">
+                        <span style="color:#444; font-size:12px;">Waiting for moves...</span>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="train-sidebar">
+        <div class="info-section">
             <div class="panel">
-                <div class="panel-title">Model</div>
-                <div id="model-info" style="font-size:12px; color:#888; line-height:1.8;">
-                    <div>Learning Rate: <span id="m-lr">—</span></div>
-                    <div>Policy Loss: <span id="m-pl">—</span></div>
-                    <div>Value Loss: <span id="m-vl">—</span></div>
-                    <div>Model Size: <span id="m-size">—</span></div>
+                <div class="panel-title">How Smart Is It?</div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="m-games">—</div>
+                        <div class="metric-label">Games Played</div>
+                        <div class="metric-desc">Self-play games completed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="m-buffer">—</div>
+                        <div class="metric-label">Training Positions</div>
+                        <div class="metric-desc">Board states in memory</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="m-steps">—</div>
+                        <div class="metric-label">Training Rounds</div>
+                        <div class="metric-desc">Times the model studied</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="m-loss">—</div>
+                        <div class="metric-label">Error Rate</div>
+                        <div class="metric-desc">How wrong its guesses are</div>
+                    </div>
+                </div>
+                <div class="smartness-bar">
+                    <div class="smartness-label">
+                        <span>Random guessing</span>
+                        <span>Getting better</span>
+                    </div>
+                    <div class="smartness-track">
+                        <div class="smartness-fill" id="smartness-fill" style="width: 0%"></div>
+                    </div>
                 </div>
             </div>
 
             <div class="panel">
-                <div class="panel-title">Hugging Face</div>
-                <div id="hf-info" style="font-size:12px; color:#888; line-height:1.8;">
-                    <div>Repo: <span id="m-repo" style="color:#6366f1;">—</span></div>
+                <div class="panel-title">Recent Games</div>
+                <div class="game-list" id="game-list">
+                    <div style="color:#555; font-style:italic; padding:12px 0; font-size:13px;">No games yet</div>
                 </div>
             </div>
         </div>
@@ -256,13 +363,17 @@
     <script>
     (function () {
         var liveBoard = null;
-        var liveMoves = [];
+        var allMoves = [];
+        var currentViewIndex = 0;
+        var autoFollow = true;
+        var isPlaying = false;
+        var playInterval = null;
         var logEntries = [];
 
-        /* ---------- Live Board ---------- */
+        /* ---------- Board ---------- */
 
         function initLiveBoard() {
-            var config = {
+            liveBoard = Chessboard('live-board', {
                 position: 'start',
                 orientation: 'white',
                 pieceTheme: function (piece) {
@@ -270,26 +381,88 @@
                 },
                 draggable: false,
                 showNotation: true
-            };
-            liveBoard = Chessboard('live-board', config);
+            });
         }
 
-        function updateLiveBoard(moves) {
-            if (!moves || moves.length === 0) {
-                liveBoard.position('start');
-                $('#live-status').text('Waiting for game...');
-                return;
-            }
-            liveMoves = moves;
+        function setBoardPosition(moves) {
             var c = new Chess();
-            var played = 0;
             for (var i = 0; i < moves.length; i++) {
-                try { c.move(moves[i]); played++; } catch(e) { break; }
+                try { c.move(moves[i]); } catch(e) { break; }
             }
             liveBoard.position(c.fen());
-            var last = moves[moves.length - 1] || '';
-            $('#live-status').text(played + '/' + moves.length + ' moves | Last: ' + last);
         }
+
+        function updateView() {
+            var slice = allMoves.slice(0, currentViewIndex);
+            setBoardPosition(slice);
+            var label = currentViewIndex + '/' + allMoves.length;
+            $('#move-label').text('Move ' + label);
+            $('#btn-back').prop('disabled', currentViewIndex <= 0);
+            $('#btn-fwd').prop('disabled', currentViewIndex >= allMoves.length);
+
+            renderMoveList();
+        }
+
+        function renderMoveList() {
+            if (allMoves.length === 0) {
+                $('#move-list').html('<span style="color:#444; font-size:12px;">Waiting for moves...</span>');
+                return;
+            }
+            var html = '';
+            for (var i = 0; i < allMoves.length; i++) {
+                var isMoveNum = (i % 2 === 0);
+                var cls = 'move-san';
+                if (i === currentViewIndex) cls += ' active';
+                else if (i > currentViewIndex) cls += ' far';
+                if (isMoveNum) html += '<span class="move-num">' + Math.ceil((i+1)/2) + '.</span>';
+                html += '<span class="' + cls + '" onclick="window.goToMove(' + (i+1) + ')">' + allMoves[i] + '</span>';
+            }
+            $('#move-list').html(html);
+            var el = document.getElementById('move-list');
+            var active = el.querySelector('.active');
+            if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+
+        function navMove(dir) {
+            autoFollow = false;
+            isPlaying = false;
+            updatePlayBtn();
+            currentViewIndex = Math.max(0, Math.min(allMoves.length, currentViewIndex + dir));
+            updateView();
+        }
+
+        window.togglePlay = function() {
+            isPlaying = !isPlaying;
+            updatePlayBtn();
+            if (isPlaying) {
+                autoFollow = true;
+                currentViewIndex = allMoves.length;
+                playInterval = setInterval(function() {
+                    if (currentViewIndex < allMoves.length) {
+                        currentViewIndex++;
+                        updateView();
+                    } else {
+                        isPlaying = false;
+                        clearInterval(playInterval);
+                        updatePlayBtn();
+                    }
+                }, 800);
+            } else {
+                clearInterval(playInterval);
+            }
+        };
+
+        function updatePlayBtn() {
+            $('#btn-play').html(isPlaying ? '&#9654;&#9654;' : '&#9654;');
+        }
+
+        window.goToMove = function(idx) {
+            autoFollow = false;
+            isPlaying = false;
+            updatePlayBtn();
+            currentViewIndex = idx;
+            updateView();
+        };
 
         /* ---------- Status ---------- */
 
@@ -298,27 +471,56 @@
             badge.removeClass('playing training idle').addClass(status.status || 'idle');
             $('#status-text').text((status.status || 'idle').toUpperCase());
 
-            $('#m-step').text(status.step != null ? status.step.toLocaleString() : '—');
             $('#m-games').text(status.games_played != null ? status.games_played.toLocaleString() : '—');
             $('#m-buffer').text(status.buffer_size != null ? status.buffer_size.toLocaleString() : '—');
+            $('#m-steps').text(status.step != null ? status.step.toLocaleString() : '—');
             $('#m-loss').text(status.loss ? status.loss.toFixed(4) : '—');
 
-            var lossPct = status.loss ? Math.max(0, Math.min(100, (1 - status.loss) * 100)) : 100;
-            $('#loss-fill').css('width', lossPct + '%');
+            var smartness = 0;
+            if (status.loss > 0) {
+                smartness = Math.max(0, Math.min(100, (1 - status.loss) * 100));
+            } else if (status.games_played > 0) {
+                smartness = Math.min(100, status.games_played * 5);
+            }
+            $('#smartness-fill').css('width', smartness + '%');
 
-            $('#m-lr').text(status.learning_rate ? status.learning_rate : '—');
-            $('#m-pl').text(status.policy_loss ? status.policy_loss.toFixed(4) : '—');
-            $('#m-vl').text(status.value_loss ? status.value_loss.toFixed(4) : '—');
-            $('#m-size').text(status.model_size ? (status.model_size / 1024 / 1024).toFixed(2) + ' MB' : '—');
-
-            if (status.hf_repo) $('#m-repo').text(status.hf_repo);
+            var what = '';
+            if (status.status === 'playing') {
+                var moves = (status.current_game && status.current_game.moves) ? status.current_game.moves : [];
+                what = 'The AI is <strong>playing chess against itself</strong>. ';
+                if (moves.length > 0) {
+                    what += 'Currently on move <strong>' + moves.length + '</strong> (it thinks ~30 seconds per move).';
+                } else {
+                    what += 'A new game has just started.';
+                }
+            } else if (status.status === 'training') {
+                what = 'The AI is <strong>studying its past games</strong>, trying to predict what moves led to wins.';
+            } else if (status.games_played > 0) {
+                what = 'The AI has played <strong>' + status.games_played + ' games</strong> and studied <strong>' + status.step + ' positions</strong>. It\'s still learning!';
+            } else {
+                what = 'Waiting for training to start...';
+            }
+            $('#what-happening').html(what);
 
             if (status.recent_games && status.recent_games.length > 0) {
                 renderGames(status.recent_games);
             }
 
             if (status.current_game && status.current_game.moves) {
-                updateLiveBoard(status.current_game.moves);
+                var newMoves = status.current_game.moves;
+                if (newMoves.length > allMoves.length || newMoves.length === 0) {
+                    allMoves = newMoves;
+                    currentViewIndex = newMoves.length;
+                    autoFollow = true;
+                    isPlaying = false;
+                    updatePlayBtn();
+                } else {
+                    allMoves = newMoves;
+                    if (autoFollow) {
+                        currentViewIndex = allMoves.length;
+                    }
+                }
+                updateView();
             }
         }
 
@@ -328,15 +530,14 @@
                 var g = games[i];
                 var cls = 'd';
                 if (g.result === '1-0' || g.result === '0-1') cls = (g.result === '1-0' ? 'w' : 'l');
-                var mode = (g.mode || 'self-play').toUpperCase();
                 var moves = '';
                 if (g.pgn) {
                     var parts = g.pgn.split(' ').filter(function(s){ return s; });
-                    moves = parts.slice(-8).join(' ') + (parts.length > 8 ? '...' : '');
+                    moves = parts.slice(-6).join(' ') + (parts.length > 6 ? '...' : '');
                 }
                 html += '<div class="game-item">';
-                html += '<div class="game-header">';
-                html += '<span class="game-num">#' + g.game_num + ' <span class="game-mode">' + mode + '</span></span>';
+                html += '<div class="game-top">';
+                html += '<span class="game-num">Game #' + g.game_num + '</span>';
                 html += '<span class="game-result ' + cls + '">' + (g.result || '*') + '</span>';
                 html += '</div>';
                 if (moves) html += '<div class="game-moves">' + moves + '</div>';
@@ -352,9 +553,6 @@
             var ts = now.toTimeString().split(' ')[0];
             logEntries.push('<span class="log-time">[' + ts + ']</span> ' + msg);
             if (logEntries.length > 100) logEntries.shift();
-            $('#log-box').html(logEntries.join('<br>'));
-            var el = document.getElementById('log-box');
-            el.scrollTop = el.scrollHeight;
         }
 
         /* ---------- SSE ---------- */
@@ -364,35 +562,28 @@
                 var source = new EventSource('https://api.lanceabuan.tech/api/train/stream');
                 source.addEventListener('game_start', function(e) {
                     var data = JSON.parse(e.data);
-                    $('#live-status').text('New ' + data.mode + ' game starting...');
-                    liveBoard.position('start');
-                    liveMoves = [];
-                    addLog('Game started (' + data.mode + ')');
+                    allMoves = [];
+                    currentViewIndex = 0;
+                    autoFollow = true;
+                    updateView();
+                    addLog('New ' + data.mode + ' game');
                 });
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
-                    if (data.moves) updateLiveBoard(data.moves);
-                    $('#live-status').text(data.moves.length + ' moves | ' + data.status);
-                });
-                source.addEventListener('train_step', function(e) {
-                    var data = JSON.parse(e.data);
-                    if (data.data) {
-                        addLog('Step ' + data.data.step + ' | loss=' + (data.data.loss ? data.data.loss.toFixed(4) : '?'));
+                    if (data.moves) {
+                        allMoves = data.moves;
+                        if (autoFollow) currentViewIndex = allMoves.length;
+                        updateView();
                     }
                 });
                 source.addEventListener('status_update', function(e) {
                     var data = JSON.parse(e.data);
                     if (data.data) updateStatus(data.data);
                 });
-                source.addEventListener('training_stopped', function(e) {
-                    addLog('Training stopped');
-                    $('#status-badge').removeClass('playing training').addClass('idle');
-                    $('#status-text').text('STOPPED');
-                });
                 source.onerror = function() {};
                 addLog('SSE connected');
             } catch(e) {
-                addLog('SSE failed: ' + e.message);
+                addLog('SSE failed');
             }
         }
 
@@ -403,12 +594,8 @@
                 url: 'https://api.lanceabuan.tech/api/train/status',
                 method: 'GET',
                 timeout: 5000,
-                success: function(status) {
-                    updateStatus(status);
-                },
-                error: function() {
-                    // Don't spam errors in log
-                }
+                success: updateStatus,
+                error: function() {}
             });
         }
 
