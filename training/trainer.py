@@ -183,10 +183,10 @@ class Trainer:
         }
         return push_to_hf(checkpoint_path, metadata)
 
-    def play_game(self):
+    def play_game(self, on_move=None):
         self.status = "playing"
         self.last_update = time.time()
-        game_data = self.selfplay.play()
+        game_data = self.selfplay.play(on_move=on_move)
         examples = game_data['examples']
         self.buffer.add(examples)
         self.games_played += 1

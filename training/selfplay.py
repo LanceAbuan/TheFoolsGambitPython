@@ -193,8 +193,11 @@ class SelfPlayGame:
         self.max_moves = max_moves
         self.mcts = MCTS(model)
 
-    def play(self):
+    def play(self, on_move=None):
         """Play a complete self-play game.
+
+        Args:
+            on_move: callback(moves_list, san_move) called after each move
 
         Returns dict with:
             - 'examples': list of training examples
@@ -236,6 +239,9 @@ class SelfPlayGame:
                 })
                 print(f'[GAME] Played {san_move}', flush=True)
                 board.push(move)
+                move_sans.append(san_move)
+                if on_move:
+                    on_move(list(move_sans))
         except Exception as e:
             print(f'[GAME] ERROR: {e}', flush=True)
             import traceback
@@ -258,7 +264,6 @@ class SelfPlayGame:
             })
 
         # Build PGN
-        move_sans = [ex['san'] for ex in examples]
         game = chess.pgn.Game()
         b = chess.Board()
         current = game

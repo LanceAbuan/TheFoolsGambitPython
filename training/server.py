@@ -1,5 +1,6 @@
 """Flask API for training management, live SSE streaming, and Stockfish integration."""
 import os
+import sys
 import json
 import time
 import threading
@@ -174,7 +175,10 @@ def train_start():
                     print(f'[TRAIN] Starting game {i+1}/{games_per_cycle}', flush=True)
                     send_sse({'type': 'game_start', 'mode': 'self-play'})
 
-                    game_data = t.play_game()
+                    game_data = t.play_game(on_move=lambda moves: (
+                        setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+                        stream_game_progress()
+                    ))
                     print(f'[TRAIN] Game {i+1} done, moves: {len(game_data.get("moves", []))}', flush=True)
                 current_game_moves = game_data.get('moves', [])
 
@@ -253,7 +257,10 @@ def train_play():
     current_game_status = "playing"
     send_sse({'type': 'game_start', 'mode': 'self-play'})
 
-    game_data = t.play_game()
+    game_data = t.play_game(on_move=lambda moves: (
+        setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+        stream_game_progress()
+    ))
     current_game_moves = game_data.get('moves', [])
 
     if game_data.get('pgn'):
