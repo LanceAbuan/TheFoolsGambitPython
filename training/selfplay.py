@@ -1,7 +1,9 @@
 """Self-play engine using MCTS with neural network guidance."""
 import chess
+import chess.pgn
 import numpy as np
 import torch
+import time
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 
@@ -14,6 +16,7 @@ class MCTS:
         self.noise_alpha = noise_alpha
 
     def search(self, board, num_simulations=800):
+        t0 = time.time()
         legal_moves = list(board.legal_moves)
         if not legal_moves:
             return np.zeros(NUM_POSSIBLE_MOVES)
@@ -24,7 +27,8 @@ class MCTS:
             return vc
 
         root = self._build_root(board, legal_moves)
-
+        t1 = time.time()
+        print(f'  [MCTS] Root built in {t1-t0:.3f}s, children={len(root["children"])}', flush=True)
         for _ in range(num_simulations):
             board_copy = chess.Board(board.fen())
             self._simulate(root, board_copy)
@@ -34,6 +38,8 @@ class MCTS:
             if child['move'] is not None:
                 visit_counts[move_to_idx(child['move'])] = child['visit_count']
 
+        t2 = time.time()
+        print(f'  [MCTS] {num_simulations} sims in {t2-t1:.3f}s, visits={visit_counts.sum():.0f}', flush=True)
         return visit_counts
 
     def _build_root(self, board, legal_moves):
@@ -45,8 +51,10 @@ class MCTS:
         self.model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
+            device = next(self.model.parameters()).device
+            x = x.to(device)
             policy_logits, _ = self.model(x)
-            policy_logits = policy_logits.squeeze(0).numpy()
+            policy_logits = policy_logits.squeeze(0).cpu().numpy()
 
         mask = legal_mask
         policy_logits = policy_logits + (1 - mask) * -1e10
@@ -87,10 +95,11 @@ class MCTS:
             selected = self._select_child(node)
             path.append((node, selected))
 
+            board.push(selected['move'])
+
             if not selected['expanded']:
                 self._expand(selected, board)
 
-            board.push(selected['move'])
             node = selected
 
         value = self._evaluate(board)
@@ -138,8 +147,10 @@ class MCTS:
         self.model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
+            device = next(self.model.parameters()).device
+            x = x.to(device)
             policy_logits, _ = self.model(x)
-            policy_logits = policy_logits.squeeze(0).numpy()
+            policy_logits = policy_logits.squeeze(0).cpu().numpy()
 
         mask = legal_mask
         policy_logits = policy_logits + (1 - mask) * -1e10
@@ -169,8 +180,10 @@ class MCTS:
         self.model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
+            device = next(self.model.parameters()).device
+            x = x.to(device)
             _, value = self.model(x)
-            return float(value.squeeze())
+            return float(value.squeeze().cpu())
 
 
 class SelfPlayGame:
@@ -192,32 +205,41 @@ class SelfPlayGame:
         board = chess.Board()
         examples = []
         move_sans = []
+        print(f'[GAME] Starting self-play, sims={self.num_mcts_simulations}', flush=True)
+        try:
+            for i in range(self.max_moves):
+                print(f'[GAME] Move {i+1}, turn={"W" if board.turn else "B"}', flush=True)
+                t_move = time.time()
+                board_tensor = board_to_tensor(board)
+                visit_counts = self.mcts.search(board, self.num_mcts_simulations)
+                print(f'[GAME] Search done in {time.time()-t_move:.1f}s, visits={visit_counts.sum():.0f}', flush=True)
 
-        for _ in range(self.max_moves):
-            board_tensor = board_to_tensor(board)
-            visit_counts = self.mcts.search(board, self.num_mcts_simulations)
+                total_visits = visit_counts.sum()
+                policy = visit_counts / total_visits if total_visits > 0 else visit_counts
 
-            total_visits = visit_counts.sum()
-            policy = visit_counts / total_visits if total_visits > 0 else visit_counts
+                legal_moves = list(board.legal_moves)
+                if not legal_moves:
+                    break
 
-            legal_moves = list(board.legal_moves)
-            if not legal_moves:
-                break
+                probs = visit_counts[[move_to_idx(m) for m in legal_moves]]
+                probs = probs / probs.sum() if probs.sum() > 0 else np.ones(len(legal_moves)) / len(legal_moves)
 
-            probs = visit_counts[[move_to_idx(m) for m in legal_moves]]
-            probs = probs / probs.sum() if probs.sum() > 0 else np.ones(len(legal_moves)) / len(legal_moves)
+                move_idx = np.random.choice(len(legal_moves), p=probs)
+                move = legal_moves[move_idx]
 
-            move_idx = np.random.choice(len(legal_moves), p=probs)
-            move = legal_moves[move_idx]
-
-            examples.append({
-                'board_tensor': board_tensor,
-                'policy': policy,
-                'turn': board.turn,
-                'san': board.san(move),
-            })
-
-            board.push(move)
+                san_move = board.san(move)
+                examples.append({
+                    'board_tensor': board_tensor,
+                    'policy': policy,
+                    'turn': board.turn,
+                    'san': san_move,
+                })
+                print(f'[GAME] Played {san_move}', flush=True)
+                board.push(move)
+        except Exception as e:
+            print(f'[GAME] ERROR: {e}', flush=True)
+            import traceback
+            traceback.print_exc()
 
         outcome = self._get_outcome(board)
 
@@ -237,18 +259,21 @@ class SelfPlayGame:
 
         # Build PGN
         move_sans = [ex['san'] for ex in examples]
-        board2 = chess.Board()
+        game = chess.pgn.Game()
+        b = chess.Board()
+        current = game
         for san in move_sans:
             try:
-                board2.push_san(san)
+                move = b.parse_san(san)
+                current = current.add_variation(move)
+                b.push(move)
             except:
-                pass
-        game = chess.Game.from_board(board2)
-        pgn = game.pgn()
+                break
+        pgn = game.accept(chess.pgn.StringExporter())
 
         if board.is_checkmate():
             result = '1-0' if board.turn == chess.BLACK else '0-1'
-        elif board.is_draw():
+        elif board.is_insufficient_material() or board.is_fivefold_repetition() or board.can_claim_draw():
             result = '1/2-1/2'
         else:
             result = '1/2-1/2'
@@ -263,6 +288,6 @@ class SelfPlayGame:
     def _get_outcome(self, board):
         if board.is_checkmate():
             return 1.0 if board.turn == chess.BLACK else -1.0
-        if board.is_draw():
+        if board.is_insufficient_material() or board.is_fivefold_repetition() or board.can_claim_draw():
             return 0.0
         return 0.0

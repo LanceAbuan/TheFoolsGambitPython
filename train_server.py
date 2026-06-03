@@ -14,14 +14,35 @@ Endpoints:
 """
 import sys
 import os
+import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from flask import Flask
+from flask import Flask, jsonify
 from training.server import training_bp
 
 app = Flask(__name__)
 app.register_blueprint(training_bp)
 
+
+def auto_start_training():
+    """Auto-start the training loop when server boots."""
+    import time as _time
+    import requests as _req
+    _time.sleep(5)
+    try:
+        _req.post('http://localhost:5001/api/train/start', json={
+            'games_per_cycle': 10,
+            'steps_per_cycle': 50,
+            'mcts_simulations': 100,
+            'use_stockfish': False
+        }, timeout=5)
+        print('[AUTO] Training started automatically.')
+    except Exception as e:
+        print(f'[AUTO] Failed to start training: {e}')
+
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    t = threading.Thread(target=auto_start_training, daemon=True)
+    t.start()
+    app.run(debug=False, host='0.0.0.0', port=5001)

@@ -16,7 +16,7 @@ echo "Model Dir: ${MODEL_DIR:-/tmp/chess-models}"
 
 # Start Cloudflare Tunnel in background
 echo "Starting Cloudflare Tunnel..."
-/home/lance/.local/bin/cloudflared tunnel --url http://localhost:5001 &
+/home/lance/.local/bin/cloudflared --config /home/lance/.cloudflared/config.yml tunnel run &
 TUNNEL_PID=$!
 echo "Tunnel PID: $TUNNEL_PID"
 

@@ -109,7 +109,17 @@ class TrainingBuffer:
 class Trainer:
     def __init__(self, num_residual_blocks=2, residual_filters=32):
         os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
-        self.model = ChessNet(num_residual_blocks, residual_filters)
+        try:
+            self.device = torch.device('cuda')
+            self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
+            with torch.no_grad():
+                test_input = torch.randn(1, 8, 8, 16).to(self.device)
+                self.model(test_input)
+            print(f'[TRAINER] Model on CUDA', flush=True)
+        except RuntimeError:
+            self.device = torch.device('cpu')
+            self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
+            print(f'[TRAINER] CUDA OOM, falling back to CPU', flush=True)
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
         self.selfplay = SelfPlayGame(self.model)
@@ -199,6 +209,9 @@ class Trainer:
             self.status = "idle"
             return None
         tensors, policies, values = batch
+        tensors = tensors.to(self.device)
+        policies = policies.to(self.device)
+        values = values.to(self.device)
         self.model.train()
         self.optimizer.zero_grad()
         pred_policy, pred_value = self.model(tensors)
