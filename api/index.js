@@ -204,9 +204,7 @@ module.exports = async (req, res) => {
 
   let body = {};
   try {
-    if (req.method === 'POST' && req.body) {
-      body = JSON.parse(req.body) || {};
-    }
+    body = JSON.parse(req.body || '{}');
   } catch {
     body = {};
   }
