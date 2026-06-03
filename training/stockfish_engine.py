@@ -30,14 +30,11 @@ class StockfishPlayer:
             }
         )
 
-    def set_position(self, fen):
-        self.engine.set_position(fen.split(' '))
-
     def get_move(self, board, depth=None):
         """Get Stockfish's best move as UCI string."""
-        self.engine.set_position(board.fen().split(' '))
+        self.engine.set_fen_position(board.fen())
         if depth:
-            self.engine.set_option("Depth", str(depth))
+            self.engine.set_depth(depth)
         return self.engine.get_best_move()
 
     def get_best_move_san(self, board):
