@@ -186,6 +186,8 @@ function newState(game) {
   };
 }
 
+const TRAINING_URL = process.env.TRAINING_URL || 'http://localhost:5001';
+
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -245,7 +247,23 @@ module.exports = async (req, res) => {
         game.move({ from: lan.slice(0, 2), to: lan.slice(2, 4), promotion: lan.length > 4 ? lan[4] : undefined });
       }
       res.status(200).json(newState(game));
-    } else if (path.includes('undo')) {
+    } else if (path.includes('train')) {
+       const trainingPath = path.replace('/api/', '');
+       const url = `${TRAINING_URL}/api/${trainingPath}`;
+       
+       try {
+         const response = await fetch(url, {
+           method: req.method,
+           headers: { 'Content-Type': 'application/json' },
+           body: req.body || undefined
+         });
+         const data = await response.json();
+         res.status(response.status).json(data);
+       } catch (e) {
+         res.status(502).json({ error: 'Training server unavailable', detail: e.message });
+       }
+       
+     } else if (path.includes('undo')) {
       const { fen } = body;
       if (!fen) {
         return res.status(400).json({ error: 'Missing fen' });
