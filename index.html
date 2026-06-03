@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Fool's Gambit</title>
     <link rel="icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/chessboard.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #1a1a2e;
@@ -17,7 +17,6 @@
             justify-content: center;
             align-items: center;
         }
-
         .container {
             display: flex;
             gap: 32px;
@@ -26,7 +25,6 @@
             width: 100%;
             align-items: flex-start;
         }
-
         .board-col {
             display: flex;
             flex-direction: column;
@@ -34,7 +32,6 @@
             gap: 12px;
             flex-shrink: 0;
         }
-
         .player-bar {
             width: 100%;
             display: flex;
@@ -44,7 +41,6 @@
             background: #16213e;
             border-radius: 8px;
         }
-
         .player-name {
             font-weight: 600;
             font-size: 14px;
@@ -52,7 +48,6 @@
             align-items: center;
             gap: 8px;
         }
-
         .player-icon {
             width: 24px;
             height: 24px;
@@ -63,10 +58,8 @@
             font-size: 14px;
             font-weight: 700;
         }
-
         .player-icon.white-icon { background: #e0e0e0; color: #333; }
         .player-icon.black-icon { background: #333; color: #e0e0e0; }
-
         .player-timer {
             font-family: 'Courier New', monospace;
             font-size: 20px;
@@ -77,27 +70,19 @@
             color: #888;
             transition: all 0.3s;
         }
-
         .player-timer.active {
             background: rgba(74, 222, 128, 0.15);
             color: #4ade80;
         }
-
         .player-captures {
-            font-size: 16px;
+            font-size: 18px;
             letter-spacing: 1px;
             min-height: 20px;
             margin-top: 4px;
         }
-
-        #board {
-            width: min(560px, 85vw);
-            height: min(560px, 85vw);
-            border-radius: 4px;
-            overflow: hidden;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        #myBoard {
+            width: 560px;
         }
-
         .status-bar {
             width: 100%;
             text-align: center;
@@ -106,11 +91,8 @@
             font-weight: 500;
             color: #aaa;
         }
-
         .status-bar.check { color: #f87171; }
         .status-bar.game-over { color: #4ade80; font-weight: 700; }
-
-        /* Sidebar */
         .sidebar {
             flex: 1;
             display: flex;
@@ -119,13 +101,11 @@
             min-width: 240px;
             max-width: 320px;
         }
-
         .panel {
             background: #16213e;
             border-radius: 12px;
             padding: 16px;
         }
-
         .panel-title {
             font-size: 11px;
             font-weight: 700;
@@ -134,37 +114,26 @@
             color: #666;
             margin-bottom: 12px;
         }
-
-        .theme-name {
-            font-size: 12px;
-            color: #888;
-            margin-bottom: 8px;
-        }
-
-        .moves-list {
+        #movesList {
             max-height: 320px;
             overflow-y: auto;
             font-family: 'Courier New', monospace;
             font-size: 13px;
         }
-
-        .moves-list::-webkit-scrollbar { width: 4px; }
-        .moves-list::-webkit-scrollbar-track { background: transparent; }
-        .moves-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-
+        #movesList::-webkit-scrollbar { width: 4px; }
+        #movesList::-webkit-scrollbar-track { background: transparent; }
+        #movesList::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
         .move-row {
             display: flex;
             gap: 4px;
             padding: 2px 0;
         }
-
         .move-num {
             color: #555;
             min-width: 28px;
             text-align: right;
             padding-right: 6px;
         }
-
         .move-san {
             padding: 2px 8px;
             border-radius: 4px;
@@ -172,23 +141,17 @@
             min-width: 56px;
             transition: background 0.15s;
         }
-
-        .move-san:hover {
-            background: rgba(255,255,255,0.08);
-        }
-
+        .move-san:hover { background: rgba(255,255,255,0.08); }
         .move-san.latest {
             background: rgba(99, 102, 241, 0.25);
             color: #a5b4fc;
             font-weight: 700;
         }
-
         .buttons {
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
-
         .btn {
             padding: 10px 16px;
             border: none;
@@ -202,55 +165,11 @@
             justify-content: center;
             gap: 8px;
         }
-
-        .btn-primary {
-            background: #6366f1;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #818cf8;
-        }
-
-        .btn-secondary {
-            background: rgba(255,255,255,0.06);
-            color: #ccc;
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255,255,255,0.12);
-        }
-
-        .btn:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        .theme-selector {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
-        .theme-swatch {
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
-            cursor: pointer;
-            border: 2px solid transparent;
-            transition: all 0.15s;
-            position: relative;
-        }
-
-        .theme-swatch:hover {
-            transform: scale(1.15);
-        }
-
-        .theme-swatch.active {
-            border-color: #6366f1;
-            box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
-        }
-
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-primary:hover { background: #818cf8; }
+        .btn-secondary { background: rgba(255,255,255,0.06); color: #ccc; }
+        .btn-secondary:hover { background: rgba(255,255,255,0.12); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .thinking {
             display: flex;
             align-items: center;
@@ -259,46 +178,30 @@
             color: #888;
             font-size: 13px;
         }
-
-        .thinking-dots {
-            display: flex;
-            gap: 3px;
-        }
-
+        .thinking-dots { display: flex; gap: 3px; }
         .thinking-dots span {
-            width: 6px;
-            height: 6px;
+            width: 6px; height: 6px;
             border-radius: 50%;
             background: #6366f1;
             animation: pulse 1.2s infinite;
         }
-
         .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
         .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-
         @keyframes pulse {
             0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
             40% { opacity: 1; transform: scale(1); }
         }
-
         .game-over-overlay {
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0, 0, 0, 0.7);
             backdrop-filter: blur(4px);
             z-index: 100;
             justify-content: center;
             align-items: center;
         }
-
-        .game-over-overlay.active {
-            display: flex;
-        }
-
+        .game-over-overlay.active { display: flex; }
         .game-over-box {
             background: #1a1a2e;
             border-radius: 16px;
@@ -306,17 +209,8 @@
             text-align: center;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
         }
-
-        .game-over-box h2 {
-            font-size: 28px;
-            margin-bottom: 8px;
-        }
-
-        .game-over-box p {
-            color: #888;
-            margin-bottom: 24px;
-        }
-
+        .game-over-box h2 { font-size: 28px; margin-bottom: 8px; }
+        .game-over-box p { color: #888; margin-bottom: 24px; }
         .promo-overlay {
             display: none;
             position: fixed;
@@ -326,9 +220,7 @@
             justify-content: center;
             align-items: center;
         }
-
         .promo-overlay.active { display: flex; }
-
         .promo-box {
             background: #16213e;
             border-radius: 12px;
@@ -336,10 +228,8 @@
             display: flex;
             gap: 8px;
         }
-
         .promo-piece {
-            width: 56px;
-            height: 56px;
+            width: 56px; height: 56px;
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -349,34 +239,12 @@
             transition: background 0.15s;
             background: rgba(255,255,255,0.06);
         }
-
-        .promo-piece:hover {
-            background: rgba(99, 102, 241, 0.3);
+        .promo-piece:hover { background: rgba(99, 102, 241, 0.3); }
+        @media (max-width: 768px) {
+            .container { flex-direction: column; align-items: center; }
+            #myBoard { width: min(560px, 90vw); }
+            .sidebar { min-width: unset; max-width: unset; width: min(560px, 90vw); }
         }
-
-        /* Chessground overrides */
-
-        .cg-wrap, .cg-board, .cg-board > * {
-            border-radius: 0 !important;
-        }
-
-        .cg-square {
-            border-radius: 0 !important;
-        }
-
-        .cg-highlight.move {
-            background: rgba(99, 102, 241, 0.4) !important;
-        }
-
-        .cg-highlight.pre {
-            background: rgba(99, 102, 241, 0.25) !important;
-        }
-
-        .cg-piece {
-            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
-        }
-
-        .coord { font-size: 11px !important; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -386,13 +254,13 @@
                 <div>
                     <div class="player-name">
                         <span class="player-icon black-icon">R</span>
-                        <span>AI</span>
+                        <span>AI (Minimax)</span>
                     </div>
                     <div class="player-captures" id="black-captures"></div>
                 </div>
                 <div class="player-timer" id="black-timer">10:00</div>
             </div>
-            <div id="board"></div>
+            <div id="myBoard"></div>
             <div class="player-bar" id="white-bar">
                 <div>
                     <div class="player-name">
@@ -403,45 +271,38 @@
                 </div>
                 <div class="player-timer active" id="white-timer">10:00</div>
             </div>
-            <div class="status-bar" id="status">Your turn</div>
+            <div class="status-bar" id="status">Loading...</div>
         </div>
 
         <div class="sidebar">
             <div class="panel">
                 <div class="panel-title">Moves</div>
-                <div class="moves-list" id="moves-list">
-                    <div style="color:#555; font-style:italic;">No moves yet</div>
-                </div>
+                <div id="movesList"><div style="color:#555; font-style:italic;">No moves yet</div></div>
             </div>
 
             <div class="panel">
-                <div class="panel-title">Game</div>
+                <div class="panel-title">Controls</div>
                 <div class="buttons">
                     <button class="btn btn-primary" id="btn-new">New Game</button>
-                    <button class="btn btn-secondary" id="btn-undo">Undo</button>
+                    <button class="btn btn-secondary" id="btn-undo">Undo Move</button>
                     <button class="btn btn-secondary" id="btn-flip">Flip Board</button>
                 </div>
             </div>
 
             <div class="panel">
-                <div class="panel-title">Board Theme</div>
-                <div class="theme-name" id="theme-name">Classic</div>
-                <div class="theme-selector" id="theme-selector"></div>
-            </div>
-
-            <div class="panel">
                 <div class="panel-title">Training</div>
-                <div class="theme-name" id="train-status">Not connected</div>
+                <div id="train-status" style="font-size:12px; color:#888;">Not connected</div>
                 <div id="train-metrics" style="font-size:12px; color:#888; line-height:1.8;"></div>
                 <div class="buttons" style="margin-top:8px;">
                     <button class="btn btn-secondary" id="btn-train-start">Start Training</button>
                     <button class="btn btn-secondary" id="btn-train-stop" disabled>Stop Training</button>
                     <button class="btn btn-secondary" id="btn-train-play">Play 1 Game</button>
                 </div>
-                <div class="thinking" id="thinking" style="display:none;">
-                    <div class="thinking-dots"><span></span><span></span><span></span></div>
-                    <span>AI thinking...</span>
-                </div>
+            </div>
+
+            <div class="thinking" id="thinking" style="display:none;">
+                <div class="thinking-dots"><span></span><span></span><span></span></div>
+                <span>AI thinking...</span>
             </div>
         </div>
     </div>
@@ -463,17 +324,10 @@
         </div>
     </div>
 
-    <link rel="stylesheet" href="/static/chessground.cburnett.css">
     <script src="/static/jquery.min.js"></script>
-    <script src="/static/chessground.min.js"></script>
+    <script src="/static/chessboard.js"></script>
     <script>
-    (function() {
-        const Chessground = window.Chessground;
-        if (!Chessground) {
-            document.body.innerHTML = '<div style="color:red;padding:40px;text-align:center;font-size:24px;">Chessground failed to load. Check console.</div>';
-            return;
-        }
-
+    (function () {
         var state = {
             fen: '',
             legal: [],
@@ -484,196 +338,78 @@
             fenHistory: []
         };
 
-        var orientation = 'white';
         var isAiThinking = false;
         var pendingPromo = null;
         var board = null;
         var whiteTime = 600, blackTime = 600;
         var timerInterval = null;
-        var lastUci = null;
-        var currentTheme = 'classic';
+        var currentOrientation = 'white';
+        var lastFromSq = null, lastToSq = null;
+        var trainPollInterval = null;
+        var trainAvailable = false;
 
-        var themes = {
-            classic: { light: '#F0D9B5', dark: '#B58863', name: 'Classic' },
-            blue: { light: '#DEEBFF', dark: '#7393B2', name: 'Blue' },
-            desert: { light: '#EDC9A8', dark: '#AB7C52', name: 'Desert' },
-            maple: { light: '#F0D3B0', dark: '#B8662E', name: 'Maple' },
-            night: { light: '#B0C4B8', dark: '#5C7060', name: 'Night' },
-            purple: { light: '#E8D5F5', dark: '#9B72B0', name: 'Purple' },
-            ruby: { light: '#F0D0D0', dark: '#C06060', name: 'Ruby' },
-            slate: { light: '#B0C4D8', dark: '#506070', name: 'Slate' }
-        };
+        /* ---------- chessboard.js ---------- */
 
-        function applyTheme(key) {
-            currentTheme = key;
-            var theme = themes[key];
-            $('#theme-name').text(theme.name);
-            $('.theme-swatch').removeClass('active');
-            $('.theme-swatch[data-theme="' + key + '"]').addClass('active');
-
-            // Update board square colors
-            var $boardEl = $('#board');
-            $boardEl.find('.cg-board .cg-square').each(function() {
-                // Chessground renders squares as divs, update their colors
-            });
-
-            // Set CSS variables on the board container for square colors
-            $boardEl.css('--cg-light', theme.light).css('--cg-dark', theme.dark);
-
-            // Direct DOM manipulation for Chessground squares
-            var boardDiv = $boardEl.find('.cg-board')[0];
-            if (boardDiv) {
-                var squares = boardDiv.children;
-                for (var i = 0; i < squares.length; i++) {
-                    var sq = squares[i];
-                    if (sq.classList && (sq.classList.contains('light') || sq.classList.contains('dark'))) {
-                        sq.style.backgroundColor = sq.classList.contains('light') ? theme.light : theme.dark;
-                    }
-                }
-                // Background element (Chessground uses a background div for color)
-                var bg = boardDiv.querySelector('.cg-board-bg');
-                if (bg) {
-                    bg.style.backgroundColor = theme.dark;
-                }
-            }
-
-            // Re-render board to apply theme
-            renderBoard();
+        function onDragStart(source, piece, pos, dropOff) {
+            if (state.gameover || isAiThinking) return false;
+            if (state.turn !== 'white') return false;
+            if (piece.search(/^b/) !== -1) return false;
         }
 
-        function initThemeSelector() {
-            var html = '';
-            for (var key in themes) {
-                var t = themes[key];
-                var active = key === 'classic' ? ' active' : '';
-                html += '<div class="theme-swatch' + active + '" data-theme="' + key + '" style="background: linear-gradient(135deg, ' + t.light + ' 50%, ' + t.dark + ' 50%);" title="' + t.name + '"></div>';
-            }
-            $('#theme-selector').html(html);
-            $('.theme-swatch').on('click', function() {
-                applyTheme($(this).data('theme'));
-            });
-        }
+        function onDrop(source, target) {
+            var move = source + target;
+            var piece = board.position();
+            var pawnRow = parseInt(source[1]);
+            var isWhitePromo = state.turn === 'white' && pawnRow === 2 && parseInt(target[1]) === 8;
+            var isBlackPromo = state.turn === 'black' && parseInt(source[1]) === 5 && parseInt(target[1]) === 1;
 
-        // --- Board rendering ---
-        function fenToPieces(fen) {
-            var pieces = {};
-            var rows = fen.split(' ')[0].split('/');
-            for (var r = 0; r < 8; r++) {
-                var file = 0;
-                for (var i = 0; i < rows[r].length; i++) {
-                    var ch = rows[r][i];
-                    if (ch >= '1' && ch <= '8') {
-                        file += parseInt(ch);
-                    } else {
-                        var color = (ch === ch.toUpperCase()) ? 'w' : 'b';
-                        var role = ch.toLowerCase();
-                        var sq = String.fromCharCode(97 + file) + (8 - r);
-                        pieces[sq] = { role: role, color: color };
-                        file++;
-                    }
-                }
-            }
-            return pieces;
-        }
-
-        function uciToSquares(uci) {
-            return { from: uci.substring(0, 2), to: uci.substring(2, 4) };
-        }
-
-        function renderBoard() {
-            var pieces = fenToPieces(state.fen);
-            var dests = {};
-            for (var i = 0; i < state.legal.length; i++) {
-                var m = state.legal[i];
-                var from = m.substring(0, 2);
-                var to = m.substring(2, 4);
-                if (!dests[from]) dests[from] = [];
-                dests[from].push(to);
+            if (isWhitePromo) {
+                pendingPromo = { from: source, to: target };
+                showPromoDialog();
+                return 'snapback';
             }
 
-            var lastMove = lastUci ? uciToSquares(lastUci) : null;
+            makeMove(move);
+            return 'legal';
+        }
 
-            var cfg = {
-                fen: state.fen,
-                orientation: orientation,
-                turnColor: state.turn === 'white' ? 'w' : 'b',
-                check: state.inCheck ? (state.turn === 'white' ? 'w' : 'b') : null,
-                move: lastMove ? { last: [lastMove.from, lastMove.to] } : {},
-                highlight: {
-                    lastMove: true,
-                    check: true,
+        function onSnapEnd() {
+            board.position(state.fen);
+        }
+
+        function updateBoard() {
+            board.position(state.fen);
+            lastFromSq = null;
+            lastToSq = null;
+        }
+
+        function initBoard() {
+            var config = {
+                draggable: true,
+                position: 'start',
+                orientation: 'white',
+                pieceTheme: '/static/img/chesspieces/wikipedia/{piece}.png',
+                pieceTheme: function (piece) {
+                    return '/static/img/chesspieces/wikipedia/' + piece + '.png';
                 },
-                animation: { enabled: true, duration: 150 },
-                movable: {
-                    color: 'w',
-                    dests: state.turn === 'white' && !state.gameover && !isAiThinking ? dests : {},
-                    events: {
-                        after: function(from, to, meta) {
-                            onPlayerMove(from, to);
-                        }
-                    },
-                    free: false,
-                    requireControl: true,
-                    auto: true,
-                    promote: {
-                        enabled: true,
-                        dests: dests
-                    }
-                },
-                premove: {
-                    enabled: state.turn === 'white' && !state.gameover && !isAiThinking,
-                    move: function(from, to) {
-                        onPlayerMove(from, to);
-                    },
-                    cancel: function() {}
-                },
-                drawable: { enabled: false },
-                viewOnly: state.turn !== 'white' || state.gameover || isAiThinking,
-                coordinates: {
-                    vertical: true,
-                    horizontal: true
-                },
-                colors: {
-                    light: themes[currentTheme].light,
-                    dark: themes[currentTheme].dark
-                }
+                onDragStart: onDragStart,
+                onDrop: onDrop,
+                onSnapEnd: onSnapEnd,
+                showNotation: true,
+                moveSpeed: 200,
+                snapbackSpeed: 50,
+                snapSpeed: 100
             };
-
-            if (!board) {
-                board = Chessground(document.getElementById('board'), cfg);
-            } else {
-                board.set(cfg);
-            }
+            board = Chessboard('myBoard', config);
         }
 
-        // --- Player move ---
-        function onPlayerMove(from, to, meta) {
-            if (state.gameover || isAiThinking || state.turn !== 'white') return;
-
-            var uci = from + to;
-
-            // Check promotion
-            var isPromo = meta && meta.promotion;
-            var pawnRow = parseInt(from[1]);
-            if (pawnRow === 2 && parseInt(to[1]) === 8) {
-                // White pawn promotion
-                if (meta && meta.promotion) {
-                    uci += meta.promotion;
-                } else {
-                    pendingPromo = { from: from, to: to };
-                    showPromoDialog();
-                    return;
-                }
-            }
-
-            makeMove(uci);
-        }
+        /* ---------- Promotion dialog ---------- */
 
         function showPromoDialog() {
             $('#promo-overlay').addClass('active');
         }
 
-        $('#promo-box .promo-piece').on('click', function() {
+        $('#promo-box .promo-piece').on('click', function () {
             var piece = $(this).data('piece');
             if (pendingPromo) {
                 var uci = pendingPromo.from + pendingPromo.to + piece;
@@ -683,32 +419,31 @@
             }
         });
 
-        // --- API calls ---
+        /* ---------- API ---------- */
+
         function makeMove(uci) {
             if (isAiThinking) return;
-
             $.ajax({
                 url: '/api/make-move',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ uci: uci, fen: state.fen, legal: state.legal }),
-                success: function(res) {
+                success: function (res) {
                     if (res.error) {
                         console.error('Move error:', res.error);
                         return;
                     }
-                    lastUci = uci;
+                    lastFromSq = uci.substring(0, 2);
+                    lastToSq = uci.substring(2, 4);
                     updateState(res);
-
                     if (!state.gameover && state.turn === 'black') {
                         isAiThinking = true;
                         $('#thinking').show();
-                        renderBoard();
                         renderStatus();
-                        setTimeout(function() { requestAiMove(); }, 100);
+                        setTimeout(function () { requestAiMove(); }, 100);
                     }
                 },
-                error: function() { console.error('Request failed'); }
+                error: function () { console.error('Request failed'); }
             });
         }
 
@@ -718,12 +453,12 @@
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ fen: state.fen, legal: state.legal, aiDepth: 3 }),
-                success: function(res) {
+                success: function (res) {
                     isAiThinking = false;
                     $('#thinking').hide();
                     updateState(res);
                 },
-                error: function() {
+                error: function () {
                     isAiThinking = false;
                     $('#thinking').hide();
                     console.error('AI move failed');
@@ -737,11 +472,9 @@
             state.legal = res.legal;
             state.turn = res.turn;
             state.inCheck = res.in_check || false;
-
             if (res.pgn && res.pgn.trim()) {
                 state.sanList.push(res.pgn.trim());
             }
-
             if (res.status && res.status !== 'active') {
                 state.gameover = true;
                 stopTimer();
@@ -749,38 +482,84 @@
                 $('#gameover-message').text('');
                 $('#gameover-overlay').addClass('active');
             }
-
-            renderBoard();
+            updateBoard();
             renderStatus();
             renderMoves();
+            updateCaptures();
         }
+
+        /* ---------- Captures ---------- */
+
+        function updateCaptures() {
+            var start = fenToPieces('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+            var current = fenToPieces(state.fen);
+            var whiteCaptured = {}, blackCaptured = {};
+            var pieceOrder = { q: 0, r: 1, b: 2, n: 3, p: 4 };
+            var symbols = { q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' };
+
+            for (var sq in start) {
+                var p = start[sq];
+                if (!current[sq]) {
+                    if (p.color === 'w') blackCaptured[p.role] = (blackCaptured[p.role] || 0) + 1;
+                    else whiteCaptured[p.role] = (whiteCaptured[p.role] || 0) + 1;
+                }
+            }
+
+            var sortFn = function (a, b) { return (pieceOrder[a] || 9) - (pieceOrder[b] || 9); };
+
+            var wStr = Object.keys(whiteCaptured).sort(sortFn).map(function (r) {
+                return symbols[r].repeat(whiteCaptured[r]);
+            }).join('');
+            var bStr = Object.keys(blackCaptured).sort(sortFn).map(function (r) {
+                return (r === 'p' ? '♟' : (function (m) { return { q: '♛', r: '♜', b: '♝', n: '♞' }[m]; })(r)).repeat(blackCaptured[r]);
+            }).join('');
+
+            $('#white-captures').text(wStr);
+            $('#black-captures').text(bStr);
+        }
+
+        function fenToPieces(fen) {
+            var pieces = {};
+            var rows = fen.split(' ')[0].split('/');
+            for (var r = 0; r < 8; r++) {
+                var file = 0;
+                for (var i = 0; i < rows[r].length; i++) {
+                    var ch = rows[r][i];
+                    if (ch >= '1' && ch <= '8') file += parseInt(ch);
+                    else {
+                        var color = (ch === ch.toUpperCase()) ? 'w' : 'b';
+                        var role = ch.toLowerCase();
+                        pieces[String.fromCharCode(97 + file) + (8 - r)] = { role: role, color: color };
+                        file++;
+                    }
+                }
+            }
+            return pieces;
+        }
+
+        /* ---------- Render ---------- */
 
         function renderStatus() {
             var el = document.getElementById('status');
             el.className = 'status-bar';
-
             if (state.gameover) {
                 el.className += ' game-over';
-                el.textContent = state.gameover ? 'Game Over' : '';
+                el.textContent = 'Game Over';
             } else if (state.inCheck) {
                 el.className += ' check';
                 el.textContent = (state.turn === 'white' ? 'White' : 'Black') + ' is in check!';
             } else {
                 el.textContent = state.turn === 'white' ? 'Your turn' : 'AI thinking...';
             }
-
-            // Update timer highlights
             $('#white-timer').toggleClass('active', state.turn === 'white' && !state.gameover);
             $('#black-timer').toggleClass('active', state.turn === 'black' && !state.gameover);
         }
 
         function renderMoves() {
-            var $list = $('#moves-list');
             if (state.sanList.length === 0) {
-                $list.html('<div style="color:#555; font-style:italic;">No moves yet</div>');
+                $('#movesList').html('<div style="color:#555; font-style:italic;">No moves yet</div>');
                 return;
             }
-
             var html = '';
             for (var i = 0; i < state.sanList.length; i += 2) {
                 var num = Math.floor(i / 2) + 1;
@@ -794,14 +573,16 @@
                 }
                 html += '</div>';
             }
-            $list.html(html);
-            $list.scrollTop($list[0].scrollHeight);
+            $('#movesList').html(html);
+            var el = document.getElementById('movesList');
+            el.scrollTop = el.scrollHeight;
         }
 
-        // --- Timer ---
+        /* ---------- Timer ---------- */
+
         function startTimer() {
             stopTimer();
-            timerInterval = setInterval(function() {
+            timerInterval = setInterval(function () {
                 if (state.gameover) { stopTimer(); return; }
                 if (state.turn === 'white') {
                     whiteTime -= 1;
@@ -825,14 +606,15 @@
             return m + ':' + (s < 10 ? '0' : '') + s;
         }
 
-        // --- New game ---
+        /* ---------- New game / Undo / Flip ---------- */
+
         function newGame() {
             $.ajax({
                 url: '/api/new-game',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({}),
-                success: function(res) {
+                success: function (res) {
                     state.fen = res.fen;
                     state.legal = res.legal;
                     state.turn = res.turn;
@@ -840,35 +622,35 @@
                     state.inCheck = false;
                     state.gameover = false;
                     state.fenHistory = [];
-                    lastUci = null;
+                    lastFromSq = null;
+                    lastToSq = null;
                     isAiThinking = false;
+                    pendingPromo = null;
                     $('#thinking').hide();
                     $('#gameover-overlay').removeClass('active');
+                    $('#promo-overlay').removeClass('active');
                     whiteTime = 600;
                     blackTime = 600;
                     $('#white-timer').text('10:00');
                     $('#black-timer').text('10:00');
                     startTimer();
-                    renderBoard();
+                    updateBoard();
                     renderStatus();
                     renderMoves();
+                    updateCaptures();
                 },
-                error: function() { console.error('New game failed'); }
+                error: function () { console.error('New game failed'); }
             });
         }
 
-        // --- Undo ---
         function undoMove() {
-            if (state.fenHistory.length === 0) return;
-            var prevFen = state.fenHistory[state.fenHistory.length - 1];
-
             $.ajax({
                 url: '/api/undo',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ fen: state.fen }),
-                success: function(res) {
-                    state.fenHistory.pop();
+                success: function (res) {
+                    if (state.fenHistory.length > 0) state.fenHistory.pop();
                     state.fen = res.fen;
                     state.legal = res.legal;
                     state.turn = res.turn;
@@ -876,59 +658,48 @@
                     state.gameover = false;
                     if (state.sanList.length > 0) state.sanList.pop();
                     if (state.sanList.length > 0) state.sanList.pop();
-                    if (lastUci) {
-                        // We can't easily undo lastUci without history, set to null
-                    }
+                    lastFromSq = null;
+                    lastToSq = null;
                     $('#gameover-overlay').removeClass('active');
                     isAiThinking = false;
                     $('#thinking').hide();
-                    renderBoard();
+                    updateBoard();
                     renderStatus();
                     renderMoves();
+                    updateCaptures();
                 },
-                error: function() { console.error('Undo failed'); }
+                error: function () { console.error('Undo failed'); }
             });
         }
 
-        // --- Flip board ---
         function flipBoard() {
-            orientation = orientation === 'white' ? 'black' : 'white';
-            renderBoard();
+            board.orientation(currentOrientation === 'white' ? 'black' : 'white');
+            currentOrientation = currentOrientation === 'white' ? 'black' : 'white';
         }
 
-        // --- Event listeners ---
-        $('#btn-new').on('click', newGame);
-        $('#btn-new-gameover').on('click', newGame);
-        $('#btn-undo').on('click', undoMove);
-        $('#btn-flip').on('click', flipBoard);
-        $('#btn-train-start').on('click', trainStart);
-        $('#btn-train-stop').on('click', trainStop);
-        $('#btn-train-play').on('click', trainPlay);
-
-        // --- Training ---
-        var trainPollInterval = null;
+        /* ---------- Training ---------- */
 
         function fetchTrainStatus() {
             $.ajax({
                 url: '/api/train/status',
                 method: 'GET',
                 timeout: 3000,
-                success: function(status) {
+                success: function (status) {
+                    trainAvailable = true;
                     $('#train-status').text(
-                        status.status.charAt(0).toUpperCase() + status.status.slice(1)
+                        (status.status || 'idle').charAt(0).toUpperCase() + (status.status || 'idle').slice(1)
                     );
                     $('#train-metrics').html(
-                        '<div>Step: ' + status.step + '</div>' +
-                        '<div>Games: ' + status.games_played + '</div>' +
-                        '<div>Buffer: ' + status.buffer_size + '</div>' +
+                        '<div>Step: ' + (status.step || 0) + '</div>' +
+                        '<div>Games: ' + (status.games_played || 0) + '</div>' +
+                        '<div>Buffer: ' + (status.buffer_size || 0) + '</div>' +
                         '<div>Loss: ' + (status.loss ? status.loss.toFixed(4) : 'N/A') + '</div>'
                     );
-                    $('#btn-train-start').prop('disabled', status.status === 'playing' || status.status === 'training');
-                    $('#btn-train-stop').prop('disabled', status.status === 'idle' || status.status === 'stopped');
+                    var isRunning = status.status === 'playing' || status.status === 'training';
+                    $('#btn-train-start').prop('disabled', isRunning);
+                    $('#btn-train-stop').prop('disabled', !isRunning);
                 },
-                error: function() {
-                    $('#train-status').text('Disconnected');
-                }
+                error: function () { }
             });
         }
 
@@ -938,13 +709,13 @@
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ games_per_cycle: 5, steps_per_cycle: 50 }),
-                success: function() {
+                success: function () {
                     if (!trainPollInterval) {
                         trainPollInterval = setInterval(fetchTrainStatus, 2000);
                     }
                     fetchTrainStatus();
                 },
-                error: function() { $('#train-status').text('Error starting'); }
+                error: function () { $('#train-status').text('Error starting'); }
             });
         }
 
@@ -953,12 +724,12 @@
                 url: '/api/train/stop',
                 method: 'POST',
                 contentType: 'application/json',
-                success: function() {
+                success: function () {
                     clearInterval(trainPollInterval);
                     trainPollInterval = null;
                     fetchTrainStatus();
                 },
-                error: function() { $('#train-status').text('Error stopping'); }
+                error: function () { $('#train-status').text('Error stopping'); }
             });
         }
 
@@ -967,22 +738,29 @@
                 url: '/api/train/play',
                 method: 'POST',
                 contentType: 'application/json',
-                success: function(res) {
+                success: function (res) {
                     $('#train-status').text('Game ' + res.games_played + ' played');
-                    if (!trainPollInterval) {
-                        fetchTrainStatus();
-                    }
+                    if (!trainPollInterval) fetchTrainStatus();
                 },
-                error: function() { $('#train-status').text('Error playing game'); }
+                error: function () { $('#train-status').text('Error playing game'); }
             });
         }
 
-        // Initial status check
-        fetchTrainStatus();
+        /* ---------- Init ---------- */
 
-        // --- Init ---
-        initThemeSelector();
-        newGame();
+        $(function () {
+            $('#btn-new').on('click', newGame);
+            $('#btn-new-gameover').on('click', newGame);
+            $('#btn-undo').on('click', undoMove);
+            $('#btn-flip').on('click', flipBoard);
+            $('#btn-train-start').on('click', trainStart);
+            $('#btn-train-stop').on('click', trainStop);
+            $('#btn-train-play').on('click', trainPlay);
+
+            initBoard();
+            newGame();
+            fetchTrainStatus();
+        });
     })();
     </script>
 </body>
