@@ -59,22 +59,14 @@
         }
         .fullscreen-btn:hover { background: rgba(99,102,241,0.2); color: #fff; }
 
-        #board-section:fullscreen {
+        #live-board:fullscreen {
             display: flex;
             justify-content: center;
             align-items: center;
             background: #08081a;
-        }
-        #board-section:fullscreen .panel {
-            width: auto !important;
-            max-width: 90vh;
-        }
-        #board-section:fullscreen #live-board {
-            width: 70vh;
-            min-width: 400px;
-        }
-        #board-section:fullscreen .move-list-wrap {
-            max-width: 70vh;
+            width: 80vh;
+            height: 80vh;
+            margin: auto;
         }
 
         .layout {
@@ -686,7 +678,7 @@
         /* ---------- Fullscreen ---------- */
 
         window.toggleFullscreen = function() {
-            var el = document.getElementById('board-section');
+            var el = document.getElementById('live-board');
             if (!document.fullscreenElement) {
                 el.requestFullscreen().catch(function(){});
             } else {

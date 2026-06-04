@@ -383,7 +383,7 @@ def train_step():
 def train_evaluate():
     import torch
     data = request.get_json(silent=True) or {}
-    fen = data.get('fen', chess.START_FEN)
+    fen = data.get('fen', chess.STARTING_FEN)
 
     t = get_trainer()
     board = chess.Board(fen)
