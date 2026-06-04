@@ -200,7 +200,7 @@ class StockfishPlayer:
             top_moves = self.get_top_moves(board, num_moves=3)
             
             legal_moves = list(board.legal_moves)
-            eval_map = self.evaluate_legal_moves_batch(board, depth=10)
+            eval_map = self.evaluate_legal_moves_batch(board, depth=15)
             
             move_analysis = []
             for m in legal_moves:
