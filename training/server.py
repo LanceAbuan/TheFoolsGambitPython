@@ -140,6 +140,10 @@ def train_status():
         'moves': list(current_game_moves),
         'status': current_game_status
     }
+    # Override trainer.status with current_game_status when training is active
+    # Fixes "Idle" showing even though the server is busy
+    if current_game_status not in ('idle', 'stopped', 'checkpoint', 'error'):
+        status['status'] = current_game_status
     try:
         import torch
         status['gpu_available'] = torch.cuda.is_available()
