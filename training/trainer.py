@@ -242,6 +242,7 @@ class Trainer:
     def get_status(self):
         model_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
         model_size = os.path.getsize(model_path) if os.path.exists(model_path) else 0
+        elo = self.estimate_elo()
         return {
             'status': self.status,
             'step': self.step,
@@ -252,6 +253,7 @@ class Trainer:
             'value_loss': self.value_loss,
             'learning_rate': LEARNING_RATE,
             'model_size': model_size,
+            'estimated_elo': elo,
             'started_at': self.started_at,
             'last_update': self.last_update,
             'hf_repo': HF_REPO if HF_TOKEN else None,
@@ -259,3 +261,15 @@ class Trainer:
             'last_game_result': self.last_game_result,
             'last_game_moves': self.last_game_moves[:20],
         }
+
+    def estimate_elo(self):
+        import math
+        base_elo = 200
+        if self.games_played == 0:
+            return base_elo
+        games_factor = min(math.log2(max(self.games_played, 1)) * 80, 400)
+        steps_factor = min(math.log2(max(self.step, 1)) * 40, 300)
+        loss_factor = 0
+        if self.loss and self.loss < 1.0:
+            loss_factor = (1 - self.loss) * 200
+        return int(base_elo + games_factor + steps_factor + loss_factor)
