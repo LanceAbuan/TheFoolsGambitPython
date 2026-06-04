@@ -20,7 +20,9 @@ class CriticGame:
 
     def __init__(self, model, stockfish, temperature=0.3, max_moves=200):
         self.model = model
-        self.stockfish = stockfish
+        # Always use own Stockfish to avoid thread contention
+        from .stockfish_engine import StockfishPlayer, STOCKFISH_PATH
+        self.stockfish = StockfishPlayer(depth=5, threads=1, hash_mb=64)
         self.temperature = temperature
         self.max_moves = max_moves
 
