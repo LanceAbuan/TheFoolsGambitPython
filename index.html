@@ -783,7 +783,7 @@
                 else if (wIdx > currentViewIndex) wCls += ' far';
                 var wQuality = getMoveQualityClass(wIdx);
                 var wDot = wQuality ? '<span class="move-quality ' + wQuality + '" title="' + getQualityLabel(wQuality) + '"></span>' : '';
-                html += '<div class="' + wCls + '" onclick="window.goToMove(' + (wIdx + 1) + ')" title="' + getQualityLabel(wQuality) + '">' + wDot + allMoves[i] + '</div>';
+                html += '<div class="' + wCls + '" onclick="window.goToMove(' + wIdx + ')" title="' + getQualityLabel(wQuality) + '">' + wDot + allMoves[i] + '</div>';
                 // Black move
                 if (i + 1 < allMoves.length) {
                     var bIdx = i + 1;
@@ -792,7 +792,7 @@
                     else if (bIdx > currentViewIndex) bCls += ' far';
                     var bQuality = getMoveQualityClass(bIdx);
                     var bDot = bQuality ? '<span class="move-quality ' + bQuality + '" title="' + getQualityLabel(bQuality) + '"></span>' : '';
-                    html += '<div class="' + bCls + '" onclick="window.goToMove(' + (bIdx + 1) + ')" title="' + getQualityLabel(bQuality) + '">' + bDot + allMoves[i + 1] + '</div>';
+                    html += '<div class="' + bCls + '" onclick="window.goToMove(' + bIdx + ')" title="' + getQualityLabel(bQuality) + '">' + bDot + allMoves[i + 1] + '</div>';
                 } else {
                     html += '<div class="move-cell"></div>';
                 }
@@ -810,7 +810,7 @@
                 if (!clickHandler) continue;
                 var idxMatch = clickHandler.match(/goToMove\((\d+)\)/);
                 if (!idxMatch) continue;
-                var idx = parseInt(idxMatch[1]) - 1;
+                var idx = parseInt(idxMatch[1]);
                 cell.classList.remove('active', 'far');
                 if (idx === currentViewIndex) cell.classList.add('active');
                 else if (idx > currentViewIndex) cell.classList.add('far');
@@ -862,12 +862,12 @@
             $('#btn-play').html(isPlaying ? '&#9654;&#9654; Pause' : '&#9654; Play');
         }
 
-        window.goToMove = function(idx) {
+        window.goToMove = function(moveIdx) {
             autoFollow = false;
             isPlaying = false;
             updatePlayBtn();
-            if (idx >= allMoves.length) idx = allMoves.length;
-            currentViewIndex = Math.max(0, idx);
+            if (moveIdx >= allMoves.length) moveIdx = allMoves.length - 1;
+            currentViewIndex = Math.max(0, moveIdx + 1);
             updateView();
             scheduleEval();
         };

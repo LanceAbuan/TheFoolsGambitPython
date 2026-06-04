@@ -33,6 +33,24 @@ _stockfish_lock = threading.Lock()
 play_mode = 'critic'
 
 
+def mcts_select_move(board):
+    """Run MCTS search and return a UCI move string."""
+    import numpy as np
+    from .tensorize import move_to_idx
+    t = get_trainer()
+    visit_counts = t.selfplay.mcts.search(board)
+    legal_moves = list(board.legal_moves)
+    if not legal_moves:
+        return None
+    probs = visit_counts[[move_to_idx(m) for m in legal_moves]]
+    if probs.sum() > 0:
+        probs = probs / probs.sum()
+    else:
+        probs = np.ones(len(legal_moves)) / len(legal_moves)
+    move_idx = np.random.choice(len(legal_moves), p=probs)
+    return legal_moves[move_idx].uci()
+
+
 def get_trainer():
     global trainer
     if trainer is None:
@@ -196,11 +214,11 @@ def train_start():
                             current_game_status = "supervised"
                             send_sse({'type': 'game_start', 'mode': 'critic'})
                             from .critic_game import CriticGame
-                            sg = CriticGame(t.model, sf, temperature=0.05)
-                            game_data = sg.play(on_move=lambda moves: (
-                                setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
-                                stream_game_progress()
-                            ))
+                            with CriticGame(t.model, sf, temperature=0.05) as sg:
+                                game_data = sg.play(on_move=lambda moves: (
+                                    setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+                                    stream_game_progress()
+                                ))
                             # Feed examples into training buffer
                             t.buffer.add(game_data.get('examples', []))
                             t.games_played += 1
@@ -239,7 +257,7 @@ def train_start():
                             current_game_status = "stockfish"
                             send_sse({'type': 'game_start', 'mode': 'stockfish'})
                             sf_game = sf.play_game(
-                                opponent_move_fn=lambda b: t.selfplay.mcts.search(b)
+                                opponent_move_fn=mcts_select_move
                             )
                             current_game_moves = sf_game.get('moves', [])
                             if sf_game.get('pgn'):
@@ -351,11 +369,11 @@ def train_play_supervised():
     send_sse({'type': 'game_start', 'mode': 'critic'})
 
     from .critic_game import CriticGame
-    sg = CriticGame(t.model, sf, temperature=0.15)
-    game_data = sg.play(on_move=lambda moves: (
-        setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
-        stream_game_progress()
-    ))
+    with CriticGame(t.model, sf, temperature=0.15) as sg:
+        game_data = sg.play(on_move=lambda moves: (
+            setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+            stream_game_progress()
+        ))
     current_game_moves = game_data.get('moves', [])
 
     # Feed examples into training buffer
@@ -397,7 +415,7 @@ def train_play_stockfish():
 
     t = get_trainer()
     sf_game = sf.play_game(
-        opponent_move_fn=lambda b: t.selfplay.mcts.search(b)
+        opponent_move_fn=mcts_select_move
     )
     current_game_moves = sf_game.get('moves', [])
 
