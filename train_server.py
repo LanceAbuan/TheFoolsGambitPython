@@ -18,7 +18,7 @@ import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from flask import Flask, jsonify, after_this_request
+from flask import Flask, jsonify, after_this_request, request
 from training.server import training_bp
 
 app = Flask(__name__)
@@ -29,7 +29,13 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = 'https://gambit.lanceabuan.tech'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    response.headers['Vary'] = 'Origin'
     return response
+
+@app.before_request
+def handle_options():
+    if request.method == 'OPTIONS':
+        return '', 204
 
 
 def auto_start_training():
@@ -42,7 +48,7 @@ def auto_start_training():
             'games_per_cycle': 20,
             'steps_per_cycle': 50,
             'mcts_simulations': 100,
-            'use_stockfish': False
+            'use_stockfish': True
         }, timeout=5)
         print('[AUTO] Training started automatically.')
     except Exception as e:
