@@ -106,7 +106,7 @@ class ChessNet(nn.Module):
             policy_logits, value = self(x)
             
             if legal_mask is not None:
-                mask = legal_mask.unsqueeze(0).float()
+                mask = legal_mask.unsqueeze(0).float().to(device)
                 policy_logits = policy_logits + (1 - mask) * -1e10
                 policy_logits = policy_logits.masked_fill(~mask.bool(), float('-inf'))
             
