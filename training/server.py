@@ -381,6 +381,7 @@ def train_step():
 
 @training_bp.route('/api/train/evaluate', methods=['POST'])
 def train_evaluate():
+    import torch
     data = request.get_json(silent=True) or {}
     fen = data.get('fen', chess.START_FEN)
 
@@ -392,25 +393,25 @@ def train_evaluate():
 
     # Get NN evaluation
     board_tensor = board_to_tensor(board)
-    legal_mask = None
-    legal_moves = list(board.legal_moves)
-    if legal_moves:
-        import torch
-        legal_mask = torch.zeros(4096)
-        for m in legal_moves:
-            legal_mask[m.from_square * 64 + m.to_square] = 1.0
+    legal_mask = torch.zeros(4096)
+    for m in board.legal_moves:
+        legal_mask[m.from_square * 64 + m.to_square] = 1.0
 
     policy_probs, value = t.model.evaluate(board_tensor, legal_mask)
     policy_probs = policy_probs.detach().numpy()
 
+    # Only include moves that are actually legal on the board
     top_moves = []
     sorted_indices = policy_probs.argsort()[::-1][:10]
     for idx in sorted_indices:
         from_sq = idx // 64
         to_sq = idx % 64
         move = chess.Move(from_sq, to_sq)
+        if move not in board.legal_moves:
+            continue
+        san = board.san(move)
         top_moves.append({
-            'move': board.san(move),
+            'move': san,
             'probability': float(policy_probs[idx]),
             'uci': move.uci()
         })
