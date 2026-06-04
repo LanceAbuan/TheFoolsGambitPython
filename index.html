@@ -19,6 +19,7 @@
             text-align: center;
             padding: 32px 20px 20px;
             background: linear-gradient(180deg, rgba(99,102,241,0.08) 0%, transparent 100%);
+            position: relative;
         }
         .hero h1 {
             font-size: 32px;
@@ -38,6 +39,25 @@
             margin-right: auto;
             line-height: 1.5;
         }
+        .fullscreen-btn {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #888;
+            font-size: 18px;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .fullscreen-btn:hover { background: rgba(99,102,241,0.2); color: #fff; }
 
         .layout {
             display: flex;
@@ -213,6 +233,52 @@
         }
 
         /* Progress bar */
+        .eval-bar-wrap {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255,255,255,0.04);
+        }
+        .eval-label-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #555;
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .eval-track {
+            height: 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .eval-fill {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 50%;
+            transition: all 0.8s ease;
+            border-radius: 4px;
+        }
+        .eval-center {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            width: 1px;
+            height: 100%;
+            background: rgba(255,255,255,0.15);
+        }
+        .eval-value {
+            text-align: center;
+            font-size: 11px;
+            color: #888;
+            margin-top: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
         .smartness-bar {
             margin-top: 14px;
         }
@@ -275,6 +341,7 @@
     <div class="hero">
         <h1>The Fool's Gambit</h1>
         <p>Watching a chess AI learn from scratch through self-play. No human data. No Stockfish. Just a neural network playing against itself, getting smarter with every game.</p>
+        <button class="fullscreen-btn" onclick="window.toggleFullscreen()">&#10064;</button>
     </div>
 
     <div class="layout">
@@ -322,7 +389,7 @@
                     <div class="metric-card">
                         <div class="metric-value" id="m-steps">—</div>
                         <div class="metric-label">Training Rounds</div>
-                        <div class="metric-desc">Times the model studied</div>
+                        <div class="metric-desc">Batches of positions studied per cycle</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-value" id="m-loss">—</div>
@@ -339,12 +406,24 @@
                         <div class="smartness-fill" id="smartness-fill" style="width: 0%"></div>
                     </div>
                 </div>
+                <div class="eval-bar-wrap">
+                    <div class="eval-label-row">
+                        <span>Black winning</span>
+                        <span id="eval-value">Equal (0.00)</span>
+                        <span>White winning</span>
+                    </div>
+                    <div class="eval-track">
+                        <div class="eval-center"></div>
+                        <div class="eval-fill" id="eval-fill"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="panel">
                 <div class="panel-title">Recent Games</div>
+                <div style="font-size:11px; color:#555; margin-bottom:10px; line-height:1.5;">Each game is the AI playing against itself. Results show who won: <span style="color:#4ade80">1-0</span> = white wins, <span style="color:#f87171">0-1</span> = black wins, <span style="color:#fbbf24">½-½</span> = draw.</div>
                 <div class="game-list" id="game-list">
-                    <div style="color:#555; font-style:italic; padding:12px 0; font-size:13px;">No games yet</div>
+                    <div id="no-games" style="color:#555; font-style:italic; padding:12px 0; font-size:13px;">No games yet — training is in progress.</div>
                 </div>
             </div>
         </div>
@@ -423,13 +502,14 @@
             if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
 
-        function navMove(dir) {
+        window.navMove = function(dir) {
             autoFollow = false;
             isPlaying = false;
             updatePlayBtn();
             currentViewIndex = Math.max(0, Math.min(allMoves.length, currentViewIndex + dir));
             updateView();
-        }
+            pollEval();
+        };
 
         window.togglePlay = function() {
             isPlaying = !isPlaying;
@@ -462,6 +542,7 @@
             updatePlayBtn();
             currentViewIndex = idx;
             updateView();
+            pollEval();
         };
 
         /* ---------- Status ---------- */
@@ -494,15 +575,15 @@
                     what += 'A new game has just started.';
                 }
             } else if (status.status === 'training') {
-                what = 'The AI is <strong>studying its past games</strong>, trying to predict what moves led to wins.';
+                what = 'The AI is <strong>studying its past games</strong>. Each training round feeds it board positions and teaches it to predict which moves lead to wins. After <strong>' + (status.step || 0) + '</strong> rounds, it gets better at judging positions.';
             } else if (status.games_played > 0) {
-                what = 'The AI has played <strong>' + status.games_played + ' games</strong> and studied <strong>' + status.step + ' positions</strong>. It\'s still learning!';
+                what = 'The AI has played <strong>' + status.games_played + ' games</strong>. Training cycle: <strong>play 20 games → study 50 rounds → repeat</strong>. Each cycle makes it slightly smarter.';
             } else {
                 what = 'Waiting for training to start...';
             }
             $('#what-happening').html(what);
 
-            if (status.recent_games && status.recent_games.length > 0) {
+            if (status.recent_games) {
                 renderGames(status.recent_games);
             }
 
@@ -525,6 +606,10 @@
         }
 
         function renderGames(games) {
+            if (!games || games.length === 0) {
+                $('#game-list').html('<div id="no-games" style="color:#555; font-style:italic; padding:12px 0; font-size:13px;">No games yet — training is in progress.</div>');
+                return;
+            }
             var html = '';
             for (var i = games.length - 1; i >= 0; i--) {
                 var g = games[i];
@@ -545,6 +630,50 @@
             }
             $('#game-list').html(html);
         }
+
+        /* ---------- Eval ---------- */
+
+        function pollEval() {
+            if (allMoves.length === 0) return;
+            var c = new Chess();
+            for (var i = 0; i < currentViewIndex; i++) {
+                try { c.move(allMoves[i]); } catch(e) { break; }
+            }
+            var fen = c.fen();
+            $.ajax({
+                url: 'https://api.lanceabuan.tech/api/train/evaluate',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({fen: fen}),
+                timeout: 4000,
+                success: function(res) {
+                    var v = res.nn_value;
+                    var pct = Math.max(0, Math.min(100, (v + 1) * 50));
+                    var fill = $('#eval-fill');
+                    if (v >= 0) {
+                        fill.css({left: '50%', width: (pct - 50) + '%'});
+                        fill.css('background', 'linear-gradient(90deg, #6366f1, #4ade80)');
+                    } else {
+                        fill.css({left: (100 - pct) + '%', width: pct + '%'});
+                        fill.css('background', 'linear-gradient(90deg, #f87171, #6366f1)');
+                    }
+                    var label = v.toFixed(2);
+                    var who = Math.abs(v) < 0.1 ? 'Equal' : (v > 0 ? 'White +' : 'Black +') + Math.abs(v).toFixed(2);
+                    $('#eval-value').text(who + ' (' + label + ')');
+                },
+                error: function() {}
+            });
+        }
+
+        /* ---------- Fullscreen ---------- */
+
+        window.toggleFullscreen = function() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(function(){});
+            } else {
+                document.exitFullscreen();
+            }
+        };
 
         /* ---------- Log ---------- */
 
@@ -574,6 +703,7 @@
                         allMoves = data.moves;
                         if (autoFollow) currentViewIndex = allMoves.length;
                         updateView();
+                        pollEval();
                     }
                 });
                 source.addEventListener('status_update', function(e) {
@@ -604,7 +734,10 @@
         $(function () {
             initLiveBoard();
             pollStatus();
-            setInterval(pollStatus, 2000);
+            setInterval(function() {
+                pollStatus();
+                pollEval();
+            }, 3000);
             connectSSE();
         });
     })();
