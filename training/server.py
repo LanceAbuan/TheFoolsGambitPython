@@ -9,6 +9,10 @@ from flask import Blueprint, jsonify, request, Response
 from datetime import datetime
 from huggingface_hub import HfApi, login
 
+import torch
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+
 from .trainer import Trainer, LOCAL_MODEL_DIR
 from .tensorize import board_to_tensor
 from .stockfish_engine import StockfishPlayer
@@ -434,24 +438,29 @@ def train_evaluate():
     for m in board.legal_moves:
         legal_mask[m.from_square * 64 + m.to_square] = 1.0
 
-    policy_probs, value = t.model.evaluate(board_tensor, legal_mask)
-    policy_probs = policy_probs.detach().cpu().numpy()
+    try:
+        policy_probs, value = t.model.evaluate(board_tensor, legal_mask)
+        policy_probs = policy_probs.detach().cpu().numpy()
 
-    # Only include moves that are actually legal on the board
-    top_moves = []
-    sorted_indices = policy_probs.argsort()[::-1][:10]
-    for idx in sorted_indices:
-        from_sq = idx // 64
-        to_sq = idx % 64
-        move = chess.Move(from_sq, to_sq)
-        if move not in board.legal_moves:
-            continue
-        san = board.san(move)
-        top_moves.append({
-            'move': san,
-            'probability': float(policy_probs[idx]),
-            'uci': move.uci()
-        })
+        # Only include moves that are actually legal on the board
+        top_moves = []
+        sorted_indices = policy_probs.argsort()[::-1][:10]
+        for idx in sorted_indices:
+            from_sq = idx // 64
+            to_sq = idx % 64
+            move = chess.Move(from_sq, to_sq)
+            if move not in board.legal_moves:
+                continue
+            san = board.san(move)
+            top_moves.append({
+                'move': san,
+                'probability': float(policy_probs[idx]),
+                'uci': move.uci()
+            })
+    except Exception as e:
+        print(f'[EVAL] NN error: {e}', flush=True)
+        value = 0.0
+        top_moves = []
 
     eval_str = "Equal"
     if value > 0.3:
