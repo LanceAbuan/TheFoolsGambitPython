@@ -470,8 +470,8 @@ def train_evaluate():
     sf_eval = None
     try:
         from .stockfish_engine import StockfishPlayer
-tmp_sf = StockfishPlayer(depth=20, threads=2, hash_mb=128)
-            cp = tmp_sf.get_evaluation(board)
+        tmp_sf = StockfishPlayer(depth=20, threads=2, hash_mb=128)
+        cp = tmp_sf.get_evaluation(board)
         sf_eval = {'centipawns': cp}
         try:
             tmp_sf.close()
@@ -500,8 +500,8 @@ def train_analyze():
 
     try:
         from .stockfish_engine import StockfishPlayer
-tmp_sf = StockfishPlayer(depth=20, threads=2, hash_mb=128)
-            analysis = tmp_sf.analyze_position(board)
+        tmp_sf = StockfishPlayer(depth=20, threads=2, hash_mb=128)
+        analysis = tmp_sf.analyze_position(board)
         try:
             tmp_sf.close()
         except Exception:
