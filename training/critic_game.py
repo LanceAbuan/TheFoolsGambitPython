@@ -42,11 +42,11 @@ class CriticGame:
             if not legal_moves:
                 break
 
-            # --- Step 1: Get current position eval ---
+            print(f'[CRITIC] move {i+1}: getting eval...', flush=True)
             current_eval = self.stockfish.get_evaluation(board)
-
-            # --- Step 2: Evaluate every legal move with Stockfish (batch) ---
+            print(f'[CRITIC] move {i+1}: got eval={current_eval}cp', flush=True)
             eval_map = self.stockfish.evaluate_legal_moves_batch(board)
+            print(f'[CRITIC] move {i+1}: got {len(eval_map)} evals', flush=True)
             move_evals = []
             for m in board.legal_moves:
                 cp = eval_map.get(m.uci(), 0)

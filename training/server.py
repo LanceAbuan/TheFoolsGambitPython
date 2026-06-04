@@ -61,6 +61,7 @@ def send_sse(data, event=None):
     to_remove = set()
     for client in sse_clients:
         try:
+            client.settimeout(0.1)
             client.send(msg)
         except Exception:
             to_remove.add(client)
@@ -164,7 +165,7 @@ def train_start():
     games_per_cycle = data.get('games_per_cycle', 10)
     steps_per_cycle = data.get('steps_per_cycle', 100)
     mcts_sims = data.get('mcts_simulations', 800)
-    use_stockfish = data.get('use_stockfish', False)
+    use_stockfish = data.get('use_stockfish', True)
 
     t = get_trainer()
     t.selfplay.num_mcts_simulations = mcts_sims
@@ -186,16 +187,19 @@ def train_start():
 
                     if use_stockfish:
                         # Supervised mode: NN vs Stockfish, collect SF-guided examples
+                        print(f'[TRAIN] Getting stockfish...', flush=True)
                         sf = get_stockfish()
+                        print(f'[TRAIN] Got stockfish: {sf is not None}', flush=True)
                         if sf:
                             current_game_status = "supervised"
                             send_sse({'type': 'game_start', 'mode': 'critic'})
                             from .critic_game import CriticGame
                             sg = CriticGame(t.model, sf, temperature=0.15)
+                            print(f'[TRAIN] About to play CriticGame...', flush=True)
                             game_data = sg.play(on_move=lambda moves: (
                                 setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
-                                stream_game_progress()
                             ))
+                            print(f'[TRAIN] CriticGame done: {len(game_data.get("moves", []))} moves', flush=True)
                             # Feed examples into training buffer
                             t.buffer.add(game_data.get('examples', []))
                             t.games_played += 1
