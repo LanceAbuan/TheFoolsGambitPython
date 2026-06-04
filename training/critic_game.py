@@ -54,7 +54,9 @@ class CriticGame:
                 break
 
             current_eval = self.stockfish.get_evaluation(board)
-            eval_map = self.stockfish.evaluate_legal_moves_batch(board, depth=12)
+
+            # --- Step 2: Evaluate every legal move with Stockfish (batch) ---
+            eval_map = self.stockfish.evaluate_legal_moves_batch(board)
             move_evals = []
             for m in board.legal_moves:
                 cp = eval_map.get(m.uci(), 0)
