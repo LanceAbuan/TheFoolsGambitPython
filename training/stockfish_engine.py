@@ -55,6 +55,11 @@ class StockfishPlayer:
             return info['value'] * 10000
         return 0
 
+    def get_evaluation_normalized(self, board):
+        """Get Stockfish eval normalized to [-1, 1] range for NN training."""
+        cp = self.get_evaluation(board)
+        return max(-1.0, min(1.0, cp / 2000.0))
+
     def evaluate_move(self, board, move):
         """Evaluate the position AFTER making a move. Returns centipawn score."""
         board.push(move)
@@ -62,13 +67,98 @@ class StockfishPlayer:
         board.pop()
         return eval_
 
-    def evaluate_legal_moves(self, board):
+    def evaluate_legal_moves(self, board, depth=None):
         """Evaluate every legal move. Returns list of (move, san, eval_cp)."""
         results = []
         for m in board.legal_moves:
             cp = self.evaluate_move(board, m)
             results.append((m, board.san(m), cp))
         return results
+
+    def evaluate_legal_moves_batch(self, board, depth=10):
+        """Evaluate all legal moves using MultiPV for speed.
+        
+        Uses Stockfish's MultiPV analysis to evaluate multiple moves
+        in a single search, much faster than evaluating one by one.
+        
+        Returns dict mapping UCI move string to centipawn evaluation.
+        """
+        legal_moves = list(board.legal_moves)
+        if not legal_moves:
+            return {}
+        
+        num_moves = len(legal_moves)
+        if num_moves == 0:
+            return {}
+        
+        self.engine.set_fen_position(board.fen())
+        if depth:
+            self.engine.set_depth(depth)
+        
+        max_multipv = min(num_moves, 50)
+        self.engine.set_option("MultiPV", max_multipv)
+        
+        eval_map = {}
+        for _ in range(num_moves):
+            try:
+                uci = self.engine.get_best_move()
+                if uci in ('0-1', '1-0', 'resign', None, ''):
+                    break
+                info = self.engine.get_board_evaluation()
+                cp = 0
+                if info['type'] == 'cp':
+                    cp = info['value']
+                elif info['type'] == 'mate':
+                    cp = info['value'] * 10000
+                eval_map[uci] = cp
+            except Exception:
+                break
+        
+        self.engine.set_option("MultiPV", 1)
+        
+        for m in legal_moves:
+            uci = m.uci()
+            if uci not in eval_map:
+                eval_map[uci] = 0
+        
+        return eval_map
+
+    def get_move_quality(self, board, move):
+        """Get quality score for a specific move relative to best move.
+        
+        Returns:
+            - 'evaluation': centipawn eval after the move
+            - 'best_eval': best move evaluation
+            - 'diff': how many centipawns worse than best (0 = blunder-free)
+            - 'accuracy': float 0-1, how good the move is
+        """
+        board_after = board.copy()
+        board_after.push(move)
+        eval_after = self.get_evaluation(board_after)
+        
+        best_uci = self.get_move(board)
+        if best_uci in ('0-1', '1-0', 'resign', None):
+            return {
+                'evaluation': eval_after,
+                'best_eval': eval_after,
+                'diff': 0,
+                'accuracy': 1.0,
+            }
+        
+        best_move = chess.Move.from_uci(best_uci)
+        board_after_best = board.copy()
+        board_after_best.push(best_move)
+        best_eval = self.get_evaluation(board_after_best)
+        
+        diff = best_eval - eval_after if board.turn == chess.WHITE else eval_after - best_eval
+        accuracy = max(0.0, 1.0 - abs(diff) / 1000.0)
+        
+        return {
+            'evaluation': eval_after,
+            'best_eval': best_eval,
+            'diff': diff,
+            'accuracy': accuracy,
+        }
 
     def get_top_moves(self, board, num_moves=5):
         """Get Stockfish's top N moves with evaluations."""
@@ -89,6 +179,38 @@ class StockfishPlayer:
             })
         self.engine.set_option("MultiPV", 1)
         return moves
+
+    def analyze_position(self, board):
+        """Full position analysis for UI display.
+        
+        Returns dict with eval, top moves, and move evaluations.
+        """
+        pos_eval = self.get_evaluation(board)
+        top_moves = self.get_top_moves(board, num_moves=3)
+        
+        legal_moves = list(board.legal_moves)
+        eval_map = self.evaluate_legal_moves_batch(board, depth=10)
+        
+        move_analysis = []
+        for m in legal_moves:
+            uci = m.uci()
+            cp = eval_map.get(uci, 0)
+            move_analysis.append({
+                'san': board.san(m),
+                'uci': uci,
+                'evaluation': cp,
+            })
+        
+        move_analysis.sort(key=lambda x: x['evaluation'], reverse=True)
+        
+        return {
+            'evaluation': pos_eval,
+            'evaluation_normalized': max(-1.0, min(1.0, pos_eval / 2000.0)),
+            'depth': self.engine.get_depth(),
+            'top_moves': top_moves,
+            'move_analysis': move_analysis[:10],
+            'num_legal_moves': len(legal_moves),
+        }
 
     def play_game(self, opponent_move_fn=None, max_moves=200):
         """Play a complete game, optionally with a custom opponent.
