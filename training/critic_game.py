@@ -26,6 +26,15 @@ class CriticGame:
         self.temperature = temperature
         self.max_moves = min(max_moves, 40)
 
+    def close(self):
+        self.stockfish.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
     def play(self, on_move=None):
         """Play one complete game. NN plays both sides, Stockfish critiques.
 
