@@ -435,7 +435,7 @@ def train_evaluate():
         legal_mask[m.from_square * 64 + m.to_square] = 1.0
 
     policy_probs, value = t.model.evaluate(board_tensor, legal_mask)
-    policy_probs = policy_probs.detach().numpy()
+    policy_probs = policy_probs.detach().cpu().numpy()
 
     # Only include moves that are actually legal on the board
     top_moves = []
@@ -491,7 +491,10 @@ def train_analyze():
     if not board.is_valid():
         return jsonify({"error": "Invalid FEN"}), 400
 
-    analysis = sf.analyze_position(board)
+    try:
+        analysis = sf.analyze_position(board)
+    except Exception:
+        return jsonify({"error": "Stockfish analysis failed"}), 500
     return jsonify(analysis)
 
 

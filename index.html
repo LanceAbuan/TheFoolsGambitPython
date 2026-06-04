@@ -597,7 +597,7 @@
                             <div class="eval-center"></div>
                             <div class="eval-fill" id="nn-eval-fill"></div>
                         </div>
-                        <span class="eval-val" id="nn-eval-val">—</span>
+                        <span class="eval-val" id="nn-eval-val">0.00</span>
                     </div>
                     <div class="eval-row">
                         <span class="eval-source sf">SF</span>
@@ -605,7 +605,7 @@
                             <div class="eval-center"></div>
                             <div class="eval-fill" id="sf-eval-fill"></div>
                         </div>
-                        <span class="eval-val" id="sf-eval-val">—</span>
+                        <span class="eval-val" id="sf-eval-val">0.00</span>
                     </div>
                 </div>
 
@@ -725,7 +725,7 @@
                         <div class="eval-center"></div>
                         <div class="eval-fill" id="fs-nn-eval-fill"></div>
                     </div>
-                    <span class="eval-val" id="fs-nn-eval-val">—</span>
+                      <span class="eval-val" id="fs-nn-eval-val">0.00</span>
                 </div>
                 <div class="fullscreen-eval-row">
                     <span class="eval-source sf">SF</span>
@@ -733,7 +733,7 @@
                         <div class="eval-center"></div>
                         <div class="eval-fill" id="fs-sf-eval-fill"></div>
                     </div>
-                    <span class="eval-val" id="fs-sf-eval-val">—</span>
+                    <span class="eval-val" id="fs-sf-eval-val">0.00</span>
                 </div>
             </div>
             <div class="fullscreen-nav">
@@ -773,6 +773,7 @@
         var fsAutoFollow = true;
         var evalDebounceTimer = null;
         var fsEvalDebounceTimer = null;
+        var fenCache = []; // Pre-computed FEN for each move index
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -796,25 +797,32 @@
             });
         }
 
-        function setBoardPosition(moves) {
+        function buildFenCache(moves) {
+            fenCache = [];
             var c = new Chess();
+            fenCache[0] = c.fen();
             for (var i = 0; i < moves.length; i++) {
-                try { c.move(moves[i]); } catch(e) { break; }
+                try { c.move(moves[i]); fenCache[i+1] = c.fen(); }
+                catch(e) { break; }
             }
-            liveBoard.position(c.fen());
+        }
+
+        function setBoardPosition(index) {
+            if (fenCache[index]) {
+                liveBoard.position(fenCache[index]);
+            }
         }
 
         function updateView() {
-            var slice = allMoves.slice(0, currentViewIndex);
-            setBoardPosition(slice);
+            setBoardPosition(currentViewIndex);
             var label = currentViewIndex + '/' + allMoves.length;
             $('#move-label').text('Move ' + label);
             $('#btn-back').prop('disabled', currentViewIndex <= 0);
             $('#btn-fwd').prop('disabled', currentViewIndex >= allMoves.length);
-            renderMoveList();
+            updateMoveListHighlight();
         }
 
-        function renderMoveList() {
+        function buildMoveList() {
             if (allMoves.length === 0) {
                 $('#move-list').html('<span style="color:#444; font-size:11px;">Waiting for moves...</span>');
                 return;
@@ -822,13 +830,20 @@
             var html = '';
             for (var i = 0; i < allMoves.length; i++) {
                 var isMoveNum = (i % 2 === 0);
-                var cls = 'move-san';
-                if (i === currentViewIndex) cls += ' active';
-                else if (i > currentViewIndex) cls += ' far';
                 if (isMoveNum) html += '<span class="move-num">' + Math.ceil((i+1)/2) + '.</span>';
-                html += '<span class="' + cls + '" onclick="window.goToMove(' + (i+1) + ')">' + allMoves[i] + '</span>';
+                html += '<span class="move-san" data-idx="' + i + '" onclick="window.goToMove(' + (i+1) + ')">' + allMoves[i] + '</span>';
             }
             $('#move-list').html(html);
+            updateMoveListHighlight();
+        }
+
+        function updateMoveListHighlight() {
+            $('#move-list .move-san').each(function() {
+                var i = parseInt($(this).data('idx'));
+                $(this).removeClass('active far');
+                if (i === currentViewIndex) $(this).addClass('active');
+                else if (i > currentViewIndex) $(this).addClass('far');
+            });
             var el = document.getElementById('move-list');
             var active = el.querySelector('.active');
             if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -926,12 +941,15 @@
 
         function updateFsView() {
             if (!fsBoard) return;
-            var slice = allMoves.slice(0, fsViewIndex);
-            var c = new Chess();
-            for (var i = 0; i < slice.length; i++) {
-                try { c.move(slice[i]); } catch(e) { break; }
+            var fen = fenCache[fsViewIndex];
+            if (!fen) {
+                var c = new Chess();
+                for (var i = 0; i < fsViewIndex; i++) {
+                    try { c.move(allMoves[i]); } catch(e) { break; }
+                }
+                fen = c.fen();
             }
-            fsBoard.position(c.fen());
+            fsBoard.position(fen);
             $('#fs-move-label').text('Move ' + fsViewIndex + '/' + allMoves.length);
             $('#fs-btn-back').prop('disabled', fsViewIndex <= 0);
             $('#fs-btn-fwd').prop('disabled', fsViewIndex >= allMoves.length);
@@ -964,12 +982,15 @@
         };
 
         function pollFsEval() {
-            if (allMoves.length === 0 || !fsBoard) return;
-            var c = new Chess();
-            for (var i = 0; i < fsViewIndex; i++) {
-                try { c.move(allMoves[i]); } catch(e) { break; }
+            if (!fsBoard) return;
+            var fen = fenCache[fsViewIndex];
+            if (!fen) {
+                var c = new Chess();
+                for (var i = 0; i < fsViewIndex; i++) {
+                    try { c.move(allMoves[i]); } catch(e) { break; }
+                }
+                fen = c.fen();
             }
-            var fen = c.fen();
             $.ajax({
                 url: API + '/api/train/evaluate',
                 method: 'POST',
@@ -1080,6 +1101,8 @@
                 var newMoves = status.current_game.moves;
                 if (newMoves.length > allMoves.length || newMoves.length === 0) {
                     allMoves = newMoves;
+                    buildFenCache(allMoves);
+                    buildMoveList();
                     currentViewIndex = newMoves.length;
                     autoFollow = true;
                     isPlaying = false;
@@ -1091,6 +1114,8 @@
                     }
                 } else {
                     allMoves = newMoves;
+                    buildFenCache(allMoves);
+                    buildMoveList();
                     if (autoFollow) {
                         currentViewIndex = allMoves.length;
                     }
@@ -1135,12 +1160,14 @@
         var lastEvalData = null;
 
         function pollEval() {
-            if (allMoves.length === 0) return;
-            var c = new Chess();
-            for (var i = 0; i < currentViewIndex; i++) {
-                try { c.move(allMoves[i]); } catch(e) { break; }
+            var fen = fenCache[currentViewIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+            if (!fen) {
+                var c = new Chess();
+                for (var i = 0; i < currentViewIndex; i++) {
+                    try { c.move(allMoves[i]); } catch(e) { break; }
+                }
+                fen = c.fen();
             }
-            var fen = c.fen();
 
             if (fen === lastEvalFen && lastEvalData) {
                 updateEvalBar('nn-eval-fill', 'nn-eval-val', lastEvalData.nn_value || 0);
@@ -1229,6 +1256,7 @@
                 source.addEventListener('game_start', function(e) {
                     var data = JSON.parse(e.data);
                     allMoves = [];
+                    fenCache = [];
                     currentViewIndex = 0;
                     autoFollow = true;
                     updateView();
@@ -1237,6 +1265,8 @@
                     var data = JSON.parse(e.data);
                     if (data.moves) {
                         allMoves = data.moves;
+                        buildFenCache(allMoves);
+                        buildMoveList();
                         if (autoFollow) currentViewIndex = allMoves.length;
                         updateView();
                         pollEval();
@@ -1267,6 +1297,7 @@
         $(function () {
             initLiveBoard();
             pollStatus();
+            pollEval();
             setInterval(function() {
                 pollStatus();
                 pollEval();
