@@ -31,6 +31,12 @@ class StockfishPlayer:
             }
         )
 
+    def close(self):
+        try:
+            self.engine.close()
+        except Exception:
+            pass
+
     def get_move(self, board, depth=None):
         """Get Stockfish's best move as UCI string."""
         try:
