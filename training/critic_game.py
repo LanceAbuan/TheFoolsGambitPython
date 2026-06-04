@@ -45,8 +45,12 @@ class CriticGame:
             # --- Step 1: Get current position eval ---
             current_eval = self.stockfish.get_evaluation(board)
 
-            # --- Step 2: Evaluate every legal move with Stockfish ---
-            move_evals = self.stockfish.evaluate_legal_moves(board)  # [(move, san, cp)]
+            # --- Step 2: Evaluate every legal move with Stockfish (batch) ---
+            eval_map = self.stockfish.evaluate_legal_moves_batch(board)
+            move_evals = []
+            for m in board.legal_moves:
+                cp = eval_map.get(m.uci(), 0)
+                move_evals.append((m, board.san(m), cp))
 
             # --- Step 3: Build weighted policy target from evals ---
             eval_values = np.array([mv[2] for mv in move_evals], dtype=np.float32)
@@ -83,6 +87,7 @@ class CriticGame:
 
             board.push(chosen_move)
             move_sans.append(chosen_san)
+            print(f'[CRITIC] move {i+1}: {chosen_san} (eval={current_eval}cp)', flush=True)
             if on_move:
                 on_move(list(move_sans))
 
