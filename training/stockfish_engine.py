@@ -82,9 +82,11 @@ class StockfishPlayer:
             results.append((m, board.san(m), cp))
         return results
 
-    def evaluate_legal_moves_batch(self, board, depth=5):
-        """Evaluate all legal moves individually with low depth for speed.
+    @staticmethod
+    def evaluate_legal_moves_batch(board, depth=5):
+        """Evaluate all legal moves using a dedicated Stockfish subprocess.
         
+        Uses its own process to avoid threading issues with shared engine.
         Returns dict mapping UCI move string to centipawn evaluation.
         """
         try:
@@ -92,16 +94,18 @@ class StockfishPlayer:
             if not legal_moves:
                 return {}
             
-            eval_map = {}
-            fen = board.fen()
-            self.engine.set_fen_position(fen)
-            self.engine.set_depth(depth)
+            tmp_sf = SF(
+                path=STOCKFISH_PATH,
+                depth=depth,
+                parameters={"Threads": 1, "Hash": 64}
+            )
             
+            eval_map = {}
             for m in legal_moves:
                 try:
                     board.push(m)
-                    self.engine.set_fen_position(board.fen())
-                    info = self.engine.get_evaluation()
+                    tmp_sf.set_fen_position(board.fen())
+                    info = tmp_sf.get_evaluation()
                     cp = 0
                     if info['type'] == 'cp':
                         cp = info['value']
@@ -110,11 +114,16 @@ class StockfishPlayer:
                     eval_map[m.uci()] = cp
                     board.pop()
                 except Exception:
-                    if board.is_empty():
-                        pass
-                    else:
+                    try:
                         board.pop()
+                    except Exception:
+                        pass
                     eval_map[m.uci()] = 0
+            
+            try:
+                tmp_sf.close()
+            except Exception:
+                pass
             
             return eval_map
         except Exception as e:
