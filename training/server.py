@@ -75,26 +75,7 @@ def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
             'timestamp': time.time()
         })
     except queue.Full:
-        pass  # Drop if dashboard is slow
-
-
-# Thread-safe queue for MCTS progress events
-import queue
-mcts_progress_queue = queue.Queue(maxsize=100)
-
-def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
-    """Send MCTS search progress to dashboard."""
-    try:
-        mcts_progress_queue.put_nowait({
-            'type': 'mcts_progress',
-            'move': move_num,
-            'sims': sim_count,
-            'total': total_sims,
-            'top_moves': top_moves[:5],
-            'timestamp': time.time()
-        })
-    except queue.Full:
-        pass  # Drop if dashboard is slow
+        pass
 
 
 def stream_game_progress():
@@ -214,37 +195,39 @@ def train_start():
                             stream_game_progress()
                         ))
                     print(f'[TRAIN] Game {i+1} done, moves: {len(game_data.get("moves", []))}', flush=True)
-                current_game_moves = game_data.get('moves', [])
+                    current_game_moves = game_data.get('moves', [])
 
-                if game_data.get('pgn'):
-                    recent_games.append({
-                        'game_num': game_data.get('games_played', t.games_played),
-                        'pgn': game_data.get('pgn', ''),
-                        'result': game_data.get('result', '*'),
-                        'mode': 'self-play',
-                        'timestamp': time.time()
-                    })
-                    stream_game_progress()
+                    if game_data.get('pgn'):
+                        recent_games.append({
+                            'game_num': t.games_played,
+                            'pgn': game_data.get('pgn', ''),
+                            'result': game_data.get('result', '*'),
+                            'mode': game_data.get('mode', 'self-play'),
+                            'timestamp': time.time()
+                        })
+                        stream_game_progress()
+                        stream_status_update()
 
-                # Optional: Stockfish game
-                if use_stockfish and (i + 1) % 2 == 0:
-                    sf = get_stockfish()
-                    if sf:
-                        current_game_status = "stockfish"
-                        send_sse({'type': 'game_start', 'mode': 'stockfish'})
-                        sf_game = sf.play_game(
-                            opponent_move_fn=lambda b: t.selfplay.mcts.search(b)
-                        )
-                        current_game_moves = sf_game.get('moves', [])
-                        if sf_game.get('pgn'):
-                            recent_games.append({
-                                'game_num': len(recent_games) + 1,
-                                'pgn': sf_game.get('pgn', ''),
-                                'result': sf_game.get('result', '*'),
-                                'mode': 'stockfish',
-                                'timestamp': time.time()
-                            })
-                            stream_game_progress()
+                    # Optional: Stockfish game
+                    if use_stockfish and (i + 1) % 2 == 0:
+                        sf = get_stockfish()
+                        if sf:
+                            current_game_status = "stockfish"
+                            send_sse({'type': 'game_start', 'mode': 'stockfish'})
+                            sf_game = sf.play_game(
+                                opponent_move_fn=lambda b: t.selfplay.mcts.search(b)
+                            )
+                            current_game_moves = sf_game.get('moves', [])
+                            if sf_game.get('pgn'):
+                                recent_games.append({
+                                    'game_num': len(recent_games) + 1,
+                                    'pgn': sf_game.get('pgn', ''),
+                                    'result': sf_game.get('result', '*'),
+                                    'mode': 'stockfish',
+                                    'timestamp': time.time()
+                                })
+                                stream_game_progress()
+                                stream_status_update()
 
             # Training steps
             for _ in range(steps_per_cycle):
