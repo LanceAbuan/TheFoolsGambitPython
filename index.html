@@ -208,6 +208,21 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+        #status-indicators {
+            display: flex;
+            gap: 4px;
+            margin-top: 6px;
+        }
+        #status-indicators span {
+            font-size: 9px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #444;
+            padding: 2px 6px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 3px;
+        }
 
         .toolbar {
             display: flex;
@@ -571,6 +586,7 @@
                     </div>
                 </div>
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
+                <div id="status-indicators"></div>
 
                 <div id="live-board"></div>
 
@@ -581,7 +597,7 @@
                             <div class="eval-center"></div>
                             <div class="eval-fill" id="nn-eval-fill"></div>
                         </div>
-                        <span class="eval-val" id="nn-eval-val">—</span>
+                        <span class="eval-val" id="nn-eval-val">0.00</span>
                     </div>
                     <div class="eval-row">
                         <span class="eval-source sf">SF</span>
@@ -589,7 +605,7 @@
                             <div class="eval-center"></div>
                             <div class="eval-fill" id="sf-eval-fill"></div>
                         </div>
-                        <span class="eval-val" id="sf-eval-val">—</span>
+                        <span class="eval-val" id="sf-eval-val">0.00</span>
                     </div>
                 </div>
 
@@ -709,7 +725,7 @@
                         <div class="eval-center"></div>
                         <div class="eval-fill" id="fs-nn-eval-fill"></div>
                     </div>
-                    <span class="eval-val" id="fs-nn-eval-val">—</span>
+                      <span class="eval-val" id="fs-nn-eval-val">0.00</span>
                 </div>
                 <div class="fullscreen-eval-row">
                     <span class="eval-source sf">SF</span>
@@ -717,7 +733,7 @@
                         <div class="eval-center"></div>
                         <div class="eval-fill" id="fs-sf-eval-fill"></div>
                     </div>
-                    <span class="eval-val" id="fs-sf-eval-val">—</span>
+                    <span class="eval-val" id="fs-sf-eval-val">0.00</span>
                 </div>
             </div>
             <div class="fullscreen-nav">
@@ -755,6 +771,9 @@
         var fsBoard = null;
         var fsViewIndex = 0;
         var fsAutoFollow = true;
+        var evalDebounceTimer = null;
+        var fsEvalDebounceTimer = null;
+        var fenCache = []; // Pre-computed FEN for each move index
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -778,25 +797,32 @@
             });
         }
 
-        function setBoardPosition(moves) {
+        function buildFenCache(moves) {
+            fenCache = [];
             var c = new Chess();
+            fenCache[0] = c.fen();
             for (var i = 0; i < moves.length; i++) {
-                try { c.move(moves[i]); } catch(e) { break; }
+                try { c.move(moves[i]); fenCache[i+1] = c.fen(); }
+                catch(e) { break; }
             }
-            liveBoard.position(c.fen());
+        }
+
+        function setBoardPosition(index) {
+            if (fenCache[index]) {
+                liveBoard.position(fenCache[index]);
+            }
         }
 
         function updateView() {
-            var slice = allMoves.slice(0, currentViewIndex);
-            setBoardPosition(slice);
+            setBoardPosition(currentViewIndex);
             var label = currentViewIndex + '/' + allMoves.length;
             $('#move-label').text('Move ' + label);
             $('#btn-back').prop('disabled', currentViewIndex <= 0);
             $('#btn-fwd').prop('disabled', currentViewIndex >= allMoves.length);
-            renderMoveList();
+            updateMoveListHighlight();
         }
 
-        function renderMoveList() {
+        function buildMoveList() {
             if (allMoves.length === 0) {
                 $('#move-list').html('<span style="color:#444; font-size:11px;">Waiting for moves...</span>');
                 return;
@@ -804,13 +830,20 @@
             var html = '';
             for (var i = 0; i < allMoves.length; i++) {
                 var isMoveNum = (i % 2 === 0);
-                var cls = 'move-san';
-                if (i === currentViewIndex) cls += ' active';
-                else if (i > currentViewIndex) cls += ' far';
                 if (isMoveNum) html += '<span class="move-num">' + Math.ceil((i+1)/2) + '.</span>';
-                html += '<span class="' + cls + '" onclick="window.goToMove(' + (i+1) + ')">' + allMoves[i] + '</span>';
+                html += '<span class="move-san" data-idx="' + i + '" onclick="window.goToMove(' + (i+1) + ')">' + allMoves[i] + '</span>';
             }
             $('#move-list').html(html);
+            updateMoveListHighlight();
+        }
+
+        function updateMoveListHighlight() {
+            $('#move-list .move-san').each(function() {
+                var i = parseInt($(this).data('idx'));
+                $(this).removeClass('active far');
+                if (i === currentViewIndex) $(this).addClass('active');
+                else if (i > currentViewIndex) $(this).addClass('far');
+            });
             var el = document.getElementById('move-list');
             var active = el.querySelector('.active');
             if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -822,7 +855,8 @@
             updatePlayBtn();
             currentViewIndex = Math.max(0, Math.min(allMoves.length, currentViewIndex + dir));
             updateView();
-            pollEval();
+            clearTimeout(evalDebounceTimer);
+            evalDebounceTimer = setTimeout(pollEval, 400);
         };
 
         window.togglePlay = function() {
@@ -856,7 +890,8 @@
             updatePlayBtn();
             currentViewIndex = idx;
             updateView();
-            pollEval();
+            clearTimeout(evalDebounceTimer);
+            evalDebounceTimer = setTimeout(pollEval, 400);
         };
 
         /* ---------- Fullscreen ---------- */
@@ -894,7 +929,8 @@
             fsAutoFollow = false;
             fsViewIndex = Math.max(0, Math.min(allMoves.length, fsViewIndex + dir));
             updateFsView();
-            pollFsEval();
+            clearTimeout(fsEvalDebounceTimer);
+            fsEvalDebounceTimer = setTimeout(pollFsEval, 400);
         };
 
         window.fsFlipBoard = function() {
@@ -905,12 +941,15 @@
 
         function updateFsView() {
             if (!fsBoard) return;
-            var slice = allMoves.slice(0, fsViewIndex);
-            var c = new Chess();
-            for (var i = 0; i < slice.length; i++) {
-                try { c.move(slice[i]); } catch(e) { break; }
+            var fen = fenCache[fsViewIndex];
+            if (!fen) {
+                var c = new Chess();
+                for (var i = 0; i < fsViewIndex; i++) {
+                    try { c.move(allMoves[i]); } catch(e) { break; }
+                }
+                fen = c.fen();
             }
-            fsBoard.position(c.fen());
+            fsBoard.position(fen);
             $('#fs-move-label').text('Move ' + fsViewIndex + '/' + allMoves.length);
             $('#fs-btn-back').prop('disabled', fsViewIndex <= 0);
             $('#fs-btn-fwd').prop('disabled', fsViewIndex >= allMoves.length);
@@ -938,16 +977,20 @@
             fsAutoFollow = false;
             fsViewIndex = idx;
             updateFsView();
-            pollFsEval();
+            clearTimeout(fsEvalDebounceTimer);
+            fsEvalDebounceTimer = setTimeout(pollFsEval, 400);
         };
 
         function pollFsEval() {
-            if (allMoves.length === 0 || !fsBoard) return;
-            var c = new Chess();
-            for (var i = 0; i < fsViewIndex; i++) {
-                try { c.move(allMoves[i]); } catch(e) { break; }
+            if (!fsBoard) return;
+            var fen = fenCache[fsViewIndex];
+            if (!fen) {
+                var c = new Chess();
+                for (var i = 0; i < fsViewIndex; i++) {
+                    try { c.move(allMoves[i]); } catch(e) { break; }
+                }
+                fen = c.fen();
             }
-            var fen = c.fen();
             $.ajax({
                 url: API + '/api/train/evaluate',
                 method: 'POST',
@@ -1011,12 +1054,26 @@
             $('#m-elo').text(status.estimated_elo ? '~' + status.estimated_elo.toLocaleString() : '~200');
 
             var smartness = 0;
+            var progressLabel = 'Initializing';
             if (status.loss > 0) {
                 smartness = Math.max(0, Math.min(100, (1 - status.loss) * 100));
+                progressLabel = smartness > 60 ? 'Competent' : smartness > 30 ? 'Improving' : 'Learning';
+            } else if (status.step > 0) {
+                smartness = Math.min(100, status.step * 0.5);
+                progressLabel = 'Training';
             } else if (status.games_played > 0) {
                 smartness = Math.min(100, status.games_played * 5);
+                progressLabel = 'Collecting Data';
             }
             $('#smartness-fill').css('width', smartness + '%');
+            $('.smartness-label span').last().text(progressLabel);
+            var indicators = [];
+            if (status.gpu_available) {
+                indicators.push('<span title="GPU: ' + (status.gpu_name || 'N/A') + '">GPU</span>');
+            }
+            indicators.push('<span title="Saves every 2 games">&#128190; Save</span>');
+            indicators.push('<span title="Uploads to HF every 50 steps">&#9992; Upload</span>');
+            $('#status-indicators').html(indicators.join(' '));
 
             var what = '';
             if (status.status === 'playing') {
@@ -1044,6 +1101,8 @@
                 var newMoves = status.current_game.moves;
                 if (newMoves.length > allMoves.length || newMoves.length === 0) {
                     allMoves = newMoves;
+                    buildFenCache(allMoves);
+                    buildMoveList();
                     currentViewIndex = newMoves.length;
                     autoFollow = true;
                     isPlaying = false;
@@ -1055,6 +1114,8 @@
                     }
                 } else {
                     allMoves = newMoves;
+                    buildFenCache(allMoves);
+                    buildMoveList();
                     if (autoFollow) {
                         currentViewIndex = allMoves.length;
                     }
@@ -1095,21 +1156,38 @@
 
         /* ---------- Eval + Analysis ---------- */
 
+        var lastEvalFen = '';
+        var lastEvalData = null;
+
         function pollEval() {
-            if (allMoves.length === 0) return;
-            var c = new Chess();
-            for (var i = 0; i < currentViewIndex; i++) {
-                try { c.move(allMoves[i]); } catch(e) { break; }
+            var fen = fenCache[currentViewIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+            if (!fen) {
+                var c = new Chess();
+                for (var i = 0; i < currentViewIndex; i++) {
+                    try { c.move(allMoves[i]); } catch(e) { break; }
+                }
+                fen = c.fen();
             }
-            var fen = c.fen();
+
+            if (fen === lastEvalFen && lastEvalData) {
+                updateEvalBar('nn-eval-fill', 'nn-eval-val', lastEvalData.nn_value || 0);
+                if (lastEvalData.stockfish && lastEvalData.stockfish.centipawns != null) {
+                    var sf = lastEvalData.stockfish.centipawns / 2000.0;
+                    sf = Math.max(-1, Math.min(1, sf));
+                    updateEvalBar('sf-eval-fill', 'sf-eval-val', sf);
+                }
+                return;
+            }
 
             $.ajax({
                 url: API + '/api/train/evaluate',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({fen: fen}),
-                timeout: 5000,
+                timeout: 8000,
                 success: function(res) {
+                    lastEvalFen = fen;
+                    lastEvalData = res;
                     var nv = res.nn_value || 0;
                     updateEvalBar('nn-eval-fill', 'nn-eval-val', nv);
 
@@ -1119,7 +1197,12 @@
                         updateEvalBar('sf-eval-fill', 'sf-eval-val', sf);
                     }
                 },
-                error: function() {}
+                error: function(xhr, status) {
+                    if (status === 'timeout') {
+                        $('#nn-eval-val').text('timeout');
+                        $('#sf-eval-val').text('timeout');
+                    }
+                }
             });
 
             $.ajax({
@@ -1127,7 +1210,7 @@
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({fen: fen}),
-                timeout: 5000,
+                timeout: 8000,
                 success: function(analysis) {
                     renderAnalysis(analysis);
                 },
@@ -1173,6 +1256,7 @@
                 source.addEventListener('game_start', function(e) {
                     var data = JSON.parse(e.data);
                     allMoves = [];
+                    fenCache = [];
                     currentViewIndex = 0;
                     autoFollow = true;
                     updateView();
@@ -1181,6 +1265,8 @@
                     var data = JSON.parse(e.data);
                     if (data.moves) {
                         allMoves = data.moves;
+                        buildFenCache(allMoves);
+                        buildMoveList();
                         if (autoFollow) currentViewIndex = allMoves.length;
                         updateView();
                         pollEval();
@@ -1211,6 +1297,7 @@
         $(function () {
             initLiveBoard();
             pollStatus();
+            pollEval();
             setInterval(function() {
                 pollStatus();
                 pollEval();
