@@ -164,4 +164,4 @@ class CriticGame:
                 board.push(move)
             except Exception:
                 break
-        return game.pgn()
+        return str(game)
