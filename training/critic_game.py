@@ -20,20 +20,11 @@ class CriticGame:
 
     def __init__(self, model, stockfish, temperature=0.3, max_moves=200):
         self.model = model
-        # Always use own Stockfish to avoid thread contention
-        from .stockfish_engine import StockfishPlayer, STOCKFISH_PATH
-        self.stockfish = StockfishPlayer(depth=15, threads=2, hash_mb=128)
+        self.stockfish = stockfish
         self.temperature = temperature
-        self.max_moves = min(max_moves, 40)
+        self.max_moves = max_moves
 
-    def close(self):
-        self.stockfish.close()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
 
     def play(self, on_move=None):
         """Play one complete game. NN plays both sides, Stockfish critiques.
@@ -54,7 +45,9 @@ class CriticGame:
                 break
 
             current_eval = self.stockfish.get_evaluation(board)
-            eval_map = self.stockfish.evaluate_legal_moves_batch(board, depth=12)
+
+            # --- Step 2: Evaluate every legal move with Stockfish (batch) ---
+            eval_map = self.stockfish.evaluate_legal_moves_batch(board)
             move_evals = []
             for m in board.legal_moves:
                 cp = eval_map.get(m.uci(), 0)
