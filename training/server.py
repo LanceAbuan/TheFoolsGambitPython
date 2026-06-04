@@ -214,11 +214,11 @@ def train_start():
                             current_game_status = "supervised"
                             send_sse({'type': 'game_start', 'mode': 'critic'})
                             from .critic_game import CriticGame
-                            with CriticGame(t.model, sf, temperature=0.05) as sg:
-                                game_data = sg.play(on_move=lambda moves: (
-                                    setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
-                                    stream_game_progress()
-                                ))
+                            sg = CriticGame(t.model, sf, temperature=0.15)
+                            game_data = sg.play(on_move=lambda moves: (
+                                setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+                                stream_game_progress()
+                            ))
                             # Feed examples into training buffer
                             t.buffer.add(game_data.get('examples', []))
                             t.games_played += 1
@@ -369,11 +369,11 @@ def train_play_supervised():
     send_sse({'type': 'game_start', 'mode': 'critic'})
 
     from .critic_game import CriticGame
-    with CriticGame(t.model, sf, temperature=0.15) as sg:
-        game_data = sg.play(on_move=lambda moves: (
-            setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
-            stream_game_progress()
-        ))
+    sg = CriticGame(t.model, sf, temperature=0.15)
+    game_data = sg.play(on_move=lambda moves: (
+        setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+        stream_game_progress()
+    ))
     current_game_moves = game_data.get('moves', [])
 
     # Feed examples into training buffer

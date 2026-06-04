@@ -20,20 +20,11 @@ class CriticGame:
 
     def __init__(self, model, stockfish, temperature=0.3, max_moves=200):
         self.model = model
-        # Always use own Stockfish to avoid thread contention
-        from .stockfish_engine import StockfishPlayer, STOCKFISH_PATH
-        self.stockfish = StockfishPlayer(depth=15, threads=2, hash_mb=128)
+        self.stockfish = stockfish
         self.temperature = temperature
-        self.max_moves = min(max_moves, 40)
+        self.max_moves = max_moves
 
-    def close(self):
-        self.stockfish.close()
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
 
     def play(self, on_move=None):
         """Play one complete game. NN plays both sides, Stockfish critiques.

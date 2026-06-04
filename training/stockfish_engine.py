@@ -93,11 +93,11 @@ class StockfishPlayer:
             results.append((m, board.san(m), cp))
         return results
 
-    @staticmethod
-    def evaluate_legal_moves_batch(board, depth=10):
-        """Evaluate all legal moves using a dedicated Stockfish subprocess.
+    def evaluate_legal_moves_batch(self, board, depth=10):
+        """Evaluate all legal moves using MultiPV for speed.
         
-        Uses its own process to avoid threading issues with shared engine.
+        Uses Stockfish's MultiPV analysis to evaluate multiple moves
+        in a single search, much faster than evaluating one by one.
         Returns dict mapping UCI move string to centipawn evaluation.
         """
         try:
@@ -105,43 +105,42 @@ class StockfishPlayer:
             if not legal_moves:
                 return {}
             
-            tmp_sf = SF(
-                path=STOCKFISH_PATH,
-                depth=depth,
-                parameters={"Threads": 1, "Hash": 128}
-            )
+            num_moves = len(legal_moves)
+            if num_moves == 0:
+                return {}
+            
+            self.engine.set_fen_position(board.fen())
+            if depth:
+                self.engine.set_depth(depth)
+            
+            max_multipv = min(num_moves, 50)
+            self.engine.update_engine_parameters({"MultiPV": max_multipv})
             
             eval_map = {}
-            for m in legal_moves:
+            for _ in range(num_moves):
                 try:
-                    board.push(m)
-                    tmp_sf.set_fen_position(board.fen())
-                    info = tmp_sf.get_evaluation()
+                    uci = self.engine.get_best_move()
+                    if uci in ('0-1', '1-0', 'resign', None, ''):
+                        break
+                    info = self.engine.get_evaluation()
                     cp = 0
                     if info['type'] == 'cp':
                         cp = info['value']
                     elif info['type'] == 'mate':
                         cp = info['value'] * 10000
-                    # Flip to White's perspective when it's Black's turn
-                    if board.turn == chess.BLACK:
-                        cp = -cp
-                    eval_map[m.uci()] = cp
-                    board.pop()
+                    eval_map[uci] = cp
                 except Exception:
-                    try:
-                        board.pop()
-                    except Exception:
-                        pass
-                    eval_map[m.uci()] = 0
+                    break
             
-            try:
-                tmp_sf.close()
-            except Exception:
-                pass
+            self.engine.update_engine_parameters({"MultiPV": 1})
+            
+            for m in legal_moves:
+                uci = m.uci()
+                if uci not in eval_map:
+                    eval_map[uci] = 0
             
             return eval_map
-        except Exception as e:
-            print(f'[SF-BATCH] Error: {e}', flush=True)
+        except Exception:
             return {}
 
     def get_move_quality(self, board, move):
