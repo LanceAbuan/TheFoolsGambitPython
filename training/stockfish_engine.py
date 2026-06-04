@@ -83,7 +83,7 @@ class StockfishPlayer:
         return results
 
     @staticmethod
-    def evaluate_legal_moves_batch(board, depth=5):
+    def evaluate_legal_moves_batch(board, depth=10):
         """Evaluate all legal moves using a dedicated Stockfish subprocess.
         
         Uses its own process to avoid threading issues with shared engine.
@@ -97,7 +97,7 @@ class StockfishPlayer:
             tmp_sf = SF(
                 path=STOCKFISH_PATH,
                 depth=depth,
-                parameters={"Threads": 1, "Hash": 64}
+                parameters={"Threads": 2, "Hash": 128}
             )
             
             eval_map = {}

@@ -591,21 +591,13 @@
                 <div id="live-board"></div>
 
                 <div class="eval-section" id="eval-section">
-                    <div class="eval-row">
-                        <span class="eval-source nn">NN</span>
-                        <div class="eval-track">
-                            <div class="eval-center"></div>
-                            <div class="eval-fill" id="nn-eval-fill"></div>
+                    <div class="eval-row" style="margin-bottom: 4px;">
+                        <span class="eval-source sf" style="font-weight:bold; font-size:13px;">SF</span>
+                        <div class="eval-track" style="height: 22px; background: rgba(0,0,0,0.08); border-radius: 4px; position: relative; overflow: hidden;">
+                            <div class="eval-center" style="position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(0,0,0,0.1);"></div>
+                            <div class="eval-fill" id="sf-eval-fill" style="height: 100%; transition: width 0.3s ease;"></div>
                         </div>
-                        <span class="eval-val" id="nn-eval-val">0.00</span>
-                    </div>
-                    <div class="eval-row">
-                        <span class="eval-source sf">SF</span>
-                        <div class="eval-track">
-                            <div class="eval-center"></div>
-                            <div class="eval-fill" id="sf-eval-fill"></div>
-                        </div>
-                        <span class="eval-val" id="sf-eval-val">0.00</span>
+                        <span class="eval-val" id="sf-eval-val" style="font-weight:bold; font-size:13px; min-width:50px; text-align:right;">0.00</span>
                     </div>
                 </div>
 
@@ -1157,7 +1149,6 @@
         /* ---------- Eval + Analysis ---------- */
 
         var lastEvalFen = '';
-        var lastEvalData = null;
 
         function pollEval() {
             var fen = fenCache[currentViewIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
@@ -1169,39 +1160,22 @@
                 fen = c.fen();
             }
 
-            if (fen === lastEvalFen && lastEvalData) {
-                updateEvalBar('nn-eval-fill', 'nn-eval-val', lastEvalData.nn_value || 0);
-                if (lastEvalData.stockfish && lastEvalData.stockfish.centipawns != null) {
-                    var sf = lastEvalData.stockfish.centipawns / 2000.0;
-                    sf = Math.max(-1, Math.min(1, sf));
-                    updateEvalBar('sf-eval-fill', 'sf-eval-val', sf);
-                }
-                return;
-            }
-
             $.ajax({
                 url: API + '/api/train/evaluate',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({fen: fen}),
-                timeout: 8000,
+                timeout: 5000,
                 success: function(res) {
-                    lastEvalFen = fen;
-                    lastEvalData = res;
-                    var nv = res.nn_value || 0;
-                    updateEvalBar('nn-eval-fill', 'nn-eval-val', nv);
-
                     if (res.stockfish && res.stockfish.centipawns != null) {
-                        var sf = res.stockfish.centipawns / 2000.0;
+                        var cp = res.stockfish.centipawns;
+                        var sf = cp / 2000.0;
                         sf = Math.max(-1, Math.min(1, sf));
                         updateEvalBar('sf-eval-fill', 'sf-eval-val', sf);
                     }
                 },
-                error: function(xhr, status) {
-                    if (status === 'timeout') {
-                        $('#nn-eval-val').text('timeout');
-                        $('#sf-eval-val').text('timeout');
-                    }
+                error: function() {
+                    $('#sf-eval-val').text('---');
                 }
             });
 
@@ -1210,7 +1184,7 @@
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({fen: fen}),
-                timeout: 8000,
+                timeout: 5000,
                 success: function(analysis) {
                     renderAnalysis(analysis);
                 },

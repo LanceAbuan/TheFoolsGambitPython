@@ -187,19 +187,16 @@ def train_start():
 
                     if use_stockfish:
                         # Supervised mode: NN vs Stockfish, collect SF-guided examples
-                        print(f'[TRAIN] Getting stockfish...', flush=True)
                         sf = get_stockfish()
-                        print(f'[TRAIN] Got stockfish: {sf is not None}', flush=True)
                         if sf:
                             current_game_status = "supervised"
                             send_sse({'type': 'game_start', 'mode': 'critic'})
                             from .critic_game import CriticGame
-                            sg = CriticGame(t.model, sf, temperature=0.15)
-                            print(f'[TRAIN] About to play CriticGame...', flush=True)
+                            sg = CriticGame(t.model, sf, temperature=0.05)
                             game_data = sg.play(on_move=lambda moves: (
                                 setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
+                                stream_game_progress()
                             ))
-                            print(f'[TRAIN] CriticGame done: {len(game_data.get("moves", []))} moves', flush=True)
                             # Feed examples into training buffer
                             t.buffer.add(game_data.get('examples', []))
                             t.games_played += 1
@@ -469,15 +466,19 @@ def train_evaluate():
     elif value < -0.3:
         eval_str = f"Black +{abs(value):.2f}"
 
-    # Get Stockfish evaluation if available
+    # Get Stockfish evaluation if available (isolated instance)
     sf_eval = None
-    sf = get_stockfish()
-    if sf:
+    try:
+        from .stockfish_engine import StockfishPlayer
+        tmp_sf = StockfishPlayer(depth=10, threads=1, hash_mb=64)
+        cp = tmp_sf.get_evaluation(board)
+        sf_eval = {'centipawns': cp}
         try:
-            cp = sf.get_evaluation(board)
-            sf_eval = {'centipawns': cp}
+            tmp_sf.close()
         except Exception:
             pass
+    except Exception:
+        pass
 
     return jsonify({
         "nn_value": float(value),
@@ -493,16 +494,18 @@ def train_analyze():
     data = request.get_json(silent=True) or {}
     fen = data.get('fen', chess.STARTING_FEN)
 
-    sf = get_stockfish()
-    if not sf:
-        return jsonify({"error": "Stockfish not available"}), 500
-
     board = chess.Board(fen)
     if not board.is_valid():
         return jsonify({"error": "Invalid FEN"}), 400
 
     try:
-        analysis = sf.analyze_position(board)
+        from .stockfish_engine import StockfishPlayer
+        tmp_sf = StockfishPlayer(depth=10, threads=1, hash_mb=64)
+        analysis = tmp_sf.analyze_position(board)
+        try:
+            tmp_sf.close()
+        except Exception:
+            pass
     except Exception:
         return jsonify({"error": "Stockfish analysis failed"}), 500
     return jsonify(analysis)
