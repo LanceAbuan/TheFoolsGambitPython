@@ -22,7 +22,7 @@ class CriticGame:
         self.model = model
         # Always use own Stockfish to avoid thread contention
         from .stockfish_engine import StockfishPlayer, STOCKFISH_PATH
-        self.stockfish = StockfishPlayer(depth=10, threads=2, hash_mb=128)
+        self.stockfish = StockfishPlayer(depth=20, threads=4, hash_mb=256)
         self.temperature = temperature
         self.max_moves = min(max_moves, 40)
 
@@ -45,7 +45,7 @@ class CriticGame:
                 break
 
             current_eval = self.stockfish.get_evaluation(board)
-            eval_map = self.stockfish.evaluate_legal_moves_batch(board, depth=10)
+            eval_map = self.stockfish.evaluate_legal_moves_batch(board, depth=20)
             move_evals = []
             for m in board.legal_moves:
                 cp = eval_map.get(m.uci(), 0)
