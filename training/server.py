@@ -164,7 +164,7 @@ def train_start():
     games_per_cycle = data.get('games_per_cycle', 10)
     steps_per_cycle = data.get('steps_per_cycle', 100)
     mcts_sims = data.get('mcts_simulations', 800)
-    use_stockfish = data.get('use_stockfish', False)
+    use_stockfish = data.get('use_stockfish', True)
 
     t = get_trainer()
     t.selfplay.num_mcts_simulations = mcts_sims
