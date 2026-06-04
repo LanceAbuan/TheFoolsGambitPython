@@ -208,6 +208,21 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+        #status-indicators {
+            display: flex;
+            gap: 4px;
+            margin-top: 6px;
+        }
+        #status-indicators span {
+            font-size: 9px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #444;
+            padding: 2px 6px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 3px;
+        }
 
         .toolbar {
             display: flex;
@@ -571,6 +586,7 @@
                     </div>
                 </div>
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
+                <div id="status-indicators"></div>
 
                 <div id="live-board"></div>
 
@@ -755,6 +771,8 @@
         var fsBoard = null;
         var fsViewIndex = 0;
         var fsAutoFollow = true;
+        var evalDebounceTimer = null;
+        var fsEvalDebounceTimer = null;
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -822,7 +840,8 @@
             updatePlayBtn();
             currentViewIndex = Math.max(0, Math.min(allMoves.length, currentViewIndex + dir));
             updateView();
-            pollEval();
+            clearTimeout(evalDebounceTimer);
+            evalDebounceTimer = setTimeout(pollEval, 400);
         };
 
         window.togglePlay = function() {
@@ -856,7 +875,8 @@
             updatePlayBtn();
             currentViewIndex = idx;
             updateView();
-            pollEval();
+            clearTimeout(evalDebounceTimer);
+            evalDebounceTimer = setTimeout(pollEval, 400);
         };
 
         /* ---------- Fullscreen ---------- */
@@ -894,7 +914,8 @@
             fsAutoFollow = false;
             fsViewIndex = Math.max(0, Math.min(allMoves.length, fsViewIndex + dir));
             updateFsView();
-            pollFsEval();
+            clearTimeout(fsEvalDebounceTimer);
+            fsEvalDebounceTimer = setTimeout(pollFsEval, 400);
         };
 
         window.fsFlipBoard = function() {
@@ -938,7 +959,8 @@
             fsAutoFollow = false;
             fsViewIndex = idx;
             updateFsView();
-            pollFsEval();
+            clearTimeout(fsEvalDebounceTimer);
+            fsEvalDebounceTimer = setTimeout(pollFsEval, 400);
         };
 
         function pollFsEval() {
@@ -1011,12 +1033,26 @@
             $('#m-elo').text(status.estimated_elo ? '~' + status.estimated_elo.toLocaleString() : '~200');
 
             var smartness = 0;
+            var progressLabel = 'Initializing';
             if (status.loss > 0) {
                 smartness = Math.max(0, Math.min(100, (1 - status.loss) * 100));
+                progressLabel = smartness > 60 ? 'Competent' : smartness > 30 ? 'Improving' : 'Learning';
+            } else if (status.step > 0) {
+                smartness = Math.min(100, status.step * 0.5);
+                progressLabel = 'Training';
             } else if (status.games_played > 0) {
                 smartness = Math.min(100, status.games_played * 5);
+                progressLabel = 'Collecting Data';
             }
             $('#smartness-fill').css('width', smartness + '%');
+            $('.smartness-label span').last().text(progressLabel);
+            var indicators = [];
+            if (status.gpu_available) {
+                indicators.push('<span title="GPU: ' + (status.gpu_name || 'N/A') + '">GPU</span>');
+            }
+            indicators.push('<span title="Saves every 2 games">&#128190; Save</span>');
+            indicators.push('<span title="Uploads to HF every 50 steps">&#9992; Upload</span>');
+            $('#status-indicators').html(indicators.join(' '));
 
             var what = '';
             if (status.status === 'playing') {
@@ -1095,6 +1131,9 @@
 
         /* ---------- Eval + Analysis ---------- */
 
+        var lastEvalFen = '';
+        var lastEvalData = null;
+
         function pollEval() {
             if (allMoves.length === 0) return;
             var c = new Chess();
@@ -1103,13 +1142,25 @@
             }
             var fen = c.fen();
 
+            if (fen === lastEvalFen && lastEvalData) {
+                updateEvalBar('nn-eval-fill', 'nn-eval-val', lastEvalData.nn_value || 0);
+                if (lastEvalData.stockfish && lastEvalData.stockfish.centipawns != null) {
+                    var sf = lastEvalData.stockfish.centipawns / 2000.0;
+                    sf = Math.max(-1, Math.min(1, sf));
+                    updateEvalBar('sf-eval-fill', 'sf-eval-val', sf);
+                }
+                return;
+            }
+
             $.ajax({
                 url: API + '/api/train/evaluate',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({fen: fen}),
-                timeout: 5000,
+                timeout: 8000,
                 success: function(res) {
+                    lastEvalFen = fen;
+                    lastEvalData = res;
                     var nv = res.nn_value || 0;
                     updateEvalBar('nn-eval-fill', 'nn-eval-val', nv);
 
@@ -1119,7 +1170,12 @@
                         updateEvalBar('sf-eval-fill', 'sf-eval-val', sf);
                     }
                 },
-                error: function() {}
+                error: function(xhr, status) {
+                    if (status === 'timeout') {
+                        $('#nn-eval-val').text('timeout');
+                        $('#sf-eval-val').text('timeout');
+                    }
+                }
             });
 
             $.ajax({
@@ -1127,7 +1183,7 @@
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({fen: fen}),
-                timeout: 5000,
+                timeout: 8000,
                 success: function(analysis) {
                     renderAnalysis(analysis);
                 },

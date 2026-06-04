@@ -23,6 +23,8 @@ recent_games = []
 sse_clients = set()
 current_game_moves = []
 current_game_status = "idle"
+_stockfish_instance = None
+_stockfish_lock = threading.Lock()
 
 # Default play mode: 'critic' (Stockfish-guided) or 'selfplay' (MCTS)
 play_mode = 'critic'
@@ -36,10 +38,14 @@ def get_trainer():
 
 
 def get_stockfish():
-    try:
-        return StockfishPlayer()
-    except Exception:
-        return None
+    global _stockfish_instance
+    with _stockfish_lock:
+        if _stockfish_instance is None:
+            try:
+                _stockfish_instance = StockfishPlayer()
+            except Exception:
+                return None
+        return _stockfish_instance
 
 
 def send_sse(data, event=None):
@@ -130,6 +136,16 @@ def train_status():
         'moves': list(current_game_moves),
         'status': current_game_status
     }
+    try:
+        import torch
+        status['gpu_available'] = torch.cuda.is_available()
+        if status['gpu_available']:
+            status['gpu_name'] = torch.cuda.get_device_name(0)
+            status['gpu_memory'] = f"{torch.cuda.memory_allocated(0) / 1024**2:.0f}MB"
+    except Exception:
+        status['gpu_available'] = False
+    status['save_interval'] = 'every 2 games'
+    status['hf_upload_interval'] = 'every 50 training steps'
     return jsonify(status)
 
 
@@ -229,8 +245,28 @@ def train_start():
                                 stream_game_progress()
                                 stream_status_update()
 
-            # Training steps
-            for _ in range(steps_per_cycle):
+                    # Interleave: train after every 2 games so steps don't stay at 0
+                    if (i + 1) % 2 == 0:
+                        current_game_status = "training"
+                        steps_between = max(10, steps_per_cycle // max(games_per_cycle // 2, 1))
+                        for _ in range(steps_between):
+                            if not t.running:
+                                break
+                            result = t.train_step()
+                            if result:
+                                send_sse({'type': 'train_step', 'data': result})
+                                stream_status_update()
+                        t.save_checkpoint()
+                        current_game_status = "self-play"
+
+                # Do remaining training steps after games
+                for _ in range(steps_per_cycle):
+                    if not t.running:
+                        break
+                    current_game_status = "training"
+                    result = t.train_step()
+                    if result:
+                        send_sse({'type': 'train_step', 'data': result})
                 if not t.running:
                     break
                 current_game_status = "training"

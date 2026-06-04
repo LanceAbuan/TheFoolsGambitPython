@@ -42,7 +42,7 @@ def auto_start_training():
             'games_per_cycle': 20,
             'steps_per_cycle': 50,
             'mcts_simulations': 100,
-            'use_stockfish': False
+            'use_stockfish': True
         }, timeout=5)
         print('[AUTO] Training started automatically.')
     except Exception as e:
