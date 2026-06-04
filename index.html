@@ -59,6 +59,24 @@
         }
         .fullscreen-btn:hover { background: rgba(99,102,241,0.2); color: #fff; }
 
+        #board-section:fullscreen {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #08081a;
+        }
+        #board-section:fullscreen .panel {
+            width: auto !important;
+            max-width: 90vh;
+        }
+        #board-section:fullscreen #live-board {
+            width: 70vh;
+            min-width: 400px;
+        }
+        #board-section:fullscreen .move-list-wrap {
+            max-width: 70vh;
+        }
+
         .layout {
             display: flex;
             gap: 24px;
@@ -345,7 +363,7 @@
     </div>
 
     <div class="layout">
-        <div class="board-section">
+        <div class="board-section" id="board-section">
             <div class="panel" style="width: 460px;">
                 <div class="status-row">
                     <div id="status-badge" class="status-badge idle">
@@ -668,8 +686,9 @@
         /* ---------- Fullscreen ---------- */
 
         window.toggleFullscreen = function() {
+            var el = document.getElementById('board-section');
             if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(function(){});
+                el.requestFullscreen().catch(function(){});
             } else {
                 document.exitFullscreen();
             }
