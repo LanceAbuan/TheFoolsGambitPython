@@ -10,6 +10,7 @@ Usage:
     eval_cp = sf.get_evaluation(board)
 """
 import os
+import time
 import chess
 from stockfish import Stockfish as SF
 
@@ -82,54 +83,95 @@ class StockfishPlayer:
         return results
 
     def evaluate_legal_moves_batch(self, board, depth=10):
-        """Evaluate all legal moves using MultiPV for speed.
-        
-        Uses Stockfish's MultiPV analysis to evaluate multiple moves
-        in a single search, much faster than evaluating one by one.
+        """Evaluate all legal moves using direct UCI MultiPV.
         
         Returns dict mapping UCI move string to centipawn evaluation.
         """
+        import subprocess
+        import re
         try:
             legal_moves = list(board.legal_moves)
             if not legal_moves:
                 return {}
             
-            num_moves = len(legal_moves)
-            if num_moves == 0:
-                return {}
+            n = min(len(legal_moves), 20)
+            proc = subprocess.Popen(
+                [STOCKFISH_PATH],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
             
-            self.engine.set_fen_position(board.fen())
-            if depth:
-                self.engine.set_depth(depth)
+            def send(cmd):
+                proc.stdin.write(cmd + '\n')
+                proc.stdin.flush()
             
-            max_multipv = min(num_moves, 50)
-            self.engine.update_engine_parameters({"MultiPV": max_multipv})
-            
-            eval_map = {}
-            for _ in range(num_moves):
-                try:
-                    uci = self.engine.get_best_move()
-                    if uci in ('0-1', '1-0', 'resign', None, ''):
+            def recv_bestmatch(timeout_sec=5):
+                import select
+                lines = []
+                end_time = time.time() + timeout_sec
+                while time.time() < end_time:
+                    if proc.poll() is not None:
                         break
-                    info = self.engine.get_evaluation()
-                    cp = 0
-                    if info['type'] == 'cp':
-                        cp = info['value']
-                    elif info['type'] == 'mate':
-                        cp = info['value'] * 10000
-                    eval_map[uci] = cp
-                except Exception:
+                    if select.select([proc.stdout], [], [], 0.1)[0]:
+                        line = proc.stdout.readline().strip()
+                        if not line:
+                            break
+                        lines.append(line)
+                    else:
+                        if lines:
+                            break
+                return lines
+            
+            send('uci')
+            while True:
+                lines = recv_bestmatch(3)
+                if lines and lines[-1] == 'uciok':
                     break
             
-            self.engine.update_engine_parameters({"MultiPV": 1})
+            send(f'position fen {board.fen()}')
+            recv_bestmatch(1)
+            send(f'setoption name MultiPV value {n}')
+            recv_bestmatch(0.5)
+            send(f'go depth {depth}')
+            
+            eval_map = {}
+            moves_found = 0
+            end_time = time.time() + 15
+            while time.time() < end_time and moves_found < n:
+                if proc.poll() is not None:
+                    break
+                lines = recv_bestmatch(2)
+                for line in lines:
+                    if line.startswith('bestmove'):
+                        moves_found = n
+                        break
+                    if 'multipv' in line and 'score' in line and 'pv' in line:
+                        m = re.search(r'pv\s+(\S+)', line)
+                        if m:
+                            uci_move = m.group(1)
+                            sm = re.search(r'score\s+(\w+)\s+(-?\d+)', line)
+                            if sm:
+                                stype, sval = sm.group(1), int(sm.group(2))
+                                cp = sval if stype == 'cp' else sval * 10000
+                                eval_map[uci_move] = cp
+                                moves_found += 1
+            
+            send('quit')
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
             
             for m in legal_moves:
-                uci = m.uci()
-                if uci not in eval_map:
-                    eval_map[uci] = 0
+                if m.uci() not in eval_map:
+                    eval_map[m.uci()] = 0
             
             return eval_map
-        except Exception:
+        except Exception as e:
+            print(f'[SF-BATCH] Error: {e}', flush=True)
             return {}
 
     def get_move_quality(self, board, move):
