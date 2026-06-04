@@ -14,9 +14,9 @@ import chess
 from stockfish import Stockfish as SF
 
 STOCKFISH_PATH = os.environ.get('STOCKFISH_PATH', '/home/lance/.local/bin/stockfish')
-SF_DEPTH = 15
-SF_THREADS = 4
-SF_HASH = 256
+SF_DEPTH = 10
+SF_THREADS = 2
+SF_HASH = 128
 
 
 class StockfishPlayer:
