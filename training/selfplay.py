@@ -1,4 +1,14 @@
-"""Self-play engine using MCTS with neural network guidance."""
+"""Self-play engine using MCTS with neural network guidance.
+
+Stockfish-guided rollouts: at leaf nodes, MCTS blends Stockfish's centipawn
+evaluation (depth 10) with the NN's own value head. The NN still generates
+the policy priors for move selection — Stockfish only provides a stronger
+value signal at evaluation time.
+
+Blend ratio: 0.6 Stockfish / 0.4 NN to keep the network's own judgment
+in the loop and prevent overfitting to engine scores. Gaussian noise
+(sigma=0.1) is added to Stockfish evals to avoid memorization.
+"""
 import chess
 import chess.pgn
 import numpy as np
@@ -7,10 +17,17 @@ import time
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 
+SF_LEAF_BLEND = 0.6
+SF_LEAF_DEPTH = 10
+SF_EVAL_NOISE_SIGMA = 0.1
+
+RESIGN_THRESHOLD = -0.8  # NN value below this → resign
+
 
 class MCTS:
-    def __init__(self, model, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03):
+    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03):
         self.model = model
+        self.stockfish = stockfish
         self.cpuct = cpuct
         self.noise_epsilon = noise_epsilon
         self.noise_alpha = noise_alpha
@@ -175,8 +192,19 @@ class MCTS:
                 return 1.0 if board.turn == chess.BLACK else -1.0
             return 0.0
 
-        board_tensor = board_to_tensor(board)
+        nn_value = self._nn_evaluate(board)
 
+        if self.stockfish:
+            sf_cp = self.stockfish.get_evaluation(board)
+            sf_norm = max(-1.0, min(1.0, sf_cp / 2000.0))
+            noise = np.random.normal(0, SF_EVAL_NOISE_SIGMA)
+            sf_noisy = max(-1.0, min(1.0, sf_norm + noise))
+            return SF_LEAF_BLEND * sf_noisy + (1 - SF_LEAF_BLEND) * nn_value
+
+        return nn_value
+
+    def _nn_evaluate(self, board):
+        board_tensor = board_to_tensor(board)
         self.model.eval()
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
@@ -187,11 +215,11 @@ class MCTS:
 
 
 class SelfPlayGame:
-    def __init__(self, model, num_mcts_simulations=800, max_moves=200):
+    def __init__(self, model, num_mcts_simulations=800, max_moves=200, stockfish=None):
         self.model = model
         self.num_mcts_simulations = num_mcts_simulations
         self.max_moves = max_moves
-        self.mcts = MCTS(model)
+        self.mcts = MCTS(model, stockfish=stockfish)
 
     def play(self, on_move=None):
         """Play a complete self-play game.
@@ -212,6 +240,12 @@ class SelfPlayGame:
         try:
             for i in range(self.max_moves):
                 print(f'[GAME] Move {i+1}, turn={"W" if board.turn else "B"}', flush=True)
+
+                # Check for game-over conditions (checkmate, stalemate, draw, insufficient material)
+                if board.is_game_over():
+                    print(f'[GAME] Game over at move {i}: {board.result()}', flush=True)
+                    break
+
                 t_move = time.time()
                 board_tensor = board_to_tensor(board)
                 visit_counts = self.mcts.search(board, self.num_mcts_simulations)
@@ -219,6 +253,18 @@ class SelfPlayGame:
 
                 total_visits = visit_counts.sum()
                 policy = visit_counts / total_visits if total_visits > 0 else visit_counts
+
+                # Resignation: if the NN thinks the position is clearly lost, end the game
+                with torch.no_grad():
+                    x = torch.FloatTensor(board_tensor).unsqueeze(0)
+                    device = next(self.model.parameters()).device
+                    x = x.to(device)
+                    _, nn_value = self.model(x)
+                    nn_value = float(nn_value.squeeze().cpu())
+                
+                if nn_value < RESIGN_THRESHOLD:
+                    print(f'[GAME] Resigning at move {i+1} (value={nn_value:.3f} < {RESIGN_THRESHOLD})', flush=True)
+                    break
 
                 legal_moves = list(board.legal_moves)
                 if not legal_moves:
@@ -278,9 +324,10 @@ class SelfPlayGame:
 
         if board.is_checkmate():
             result = '1-0' if board.turn == chess.BLACK else '0-1'
-        elif board.is_insufficient_material() or board.is_fivefold_repetition() or board.can_claim_draw():
+        elif board.is_stalemate() or board.is_insufficient_material() or board.is_fivefold_repetition() or board.can_claim_draw():
             result = '1/2-1/2'
         else:
+            # Game ended at max_moves without resolution — still a draw
             result = '1/2-1/2'
 
         return {

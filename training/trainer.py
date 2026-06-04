@@ -15,6 +15,7 @@ from datetime import datetime
 from .model import ChessNet
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .selfplay import SelfPlayGame
+from .stockfish_engine import StockfishPlayer
 
 HF_REPO = os.environ.get('HF_REPO', 'LanceAbuan/chess-alpha-zero')
 HF_TOKEN = os.environ.get('HF_TOKEN', '')
@@ -122,7 +123,15 @@ class Trainer:
             print(f'[TRAINER] CUDA OOM, falling back to CPU', flush=True)
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
-        self.selfplay = SelfPlayGame(self.model)
+
+        self.stockfish = None
+        try:
+            self.stockfish = StockfishPlayer(depth=10)
+            print(f'[TRAINER] Stockfish initialized (depth=10)', flush=True)
+        except Exception as e:
+            print(f'[TRAINER] Stockfish unavailable: {e}', flush=True)
+
+        self.selfplay = SelfPlayGame(self.model, stockfish=self.stockfish)
         self.step = 0
         self.games_played = 0
         self.status = "idle"
@@ -260,6 +269,8 @@ class Trainer:
             'last_game_pgn': self.last_game_pgn[:200],
             'last_game_result': self.last_game_result,
             'last_game_moves': self.last_game_moves[:20],
+            'stockfish_available': self.stockfish is not None,
+            'sf_blend_ratio': 0.6,
         }
 
     def estimate_elo(self):
