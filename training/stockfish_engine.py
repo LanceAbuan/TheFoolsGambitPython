@@ -54,10 +54,15 @@ class StockfishPlayer:
         try:
             self.engine.set_fen_position(board.fen())
             info = self.engine.get_evaluation()
+            val = 0
             if info['type'] == 'cp':
-                return info['value']
+                val = info['value']
             elif info['type'] == 'mate':
-                return info['value'] * 10000
+                val = info['value'] * 10000
+            # Stockfish returns eval from side-to-move perspective; flip for Black's turn
+            if board.turn == chess.BLACK:
+                val = -val
+            return val
         except Exception:
             pass
         return 0
@@ -111,6 +116,9 @@ class StockfishPlayer:
                         cp = info['value']
                     elif info['type'] == 'mate':
                         cp = info['value'] * 10000
+                    # Flip to White's perspective when it's Black's turn
+                    if board.turn == chess.BLACK:
+                        cp = -cp
                     eval_map[m.uci()] = cp
                     board.pop()
                 except Exception:
