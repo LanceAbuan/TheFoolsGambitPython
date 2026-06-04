@@ -466,15 +466,15 @@ def train_evaluate():
     elif value < -0.3:
         eval_str = f"Black +{abs(value):.2f}"
 
-    # Get Stockfish evaluation if available (isolated instance)
+    # Get Stockfish evaluation if available
     sf_eval = None
     try:
         from .stockfish_engine import StockfishPlayer
-        tmp_sf = StockfishPlayer(depth=20, threads=2, hash_mb=128)
+        tmp_sf = StockfishPlayer(depth=12, threads=1, hash_mb=128)
         cp = tmp_sf.get_evaluation(board)
         sf_eval = {'centipawns': cp}
         try:
-            tmp_sf.close()
+            tmp_sf.engine.close()
         except Exception:
             pass
     except Exception:
@@ -500,10 +500,10 @@ def train_analyze():
 
     try:
         from .stockfish_engine import StockfishPlayer
-        tmp_sf = StockfishPlayer(depth=20, threads=2, hash_mb=128)
+        tmp_sf = StockfishPlayer(depth=12, threads=1, hash_mb=128)
         analysis = tmp_sf.analyze_position(board)
         try:
-            tmp_sf.close()
+            tmp_sf.engine.close()
         except Exception:
             pass
     except Exception:
