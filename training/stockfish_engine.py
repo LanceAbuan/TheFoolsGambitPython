@@ -15,8 +15,8 @@ import chess
 from stockfish import Stockfish as SF
 
 STOCKFISH_PATH = os.environ.get('STOCKFISH_PATH', '/home/lance/.local/bin/stockfish')
-SF_DEPTH = 10
-SF_THREADS = 2
+SF_DEPTH = 12
+SF_THREADS = 1
 SF_HASH = 128
 
 
@@ -97,7 +97,7 @@ class StockfishPlayer:
             tmp_sf = SF(
                 path=STOCKFISH_PATH,
                 depth=depth,
-                parameters={"Threads": 2, "Hash": 128}
+                parameters={"Threads": 1, "Hash": 128}
             )
             
             eval_map = {}
@@ -200,7 +200,7 @@ class StockfishPlayer:
             top_moves = self.get_top_moves(board, num_moves=3)
             
             legal_moves = list(board.legal_moves)
-            eval_map = self.evaluate_legal_moves_batch(board, depth=15)
+            eval_map = self.evaluate_legal_moves_batch(board, depth=12)
             
             move_analysis = []
             for m in legal_moves:

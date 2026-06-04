@@ -591,13 +591,15 @@
                 <div id="live-board"></div>
 
                 <div class="eval-section" id="eval-section">
-                    <div class="eval-row" style="margin-bottom: 4px;">
+                    <div class="eval-row" style="margin-bottom: 4px; align-items: center;">
                         <span class="eval-source sf" style="font-weight:bold; font-size:13px;">SF</span>
+                        <span style="font-size:10px; color:#888; margin-left:4px;" title="Stockfish depth-12 evaluation normalized to [-1, +1] range">depth 12, normalized</span>
                         <div class="eval-track" style="height: 22px; background: rgba(0,0,0,0.08); border-radius: 4px; position: relative; overflow: hidden;">
                             <div class="eval-center" style="position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(0,0,0,0.1);"></div>
                             <div class="eval-fill" id="sf-eval-fill" style="height: 100%; transition: width 0.3s ease;"></div>
                         </div>
                         <span class="eval-val" id="sf-eval-val" style="font-weight:bold; font-size:13px; min-width:50px; text-align:right;">0.00</span>
+                        <span class="eval-val" id="sf-eval-cp" style="font-size:10px; color:#888; margin-left:4px; min-width:45px; text-align:right;">0 cp</span>
                     </div>
                 </div>
 
@@ -681,17 +683,21 @@
                 </div>
             </div>
 
-            <div class="panel" id="analysis-panel">
-                <div class="panel-title">Move Analysis (Stockfish top moves)</div>
-                <table class="analysis-table" id="analysis-table">
-                    <thead>
-                        <tr><th>#</th><th>Move</th><th>Eval</th><th>Quality</th></tr>
-                    </thead>
-                    <tbody id="analysis-body">
-                        <tr><td colspan="4" style="color:#444; text-align:center;">Analyze a position to see move ratings</td></tr>
-                    </tbody>
-                </table>
-            </div>
+           <div class="panel" id="analysis-panel">
+                 <div class="panel-title">Move Analysis
+                     <span style="font-size:10px; font-weight:normal; color:#888; display:block; margin-top:2px;" title="Stockfish evaluates every legal move at depth 12. Eval is in centipawns: +1.00 = one pawn advantage for the side to move.">
+                         Stockfish depth 12 · Eval in centipawns (1.00 ≈ 1 pawn)
+                     </span>
+                 </div>
+                 <table class="analysis-table" id="analysis-table">
+                     <thead>
+                         <tr><th>#</th><th>Move</th><th>Eval (cp)</th><th>Quality</th></tr>
+                     </thead>
+                     <tbody id="analysis-body">
+                         <tr><td colspan="4" style="color:#444; text-align:center;">Analyze a position to see move ratings</td></tr>
+                     </tbody>
+                 </table>
+             </div>
 
             <div class="panel">
                 <div class="panel-title">Recent Games</div>
@@ -710,24 +716,26 @@
         </div>
         <div id="fullscreen-board"></div>
         <div class="fullscreen-controls">
-            <div class="fullscreen-eval-section">
-                <div class="fullscreen-eval-row">
-                    <span class="eval-source nn">NN</span>
-                    <div class="eval-track">
-                        <div class="eval-center"></div>
-                        <div class="eval-fill" id="fs-nn-eval-fill"></div>
-                    </div>
-                      <span class="eval-val" id="fs-nn-eval-val">0.00</span>
-                </div>
-                <div class="fullscreen-eval-row">
-                    <span class="eval-source sf">SF</span>
-                    <div class="eval-track">
-                        <div class="eval-center"></div>
-                        <div class="eval-fill" id="fs-sf-eval-fill"></div>
-                    </div>
-                    <span class="eval-val" id="fs-sf-eval-val">0.00</span>
-                </div>
-            </div>
+              <div class="fullscreen-eval-section">
+                 <div class="fullscreen-eval-row">
+                     <span class="eval-source nn">NN</span>
+                     <span style="font-size:10px; color:rgba(255,255,255,0.4); margin: 0 6px;" title="Neural network value: -1 = certain loss, +1 = certain win">value [-1..+1]</span>
+                     <div class="eval-track">
+                         <div class="eval-center"></div>
+                         <div class="eval-fill" id="fs-nn-eval-fill"></div>
+                     </div>
+                       <span class="eval-val" id="fs-nn-eval-val">0.00</span>
+                 </div>
+                 <div class="fullscreen-eval-row">
+                     <span class="eval-source sf">SF</span>
+                     <span style="font-size:10px; color:rgba(255,255,255,0.4); margin: 0 6px;" title="Stockfish depth-12 evaluation, normalized from centipawns to [-1..+1]">depth 12, normalized</span>
+                     <div class="eval-track">
+                         <div class="eval-center"></div>
+                         <div class="eval-fill" id="fs-sf-eval-fill"></div>
+                     </div>
+                     <span class="eval-val" id="fs-sf-eval-val">0.00</span>
+                 </div>
+             </div>
             <div class="fullscreen-nav">
                 <button class="nav-btn" id="fs-btn-back" onclick="window.fsNavMove(-1)">&#8592;</button>
                 <span class="move-label" id="fs-move-label">Move 0/0</span>
@@ -997,6 +1005,10 @@
                         sf = Math.max(-1, Math.min(1, sf));
                         updateEvalBar('fs-sf-eval-fill', 'fs-sf-eval-val', sf);
                     }
+                    if (res.stockfish && res.stockfish.centipawns != null) {
+                        var cpText = (res.stockfish.centipawns >= 0 ? '+' : '') + res.stockfish.centipawns + ' cp';
+                        $('#sf-eval-cp').text(cpText);
+                    }
                 },
                 error: function() {}
             });
@@ -1184,7 +1196,7 @@
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({fen: fen}),
-                timeout: 5000,
+                timeout: 15000,
                 success: function(analysis) {
                     renderAnalysis(analysis);
                 },
@@ -1192,11 +1204,12 @@
             });
         }
 
-        function renderAnalysis(analysis) {
+          function renderAnalysis(analysis) {
             if (!analysis || !analysis.move_analysis) return;
             var html = '';
             var moves = analysis.move_analysis.slice(0, 8);
             var evalNorm = analysis.evaluation_normalized || 0;
+            var posEval = analysis.evaluation || 0;
 
             for (var i = 0; i < moves.length; i++) {
                 var m = moves[i];
@@ -1212,7 +1225,7 @@
                 html += '<tr' + (isBest ? ' class="best"' : '') + '>';
                 html += '<td>' + (i + 1) + '</td>';
                 html += '<td>' + m.san + '</td>';
-                html += '<td class="' + evalClass + '">' + evalStr + '</td>';
+                html += '<td class="' + evalClass + '" title="' + m.evaluation + ' centipawns">' + evalStr + '</td>';
                 html += '<td>' + quality + '</td>';
                 html += '</tr>';
             }
