@@ -18,11 +18,19 @@ import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from flask import Flask, jsonify, after_this_request, request
+from flask import Flask, jsonify, after_this_request, request, send_from_directory
 from training.server import training_bp
 
 app = Flask(__name__)
 app.register_blueprint(training_bp)
+
+@app.route("/")
+def index():
+    return send_from_directory(os.path.dirname(__file__), "index.html")
+
+@app.route("/<path:path>")
+def static_files(path):
+    return send_from_directory(os.path.dirname(__file__), path)
 
 ALLOWED_ORIGINS = {
     'https://gambit.lanceabuan.tech',
