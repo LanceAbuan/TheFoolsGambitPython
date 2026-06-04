@@ -24,18 +24,28 @@ from training.server import training_bp
 app = Flask(__name__)
 app.register_blueprint(training_bp)
 
+ALLOWED_ORIGINS = {
+    'https://gambit.lanceabuan.tech',
+    'http://localhost:5001',
+    'http://127.0.0.1:5001',
+}
+
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = 'https://gambit.lanceabuan.tech'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    origin = request.headers.get('Origin', '')
+    if origin in ALLOWED_ORIGINS or not origin:
+        response.headers['Access-Control-Allow-Origin'] = origin if origin else '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, X-Requested-With'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
     response.headers['Vary'] = 'Origin'
     return response
 
 @app.before_request
 def handle_options():
     if request.method == 'OPTIONS':
-        return '', 204
+        resp = app.make_default_options_response()
+        return resp
 
 
 def auto_start_training():
