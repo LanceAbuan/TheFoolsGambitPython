@@ -64,8 +64,8 @@
             justify-content: center;
             align-items: center;
             background: #08081a;
-            width: 80vh;
-            height: 80vh;
+            width: 90vh;
+            height: 90vh;
             margin: auto;
         }
 
@@ -406,6 +406,11 @@
                         <div class="metric-label">Error Rate</div>
                         <div class="metric-desc">How wrong its guesses are</div>
                     </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="m-elo">~200</div>
+                        <div class="metric-label">Estimated ELO</div>
+                        <div class="metric-desc">Rough skill estimate (random play = 200)</div>
+                    </div>
                 </div>
                 <div class="smartness-bar">
                     <div class="smartness-label">
@@ -566,6 +571,7 @@
             $('#m-buffer').text(status.buffer_size != null ? status.buffer_size.toLocaleString() : '—');
             $('#m-steps').text(status.step != null ? status.step.toLocaleString() : '—');
             $('#m-loss').text(status.loss ? status.loss.toFixed(4) : '—');
+            $('#m-elo').text(status.estimated_elo ? '~' + status.estimated_elo.toLocaleString() : '~200');
 
             var smartness = 0;
             if (status.loss > 0) {
