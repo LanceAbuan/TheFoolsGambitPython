@@ -393,7 +393,8 @@ def train_evaluate():
 
     # Get NN evaluation
     board_tensor = board_to_tensor(board)
-    legal_mask = torch.zeros(4096)
+    device = next(t.model.parameters()).device
+    legal_mask = torch.zeros(4096, device=device)
     for m in board.legal_moves:
         legal_mask[m.from_square * 64 + m.to_square] = 1.0
 
@@ -438,6 +439,24 @@ def train_evaluate():
         "nn_top_moves": top_moves,
         "stockfish": sf_eval,
     })
+
+
+@training_bp.route('/api/train/analyze', methods=['POST'])
+def train_analyze():
+    """Full Stockfish analysis of a position."""
+    data = request.get_json(silent=True) or {}
+    fen = data.get('fen', chess.STARTING_FEN)
+
+    sf = get_stockfish()
+    if not sf:
+        return jsonify({"error": "Stockfish not available"}), 500
+
+    board = chess.Board(fen)
+    if not board.is_valid():
+        return jsonify({"error": "Invalid FEN"}), 400
+
+    analysis = sf.analyze_position(board)
+    return jsonify(analysis)
 
 
 @training_bp.route('/api/train/games')
