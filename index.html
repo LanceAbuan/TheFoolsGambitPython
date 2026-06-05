@@ -1088,8 +1088,8 @@
                 // White move
                 var wIdx = i;
                 var wCls = 'move-cell';
-                if (wIdx === currentViewIndex) wCls += ' active';
-                else if (wIdx > currentViewIndex) wCls += ' far';
+                if (wIdx === currentViewIndex - 1) wCls += ' active';
+                else if (wIdx >= currentViewIndex) wCls += ' far';
                 var wQuality = getMoveQualityClass(wIdx);
                 var wTooltip = getMoveQualityTooltip(wQuality);
                 var wDot = wQuality ? '<span class="move-quality ' + wQuality + '" data-tooltip="' + wTooltip + '"></span>' : '';
@@ -1098,8 +1098,8 @@
                 if (i + 1 < allMoves.length) {
                     var bIdx = i + 1;
                     var bCls = 'move-cell';
-                    if (bIdx === currentViewIndex) bCls += ' active';
-                    else if (bIdx > currentViewIndex) bCls += ' far';
+                    if (bIdx === currentViewIndex - 1) bCls += ' active';
+                    else if (bIdx >= currentViewIndex) bCls += ' far';
                     var bQuality = getMoveQualityClass(bIdx);
                     var bTooltip = getMoveQualityTooltip(bQuality);
                     var bDot = bQuality ? '<span class="move-quality ' + bQuality + '" data-tooltip="' + bTooltip + '"></span>' : '';
@@ -1123,8 +1123,8 @@
                 if (!idxMatch) continue;
                 var idx = parseInt(idxMatch[1]);
                 cell.classList.remove('active', 'far');
-                if (idx === currentViewIndex) cell.classList.add('active');
-                else if (idx > currentViewIndex) cell.classList.add('far');
+                if (idx === currentViewIndex - 1) cell.classList.add('active');
+                else if (idx >= currentViewIndex) cell.classList.add('far');
             }
             scrollToActiveMove();
         }
