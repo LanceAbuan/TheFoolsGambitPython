@@ -112,9 +112,9 @@
         .main {
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: stretch;
             gap: 24px;
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
             min-height: calc(100vh - 48px);
@@ -291,19 +291,25 @@
 
         /* ====== RIGHT SIDEBAR ====== */
             .sidebar {
-                width: 280px;
-                min-width: 280px;
+                width: 310px;
+                min-width: 310px;
                 background: var(--bg-secondary);
                 border-left: 1px solid var(--border-color);
                 display: flex;
                 flex-direction: column;
-                overflow: hidden;
-                height: 480px;
+                overflow-y: auto;
+                overflow-x: hidden;
+                height: auto;
+                align-self: stretch;
                 margin: 0;
                 border-radius: 8px;
                 padding: 10px;
                 box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             }
+            .sidebar::-webkit-scrollbar { width: 6px; }
+            .sidebar::-webkit-scrollbar-track { background: transparent; }
+            .sidebar::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+            .sidebar::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 
 
@@ -338,13 +344,16 @@
 
         /* Move list (Chess.com style) */
             .move-list-section {
-                max-height: 180px;
-                min-height: 100px;
+                max-height: 200px;
+                min-height: 80px;
                 display: flex;
                 flex-direction: column;
                 border-bottom: 1px solid var(--border-color);
                 margin-bottom: 12px;
             }
+            .move-list-section::-webkit-scrollbar { width: 4px; }
+            .move-list-section::-webkit-scrollbar-track { background: transparent; }
+            .move-list-section::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
             .move-list-header {
                 padding: 4px 8px;
@@ -414,13 +423,15 @@
 
         /* Analysis section */
         .analysis-section {
-            max-height: 200px;
+            max-height: 240px;
             overflow-y: auto;
             overflow-x: hidden;
             border-bottom: 1px solid var(--border-color);
         }
         .analysis-section::-webkit-scrollbar { width: 4px; }
+        .analysis-section::-webkit-scrollbar-track { background: transparent; }
         .analysis-section::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+        .analysis-section::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
             .analysis-header {
                 padding: 8px 10px;
                 font-size: 11px;
@@ -544,7 +555,9 @@
             padding: 0;
         }
         .games-section::-webkit-scrollbar { width: 4px; }
+        .games-section::-webkit-scrollbar-track { background: transparent; }
         .games-section::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+        .games-section::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
         .games-header {
             padding: 10px 12px;
             font-size: 11px;
@@ -702,7 +715,7 @@
 
         @media (max-width: 900px) {
             .main { flex-direction: column; align-items: center; }
-            .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; }
+            .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; height: auto; max-height: 600px; }
             .board-area { padding: 8px; flex-direction: column; align-items: center; }
             .board-wrapper { width: 100%; max-width: 480px; }
             .eval-bar-container { min-height: 320px; max-height: 320px; }
