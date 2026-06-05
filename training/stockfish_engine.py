@@ -21,7 +21,7 @@ import chess
 from stockfish import Stockfish as SF
 
 STOCKFISH_PATH = os.environ.get('STOCKFISH_PATH', '/home/lance/.local/bin/stockfish')
-SF_DEPTH = 12
+SF_DEPTH = 11
 SF_THREADS = 2
 SF_HASH = 256
 _MAX_RESTART = 1  # How many times to auto-restart a dead engine per call
@@ -184,7 +184,7 @@ class StockfishPlayer:
             results.append((m, board.san(m), cp))
         return results
 
-    def evaluate_legal_moves_batch(self, board, depth=12):
+    def evaluate_legal_moves_batch(self, board, depth=11):
         """Evaluate all legal moves using MultiPV for speed.
 
         Uses Stockfish's MultiPV analysis to evaluate multiple moves
@@ -279,49 +279,51 @@ class StockfishPlayer:
         return 0
 
     def get_top_moves(self, board, num_moves=5):
-        """Get Stockfish's top N moves with evaluations."""
+        """Get Stockfish's top N moves with evaluations.
+
+        Uses the built-in get_top_moves() from the stockfish package, which
+        correctly handles MultiPV internally. The custom loop that called
+        get_best_move() in a loop was broken because get_best_move() always
+        returns only the #1 move regardless of MultiPV.
+        """
         def _inner():
             legal_count = len(list(board.legal_moves))
             if legal_count == 0:
                 return []
-            
+
             actual_num = min(num_moves, legal_count)
             self._engine.set_fen_position(board.fen())
             self._engine.update_engine_parameters({"MultiPV": actual_num})
-            
-            moves = []
+
             try:
-                for i in range(actual_num):
-                    try:
-                        uci = self._engine.get_best_move()
-                        if uci in ('0-1', '1-0', 'resign', None, ''):
-                            break
-                        move = chess.Move.from_uci(uci)
-                        san = board.san(move)
-                        
-                        # Parse evaluation from UCI string
-                        eval_cp = self._parse_best_move_eval(uci)
-                        
-                        # If it's White's turn, the position after the move is Black's turn.
-                        # In our class's get_evaluation, if it's Black's turn, we flip.
-                        # The UCI string evaluation is for the side-to-move.
-                        # If White moves, it's Black's turn, so the UCI eval is from Black's perspective.
-                        # We want to flip it to White's perspective.
-                        if board.turn == chess.WHITE:
-                            eval_cp = -eval_cp
-                        
-                        moves.append({
-                            'uci': uci,
-                            'san': san,
-                            'evaluation': eval_cp,
-                            'depth': self._engine.get_depth() if hasattr(self._engine, 'get_depth') else self._depth,
-                            })
-                    except Exception:
-                        break
+                # Built-in method that correctly returns MultiPV results
+                raw_moves = self._engine.get_top_moves(actual_num)
             finally:
                 self._ensure_multipv_1()
+
+            moves = []
+            for m in raw_moves:
+                uci = m['Move']
+                if uci in ('0-1', '1-0', 'resign', None, ''):
+                    continue
+                move = chess.Move.from_uci(uci)
+                san = board.san(move)
+                eval_cp = m['Centipawn'] if m['Centipawn'] is not None else 0
+                if m['Mate'] is not None:
+                    eval_cp = m['Mate'] if m['Mate'] > 0 else m['Mate']
+
+                # Flip to White's perspective: Centipawn is from side-to-move's POV
+                if board.turn == chess.WHITE:
+                    eval_cp = -eval_cp
+
+                moves.append({
+                    'uci': uci,
+                    'san': san,
+                    'evaluation': eval_cp,
+                    'depth': self._engine.get_depth() if hasattr(self._engine, 'get_depth') else self._depth,
+                })
             return moves
-        
+
         try:
             return self._safe_call(_inner)
         except Exception:

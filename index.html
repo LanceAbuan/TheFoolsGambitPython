@@ -316,10 +316,11 @@
         }
         [data-tooltip]::after {
             content: attr(data-tooltip);
-            position: absolute;
-            bottom: calc(100% + 8px);
+            position: fixed;
+            bottom: auto;
+            top: -999px;
             left: 50%;
-            transform: translateX(-50%) translateY(4px);
+            transform: translateX(-50%);
             background: #1a1915;
             color: var(--text-secondary);
             font-size: 11px;
@@ -330,23 +331,25 @@
             white-space: nowrap;
             pointer-events: none;
             opacity: 0;
-            transition: opacity 0.15s, transform 0.15s;
-            z-index: 1000;
+            transition: opacity 0.15s;
+            z-index: 10000;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
             border: 1px solid var(--border-color);
         }
         [data-tooltip]:hover::after {
+            top: auto;
+            bottom: 100%;
+            margin-bottom: 8px;
             opacity: 1;
-            transform: translateX(-50%) translateY(0);
         }
         /* Tooltip for bottom-aligned elements */
         [data-tooltip-bottom]::after {
             content: attr(data-tooltip-bottom);
-            position: absolute;
-            top: calc(100% + 8px);
+            position: fixed;
+            top: -999px;
             bottom: auto;
             left: 50%;
-            transform: translateX(-50%) translateY(-4px);
+            transform: translateX(-50%);
             background: #1a1915;
             color: var(--text-secondary);
             font-size: 11px;
@@ -357,14 +360,15 @@
             white-space: nowrap;
             pointer-events: none;
             opacity: 0;
-            transition: opacity 0.15s, transform 0.15s;
-            z-index: 1000;
+            transition: opacity 0.15s;
+            z-index: 10000;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
             border: 1px solid var(--border-color);
         }
         [data-tooltip-bottom]:hover::after {
+            top: auto;
+            bottom: auto;
             opacity: 1;
-            transform: translateX(-50%) translateY(0);
         }
 
         /* Move list (Chess.com style) */
@@ -753,7 +757,7 @@
         </div>
       <div class="topbar-right">
             <button class="topbar-btn" onclick="window.flipBoard()" data-tooltip="Flip board orientation white↔black">&#8645; Flip</button>
-            <button class="topbar-btn" onclick="window.analyzeCurrent()" data-tooltip="Analyze current position with Stockfish depth 12">&#9906; Analyze</button>
+            <button class="topbar-btn" onclick="window.analyzeCurrent()" data-tooltip="Analyze current position with Stockfish depth 11">&#9906; Analyze</button>
             <button class="topbar-btn" onclick="window.openFullscreen()" data-tooltip="Open board in full-screen overlay">&#9477; Expand</button>
         </div>
     </div>
@@ -776,7 +780,7 @@
             <div class="board-wrapper">
                 <div class="player-info-bar top">
                     <div>
-                        <div class="player-name">Stockfish (depth 12)</div>
+                        <div class="player-name">Stockfish (depth 11)</div>
                         <div class="player-detail" id="black-detail">Critic opponent</div>
                     </div>
                     <div class="player-clock" id="black-clock">--:--</div>
@@ -793,11 +797,11 @@
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
 
                 <div class="board-nav">
-                    <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous">&#8592;</button>
-                    <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="First">&#9664;</button>
+                    <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
+                    <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous move">&#8592;</button>
                     <span class="move-label" id="move-label">Move 0/0</span>
-                    <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next">&#9654;</button>
-                    <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Last">&#9656;</button>
+                    <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
+                    <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Jump to last move">&#9658;</button>
                     <button class="nav-btn play-btn" id="btn-play" onclick="window.togglePlay()" title="Auto-play">&#9654; Play</button>
                 </div>
             </div>
@@ -819,7 +823,7 @@
             <div class="analysis-section">
                 <div class="analysis-header" data-tooltip="Stockfish evaluation of each move. CP = centipawns (100 = 1 pawn advantage).">
                     Move Analysis
-                    <span>depth 12 &middot; cp (100 = 1 pawn)</span>
+                    <span>depth 11 &middot; cp (100 = 1 pawn)</span>
                 </div>
                 <table class="analysis-table">
              <thead>
@@ -903,7 +907,7 @@
                 <div class="fullscreen-board-wrapper">
                     <div class="player-info-bar top">
                         <div>
-                            <div class="player-name" id="fs-opponent-name">Stockfish (depth 12)</div>
+                            <div class="player-name" id="fs-opponent-name">Stockfish (depth 11)</div>
                             <div class="player-detail" id="fs-opponent-detail"></div>
                         </div>
                         <div class="player-clock" id="fs-black-clock">--:--</div>
@@ -1206,7 +1210,7 @@
 
         function syncFsPlayerInfo() {
             // Sync opponent info from main board
-            var oppName = $('.player-info-bar.top .player-name').text() || 'Stockfish (depth 12)';
+            var oppName = $('.player-info-bar.top .player-name').text() || 'Stockfish (depth 11)';
             var oppDetail = $('#black-detail').text() || '';
             var aiDetail = $('#white-detail').text() || 'ELO ~200';
             $('#fs-opponent-name').text(oppName);
@@ -1240,19 +1244,20 @@
             fill.style.height = pct + '%';
             fill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
 
+            // Always display in centipawns for consistency
             var displayVal;
-            if (Math.abs(cp) < 5) {
-                displayVal = '0.0';
+            if (Math.abs(cp) >= 10000) {
+                displayVal = 'M#' + Math.round(Math.abs(cp) / 100);
             } else {
-                displayVal = (cp / 100).toFixed(1);
+                displayVal = Math.round(cp);
             }
             var advantage = Math.abs(cp) / 100;
             if (pct >= 50) {
-                $('#eval-white-label').text('W +' + displayVal);
-                $('#eval-black-label').text('B +0.0');
+                $('#eval-white-label').text('W +cp' + displayVal);
+                $('#eval-black-label').text('B +cp0');
             } else {
-                $('#eval-black-label').text('B +' + displayVal);
-                $('#eval-white-label').text('W +0.0');
+                $('#eval-black-label').text('B +cp' + displayVal);
+                $('#eval-white-label').text('W +cp0');
             }
             var cpText = (cp >= 0 ? '+' : '') + Math.round(cp) + ' cp';
             if (Math.abs(cp) >= 10000) cpText = 'M#' + Math.round(Math.abs(cp) / 100);
@@ -1283,7 +1288,7 @@
             var badgeClass = 'idle';
 
             // Map server status values to UI categories
-            if (['playing', 'self-play', 'supervised', 'critic', 'stockfish'].indexOf(rawStatus) !== -1) {
+            if (['playing', 'self-play', 'supervised', 'critic', 'stockfish', 'starting', 'Active'].indexOf(rawStatus) !== -1) {
                 badgeClass = 'playing';
                 displayStatus = 'Playing';
             } else if (rawStatus === 'training') {
@@ -1292,8 +1297,12 @@
             } else if (rawStatus === 'error') {
                 badgeClass = 'error';
                 displayStatus = 'Error';
-            } else {
+            } else if (['idle', 'stopped', 'checkpoint'].indexOf(rawStatus) !== -1) {
                 displayStatus = 'Idle';
+            } else {
+                // Unknown status -- pass through as-is rather than showing "Idle"
+                displayStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+                badgeClass = 'playing';
             }
 
             var badge = $('#status-badge');
@@ -1309,13 +1318,13 @@
 
             // Dynamic opponent display based on current game mode
             var gameMode = rawStatus;
-            var oppName = 'Stockfish (depth 12)';
+            var oppName = 'Stockfish (depth 11)';
             var oppDetail = 'Critic opponent';
             if (gameMode === 'self-play') {
                 oppName = 'Fool\'s Gambit AI';
                 oppDetail = 'Self-play opponent';
             } else if (['supervised', 'critic', 'stockfish'].indexOf(gameMode) !== -1) {
-                oppName = 'Stockfish (depth 12)';
+                oppName = 'Stockfish (depth 11)';
                 oppDetail = 'Critic opponent';
             }
             if (status.stockfish_available === false && gameMode !== 'self-play') {
@@ -1459,7 +1468,7 @@
                     if (res.stockfish && res.stockfish.centipawns != null) {
                         cp = res.stockfish.centipawns;
                     }
-                    var normalized = cp / 2000.0;
+                    var normalized = cp / 1500.0;
                     normalized = Math.max(-1, Math.min(1, normalized));
                     updateEvalBar(normalized, cp);
                 },
