@@ -7,6 +7,7 @@ import threading
 import chess
 from flask import Blueprint, jsonify, request, Response
 from datetime import datetime
+from collections import OrderedDict
 from huggingface_hub import HfApi, login
 
 import torch
@@ -26,45 +27,144 @@ recent_games = []
 sse_clients = set()
 current_game_moves = []
 current_game_status = "idle"
+
+# ---- SINGLE SHARED STOCKFISH ----
 _stockfish_instance = None
 _stockfish_lock = threading.Lock()
 
-# Default play mode: 'critic' (Stockfish-guided) or 'selfplay' (MCTS)
+# ---- EVAL CACHE ----
+# LRU cache: FEN -> {eval_cp, eval_norm, top_moves, move_analysis, timestamp}
+eval_cache = OrderedDict()
+eval_cache_lock = threading.Lock()
+EVAL_CACHE_MAX = 2000
+EVAL_CACHE_TTL = 600  # seconds
+
+# ---- Default play mode ----
 play_mode = 'critic'
 
 
-def mcts_select_move(board):
-    """Run MCTS search and return a UCI move string."""
-    import numpy as np
-    from .tensorize import move_to_idx
-    t = get_trainer()
-    visit_counts = t.selfplay.mcts.search(board)
-    legal_moves = list(board.legal_moves)
-    if not legal_moves:
+def _classify_move_quality(diff_cp):
+    """Classify move quality by centipawn difference from best."""
+    if diff_cp <= 5:
+        return 'best'
+    if diff_cp <= 15:
+        return 'good'
+    if diff_cp <= 50:
+        return 'ok'
+    if diff_cp <= 200:
+        return 'bad'
+    return 'blunder'
+
+
+def compute_eval_with_stockfish(board):
+    """Compute Stockfish evaluation and top 5 moves for a board position.
+    Uses the shared Stockfish instance — no subprocess spawning."""
+    sf = get_stockfish()
+    if sf is None:
+        return {
+            'eval_cp': 0,
+            'eval_norm': 0.0,
+            'top_moves': [],
+            'move_analysis': [],
+        }
+    try:
+        top_moves = sf.get_top_moves(board, num_moves=5)
+        pos_eval = sf.get_evaluation(board)
+        eval_norm = max(-1.0, min(1.0, pos_eval / 2000.0))
+
+        # Build move analysis (top 5 best moves)
+        best_cp = top_moves[0]['evaluation'] if top_moves else 0
+        move_analysis = []
+        for m in top_moves:
+            diff = best_cp - m['evaluation'] if best_cp >= 0 else m['evaluation'] - best_cp
+            diff = abs(diff)
+            quality = _classify_move_quality(diff)
+            move_analysis.append({
+                'san': m['san'],
+                'uci': m['uci'],
+                'evaluation': m['evaluation'],
+                'quality': quality,
+                'diff': diff,
+            })
+
+        return {
+            'eval_cp': pos_eval,
+            'eval_norm': eval_norm,
+            'top_moves': top_moves,
+            'move_analysis': move_analysis,
+            'depth': sf.engine.get_depth() if hasattr(sf.engine, 'get_depth') else 12,
+        }
+    except Exception as e:
+        print(f'[EVAL] Stockfish eval error: {e}', flush=True)
+        return {
+            'eval_cp': 0,
+            'eval_norm': 0.0,
+            'top_moves': [],
+            'move_analysis': [],
+        }
+
+
+def get_cached_eval(fen):
+    """Get cached evaluation for a FEN, or None if expired/missing."""
+    with eval_cache_lock:
+        entry = eval_cache.get(fen)
+        if entry and (time.time() - entry['timestamp']) < EVAL_CACHE_TTL:
+            return entry
         return None
-    probs = visit_counts[[move_to_idx(m) for m in legal_moves]]
-    if probs.sum() > 0:
-        probs = probs / probs.sum()
-    else:
-        probs = np.ones(len(legal_moves)) / len(legal_moves)
-    move_idx = np.random.choice(len(legal_moves), p=probs)
-    return legal_moves[move_idx].uci()
+
+
+def set_cached_eval(fen, eval_data):
+    """Cache an evaluation result. LRU eviction when full."""
+    eval_data['timestamp'] = time.time()
+    with eval_cache_lock:
+        if fen in eval_cache:
+            eval_cache.move_to_end(fen)
+        else:
+            if len(eval_cache) >= EVAL_CACHE_MAX:
+                eval_cache.popitem(last=False)
+        eval_cache[fen] = eval_data
+
+
+def get_or_compute_eval(board):
+    """Get evaluation from cache or compute it. Always returns fresh data."""
+    fen = board.fen()
+    cached = get_cached_eval(fen)
+    if cached:
+        return cached
+    result = compute_eval_with_stockfish(board)
+    set_cached_eval(fen, result)
+    return result
 
 
 def get_trainer():
     global trainer
     if trainer is None:
-        trainer = Trainer()
+        sf = get_stockfish()
+        trainer = Trainer(stockfish=sf)
     return trainer
 
 
 def get_stockfish():
+    """Get the single shared Stockfish instance (lazy init).
+
+    If the shared engine has crashed, it is automatically restarted.
+    """
     global _stockfish_instance
     with _stockfish_lock:
         if _stockfish_instance is None:
             try:
-                _stockfish_instance = StockfishPlayer()
-            except Exception:
+                _stockfish_instance = StockfishPlayer(depth=12, threads=2, hash_mb=256)
+                print('[SF] Shared Stockfish instance created', flush=True)
+            except Exception as e:
+                print(f'[SF] Failed to create Stockfish: {e}', flush=True)
+                return None
+        # Health-check: if the engine died, restart it in-place
+        if not _stockfish_instance._is_alive():
+            try:
+                _stockfish_instance._restart()
+                print('[SF] Shared Stockfish restarted (was dead)', flush=True)
+            except Exception as e:
+                print(f'[SF] Failed to restart Stockfish: {e}', flush=True)
                 return None
         return _stockfish_instance
 
@@ -91,6 +191,7 @@ def send_sse(data, event=None):
 import queue
 mcts_progress_queue = queue.Queue(maxsize=100)
 
+
 def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
     """Send MCTS search progress to dashboard."""
     try:
@@ -107,11 +208,59 @@ def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
 
 
 def stream_game_progress():
+    """Stream game moves + current position eval via SSE."""
     global current_game_moves, current_game_status
+
+    # Build FEN from move list
+    board = chess.Board()
+    move_sans = list(current_game_moves)
+    for san in move_sans:
+        try:
+            board.push_san(san)
+        except Exception:
+            break
+
+    # Get cached or compute eval for current position
+    eval_data = get_or_compute_eval(board)
+
+    # Build move quality annotations for all moves in the game
+    move_qualities = []
+    b = chess.Board()
+    for idx, san in enumerate(move_sans):
+        try:
+            move = b.parse_san(san)
+            # Get eval BEFORE this move
+            pre_eval = get_or_compute_eval(b)
+            b.push(move)
+            # Get eval AFTER this move
+            post_eval = get_or_compute_eval(b)
+            # Quality: how much the eval changed from the best move at that position
+            best_eval = pre_eval['top_moves'][0]['evaluation'] if pre_eval['top_moves'] else 0
+            diff = abs(best_eval - post_eval['eval_cp'])
+            quality = _classify_move_quality(diff)
+            move_qualities.append({
+                'index': idx,
+                'san': san,
+                'quality': quality,
+                'eval_before': pre_eval['eval_cp'],
+                'eval_after': post_eval['eval_cp'],
+                'diff': diff,
+            })
+        except Exception:
+            break
+
     send_sse({
         'type': 'game_progress',
-        'moves': list(current_game_moves),
+        'moves': move_sans,
+        'fen': board.fen(),
         'status': current_game_status,
+        'eval': {
+            'cp': eval_data['eval_cp'],
+            'norm': eval_data['eval_norm'],
+            'top_moves': eval_data['top_moves'],
+            'move_analysis': eval_data['move_analysis'],
+        },
+        'move_qualities': move_qualities,
         'timestamp': time.time()
     })
 
@@ -120,10 +269,46 @@ def stream_status_update():
     t = get_trainer()
     status = t.get_status()
     status['recent_games'] = recent_games[:5]
+    status['current_game'] = {
+        'moves': list(current_game_moves),
+        'status': current_game_status
+    }
+    # Include current eval in status
+    board = chess.Board()
+    for san in current_game_moves:
+        try:
+            board.push_san(san)
+        except Exception:
+            break
+    eval_data = get_cached_eval(board.fen()) or compute_eval_with_stockfish(board)
+    status['current_eval'] = {
+        'cp': eval_data['eval_cp'],
+        'norm': eval_data['eval_norm'],
+        'top_moves': eval_data['top_moves'],
+        'move_analysis': eval_data['move_analysis'],
+    }
     send_sse({
         'type': 'status_update',
         'data': status
     })
+
+
+def mcts_select_move(board):
+    """Run MCTS search and return a UCI move string."""
+    import numpy as np
+    from .tensorize import move_to_idx
+    t = get_trainer()
+    visit_counts = t.selfplay.mcts.search(board)
+    legal_moves = list(board.legal_moves)
+    if not legal_moves:
+        return None
+    probs = visit_counts[[move_to_idx(m) for m in legal_moves]]
+    if probs.sum() > 0:
+        probs = probs / probs.sum()
+    else:
+        probs = np.ones(len(legal_moves)) / len(legal_moves)
+    move_idx = np.random.choice(len(legal_moves), p=probs)
+    return legal_moves[move_idx].uci()
 
 
 @training_bp.route('/api/train/stream')
@@ -131,6 +316,7 @@ def sse_stream():
     """SSE endpoint for real-time training updates."""
     client_socket = request.environ.get('werkzeug.socket')
     sse_clients.add(client_socket)
+
     def generate():
         import time as _time
         try:
@@ -141,6 +327,7 @@ def sse_stream():
             pass
         finally:
             sse_clients.discard(client_socket)
+
     resp = Response(generate(), mimetype='text/event-stream')
     resp.headers['Cache-Control'] = 'no-cache'
     resp.headers['X-Accel-Buffering'] = 'no'
@@ -158,18 +345,32 @@ def train_status():
         'moves': list(current_game_moves),
         'status': current_game_status
     }
-    # Override trainer.status with current_game_status when training is active
-    # Fixes "Idle" showing even though the server is busy
     if current_game_status not in ('idle', 'stopped', 'checkpoint', 'error'):
         status['status'] = current_game_status
+
+    # Include current eval
+    board = chess.Board()
+    for san in current_game_moves:
+        try:
+            board.push_san(san)
+        except Exception:
+            break
+    eval_data = get_cached_eval(board.fen()) or compute_eval_with_stockfish(board)
+    status['current_eval'] = {
+        'cp': eval_data['eval_cp'],
+        'norm': eval_data['eval_norm'],
+        'top_moves': eval_data['top_moves'],
+        'move_analysis': eval_data['move_analysis'],
+    }
+
     try:
-        import torch
         status['gpu_available'] = torch.cuda.is_available()
         if status['gpu_available']:
             status['gpu_name'] = torch.cuda.get_device_name(0)
             status['gpu_memory'] = f"{torch.cuda.memory_allocated(0) / 1024**2:.0f}MB"
     except Exception:
         status['gpu_available'] = False
+
     status['save_interval'] = 'every 2 games'
     status['hf_upload_interval'] = 'every 50 training steps'
     return jsonify(status)
@@ -208,25 +409,21 @@ def train_start():
                     send_sse({'type': 'game_start', 'mode': 'self-play'})
 
                     if use_stockfish:
-                        # Supervised mode: NN vs Stockfish, collect SF-guided examples
                         sf = get_stockfish()
                         if sf:
                             current_game_status = "supervised"
                             send_sse({'type': 'game_start', 'mode': 'critic'})
-                            from .critic_game import CriticGame
                             sg = CriticGame(t.model, sf, temperature=0.15)
                             game_data = sg.play(on_move=lambda moves: (
                                 setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
                                 stream_game_progress()
                             ))
-                            # Feed examples into training buffer
                             t.buffer.add(game_data.get('examples', []))
                             t.games_played += 1
                             t.last_game_pgn = game_data.get('pgn', '')
                             t.last_game_result = game_data.get('result', '*')
                             t.last_game_moves = game_data.get('moves', [])
                         else:
-                            # Fallback to MCTS if SF unavailable
                             game_data = t.play_game(on_move=lambda moves: (
                                 setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
                                 stream_game_progress()
@@ -250,7 +447,6 @@ def train_start():
                         stream_game_progress()
                         stream_status_update()
 
-                    # Optional: Stockfish game
                     if use_stockfish and (i + 1) % 2 == 0:
                         sf = get_stockfish()
                         if sf:
@@ -271,7 +467,6 @@ def train_start():
                                 stream_game_progress()
                                 stream_status_update()
 
-                    # Interleave: train after every 2 games so steps don't stay at 0
                     if (i + 1) % 2 == 0:
                         current_game_status = "training"
                         steps_between = max(10, steps_per_cycle // max(games_per_cycle // 2, 1))
@@ -285,7 +480,6 @@ def train_start():
                         t.save_checkpoint()
                         current_game_status = "self-play"
 
-                # Do remaining training steps after games
                 for _ in range(steps_per_cycle):
                     if not t.running:
                         break
@@ -368,7 +562,6 @@ def train_play_supervised():
     current_game_status = "supervised"
     send_sse({'type': 'game_start', 'mode': 'critic'})
 
-    from .critic_game import CriticGame
     sg = CriticGame(t.model, sf, temperature=0.15)
     game_data = sg.play(on_move=lambda moves: (
         setattr(sys.modules[__name__], 'current_game_moves', list(moves)),
@@ -376,7 +569,6 @@ def train_play_supervised():
     ))
     current_game_moves = game_data.get('moves', [])
 
-    # Feed examples into training buffer
     t.buffer.add(game_data.get('examples', []))
     t.games_played += 1
     t.last_game_pgn = game_data.get('pgn', '')
@@ -443,76 +635,40 @@ def train_step():
 
 @training_bp.route('/api/train/evaluate', methods=['POST'])
 def train_evaluate():
-    import torch
+    """Evaluate a FEN — served from cache or shared Stockfish (NO temp instance)."""
     data = request.get_json(silent=True) or {}
     fen = data.get('fen', chess.STARTING_FEN)
 
-    t = get_trainer()
     board = chess.Board(fen)
-
     if not board.is_valid():
         return jsonify({"error": "Invalid FEN"}), 400
 
-    # Get NN evaluation
-    board_tensor = board_to_tensor(board)
-    device = next(t.model.parameters()).device
-    legal_mask = torch.zeros(4096, device=device)
-    for m in board.legal_moves:
-        legal_mask[m.from_square * 64 + m.to_square] = 1.0
+    # Try cache first
+    cached = get_cached_eval(fen)
+    if cached:
+        return jsonify({
+            "stockfish": {"centipawns": cached['eval_cp']},
+            "top_moves": cached['top_moves'],
+            "nn_value": cached['eval_norm'],
+            "nn_evaluation": f"{'White' if cached['eval_norm'] > 0 else 'Black'} +{abs(cached['eval_norm']):.2f}" if abs(cached['eval_norm']) > 0.1 else "Equal",
+            "cached": True
+        })
 
-    try:
-        policy_probs, value = t.model.evaluate(board_tensor, legal_mask)
-        policy_probs = policy_probs.detach().cpu().numpy()
-        top_moves = []
-        sorted_indices = policy_probs.argsort()[::-1][:10]
-        for idx in sorted_indices:
-            from_sq = idx // 64
-            to_sq = idx % 64
-            move = chess.Move(from_sq, to_sq)
-            if move not in board.legal_moves:
-                continue
-            san = board.san(move)
-            top_moves.append({
-                'move': san,
-                'probability': float(policy_probs[idx]),
-                'uci': move.uci()
-            })
-    except Exception as e:
-        print(f'[EVAL] NN error: {e}', flush=True)
-        value = 0.0
-        top_moves = []
-
-    eval_str = "Equal"
-    if value > 0.3:
-        eval_str = f"White +{value:.2f}"
-    elif value < -0.3:
-        eval_str = f"Black +{abs(value):.2f}"
-
-    # Get Stockfish evaluation if available
-    sf_eval = None
-    try:
-        from .stockfish_engine import StockfishPlayer
-        tmp_sf = StockfishPlayer(depth=12, threads=1, hash_mb=128)
-        cp = tmp_sf.get_evaluation(board)
-        sf_eval = {'centipawns': cp}
-        try:
-            tmp_sf.engine.close()
-        except Exception:
-            pass
-    except Exception:
-        pass
+    # Compute via shared instance
+    result = get_or_compute_eval(board)
 
     return jsonify({
-        "nn_value": float(value),
-        "nn_evaluation": eval_str,
-        "nn_top_moves": top_moves,
-        "stockfish": sf_eval,
+        "stockfish": {"centipawns": result['eval_cp']},
+        "top_moves": result['top_moves'],
+        "nn_value": result['eval_norm'],
+        "nn_evaluation": f"{'White' if result['eval_norm'] > 0 else 'Black'} +{abs(result['eval_norm']):.2f}" if abs(result['eval_norm']) > 0.1 else "Equal",
+        "cached": False
     })
 
 
 @training_bp.route('/api/train/analyze', methods=['POST'])
 def train_analyze():
-    """Full Stockfish analysis of a position."""
+    """Full Stockfish analysis — served from cache or shared Stockfish (NO temp instance)."""
     data = request.get_json(silent=True) or {}
     fen = data.get('fen', chess.STARTING_FEN)
 
@@ -520,17 +676,27 @@ def train_analyze():
     if not board.is_valid():
         return jsonify({"error": "Invalid FEN"}), 400
 
-    try:
-        from .stockfish_engine import StockfishPlayer
-        tmp_sf = StockfishPlayer(depth=12, threads=1, hash_mb=128)
-        analysis = tmp_sf.analyze_position(board)
-        try:
-            tmp_sf.engine.close()
-        except Exception:
-            pass
-    except Exception:
-        return jsonify({"error": "Stockfish analysis failed"}), 500
-    return jsonify(analysis)
+    # Try cache first
+    cached = get_cached_eval(fen)
+    if cached:
+        return jsonify({
+            'evaluation': cached['eval_cp'],
+            'evaluation_normalized': cached['eval_norm'],
+            'top_moves': cached['top_moves'],
+            'move_analysis': cached['move_analysis'],
+            'cached': True
+        })
+
+    # Compute via shared instance
+    result = get_or_compute_eval(board)
+
+    return jsonify({
+        'evaluation': result['eval_cp'],
+        'evaluation_normalized': result['eval_norm'],
+        'top_moves': result['top_moves'],
+        'move_analysis': result['move_analysis'],
+        'cached': False
+    })
 
 
 @training_bp.route('/api/train/games')
@@ -565,4 +731,7 @@ def train_reset():
     trainer = None
     recent_games = []
     current_game_moves = []
+    # Clear eval cache on reset
+    with eval_cache_lock:
+        eval_cache.clear()
     return jsonify({"status": "reset"})
