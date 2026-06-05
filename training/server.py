@@ -319,16 +319,9 @@ def stream_status_update():
         current_game_moves_snapshot = list(current_game_moves)
         current_game_status_snapshot = current_game_status
         
-    # Fix 'idle' status: if the server is running but no game is active, 
-    # it should show 'Active' or 'Training' rather than 'Idle'
-    active_states = ['playing', 'self-play', 'supervised', 'critic', 'stockfish', 'training', 'starting']
-    
-    if current_game_status_snapshot in active_states:
-        status['status'] = current_game_status_snapshot
-    elif status['status'] == 'idle':
-        # If we are in a state that is technically "waiting" but the server is on
-        status['status'] = 'Active'
-        
+    # Use current_game_status as the authoritative status source
+    status['status'] = current_game_status_snapshot
+
     status['recent_games'] = recent_games_snapshot
     status['current_game'] = {
         'moves': current_game_moves_snapshot,
@@ -403,13 +396,12 @@ def train_status():
         current_game_status_snapshot = current_game_status
         
     status = t.get_status()
+    status['status'] = current_game_status_snapshot
     status['recent_games'] = recent_games_snapshot
     status['current_game'] = {
         'moves': current_game_moves_snapshot,
         'status': current_game_status_snapshot
     }
-    if current_game_status_snapshot not in ('idle', 'stopped', 'checkpoint', 'error'):
-        status['status'] = current_game_status_snapshot
     
     board = chess.Board()
     for san in current_game_moves_snapshot:

@@ -149,6 +149,7 @@ class Trainer:
         self.loss = 0.0
         self.policy_loss = 0.0
         self.value_loss = 0.0
+        self._sf_results = []
         self.started_at = time.time()
         self.last_update = time.time()
         self.running = False
@@ -245,6 +246,11 @@ class Trainer:
         self.loss = loss.item()
         self.policy_loss = p_loss.item()
         self.value_loss = v_loss.item()
+
+        # Run ELO calibration games against Stockfish after each training step
+        self.status = "stockfish"
+        self._calibrate_elo()
+
         if self.step % 100 == 0:
             self.save_checkpoint()
         if self.step > 0 and (self.step - self.last_hf_push) >= HF_PUSH_INTERVAL:
@@ -258,6 +264,61 @@ class Trainer:
             'value_loss': self.value_loss,
             'buffer_size': len(self.buffer)
         }
+
+    def _calibrate_elo(self):
+        """Play calibration games vs Stockfish and record results."""
+        import chess
+        import torch
+        from .tensorize import board_to_tensor, move_to_idx
+
+        if self.stockfish is None:
+            return
+
+        self.model.eval()
+        results = []
+        for _ in range(CALIBRATION_GAMES):
+            board = chess.Board()
+            for _ in range(200):
+                if board.is_game_over():
+                    break
+                if board.turn == chess.WHITE:
+                    # AI moves using the neural network
+                    legal = list(board.legal_moves)
+                    if not legal:
+                        break
+                    with torch.no_grad():
+                        tensor = board_to_tensor(board).to(self.device)
+                        pred_policy, _ = self.model(tensor.unsqueeze(0))
+                    scores = {}
+                    for m in legal:
+                        idx = move_to_idx(m)
+                        scores[m] = pred_policy[0][idx].item()
+                    move = max(scores, key=scores.get)
+                else:
+                    # Stockfish moves
+                    uci = self.stockfish.get_move(board)
+                    if uci in ('0-1', 'resign', None, ''):
+                        break
+                    move = chess.Move.from_uci(uci)
+                board.push(move)
+
+            results.append(self._game_result(board))
+        self._sf_results.extend(results)
+        # Keep only last N calibration games to avoid unbounded growth
+        max_history = 50
+        if len(self._sf_results) > max_history:
+            self._sf_results = self._sf_results[-max_history:]
+
+    def _game_result(self, board):
+        """Returns 1.0 for AI win, 0.5 for draw, 0.0 for AI loss."""
+        result = board.result()
+        if result == '1/2-1/2':
+            return 0.5
+        if result == '1-0':
+            # White won — AI is white, so AI wins
+            return 1.0
+        # 0-1: Black (Stockfish) won — AI loses
+        return 0.0
 
     def get_status(self):
         model_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
@@ -282,16 +343,25 @@ class Trainer:
             'last_game_moves': self.last_game_moves[:20],
             'stockfish_available': self.stockfish is not None,
             'sf_blend_ratio': 0.6,
+            'sf_calibration_results': self._sf_results[-10:],
         }
 
     def estimate_elo(self):
-        import math
+        """Estimate network ELO against a Stockfish baseline.
+
+        Calibrated via the Stockfish calibration games. Base ELO is 200.
+        Each win adds +20, draw +10, loss +0. Divides by games played to
+        get an average score, then maps to ELO.
+        """
         base_elo = 200
         if self.games_played == 0:
             return base_elo
-        games_factor = min(math.log2(max(self.games_played, 1)) * 80, 400)
-        steps_factor = min(math.log2(max(self.step, 1)) * 40, 300)
-        loss_factor = 0
-        if self.loss and self.loss < 1.0:
-            loss_factor = (1 - self.loss) * 200
-        return int(base_elo + games_factor + steps_factor + loss_factor)
+        if not self._sf_results:
+            return base_elo
+
+        total = sum(self._sf_results[-CALIBRATION_GAMES:])
+        count = len(self._sf_results[-CALIBRATION_GAMES:])
+        win_rate = total / max(count, 1)
+        # Map win_rate [0,1] -> [-200, +400] ELO offset
+        elo_offset = int(win_rate * 400 - 200)
+        return max(base_elo, base_elo + elo_offset)
