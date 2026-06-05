@@ -69,9 +69,6 @@ persistent_cache = load_persistent_cache()
 play_mode = 'critic'
 
 def _classify_move_quality(diff_cp):
-# ... (rest of the file continues)
-
-def _classify_move_quality(diff_cp):
     """Classify move quality by centipawn difference from best."""
     if diff_cp <= 5:
         return 'best'
