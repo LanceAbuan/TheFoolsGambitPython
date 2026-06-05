@@ -90,10 +90,10 @@ class StockfishPlayer:
     def _safe_call(self, fn, *args, **kwargs):
         """Call *fn* under _lock with automatic crash-recovery and timeout."""
         for attempt in range(_MAX_RESTART + 1):
-            acquired = self._lock.acquire(timeout=2.0)
+            acquired = self._lock.acquire(timeout=30.0)
             if not acquired:
-                print(f'[SF] TIMEOUT: Failed to acquire Stockfish lock within 2 seconds', flush=True)
-                raise TimeoutError("Failed to acquire Stockfish lock within 2 seconds")
+                print(f'[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds', flush=True)
+                raise TimeoutError("Failed to acquire Stockfish lock within 30 seconds")
             try:
                 res = fn(*args, **kwargs)
                 return res

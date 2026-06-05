@@ -457,8 +457,13 @@ def train_start():
     
     with _lock:
         current_game_status = "starting"
-    
-def run_training():
+
+    training_thread = threading.Thread(target=run_training, args=(t, games_per_cycle, steps_per_cycle, use_stockfish), daemon=True)
+    training_thread.start()
+
+    return jsonify({"status": "started", "trainer": t.get_status()})
+
+def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
     try:
         print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}', flush=True)
         while t.running:
@@ -592,11 +597,6 @@ def run_training():
         with _lock:
             current_game_status = "error"
     
-    training_thread = threading.Thread(target=run_training, daemon=True)
-    training_thread.start()
-    
-    return jsonify({"status": "started", "trainer": t.get_status()})
-
 @training_bp.route('/api/train/stop', methods=['POST'])
 def train_stop():
     t = get_trainer()
