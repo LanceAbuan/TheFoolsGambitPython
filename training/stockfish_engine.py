@@ -264,7 +264,7 @@ class StockfishPlayer:
             'accuracy': accuracy,
         }
 
-    def _parse_best_move_eval(self, uci):
+      def _parse_best_move_eval(self, uci):
         """Extract centipawn evaluation from a UCI best move string."""
         try:
             # Example: "e2e4(cp 15)" or "e2e4(mate 3)"
@@ -299,8 +299,16 @@ class StockfishPlayer:
                         move = chess.Move.from_uci(uci)
                         san = board.san(move)
                         
-                        # Parse evaluation from UCI string
+                        # Parse evaluation from UCI string (returns 0 if format not present)
                         eval_cp = self._parse_best_move_eval(uci)
+                        eval_from_uciparser = (eval_cp != 0)
+                        
+                        # If parsing failed (eval_cp is 0), fall back to get_evaluation()
+                        # on the position after the move, to get actual centipawn value
+                        if not eval_from_uciparser:
+                            board_copy = board.copy()
+                            board_copy.push(move)
+                            eval_cp = self.get_evaluation(board_copy)
                         
                         # If it's White's turn, the position after the move is Black's turn.
                         # In our class's get_evaluation, if it's Black's turn, we flip.

@@ -1283,7 +1283,7 @@
             var badgeClass = 'idle';
 
             // Map server status values to UI categories
-            if (['playing', 'self-play', 'supervised', 'critic', 'stockfish'].indexOf(rawStatus) !== -1) {
+            if (['playing', 'self-play', 'supervised', 'critic', 'stockfish', 'starting', 'Active'].indexOf(rawStatus) !== -1) {
                 badgeClass = 'playing';
                 displayStatus = 'Playing';
             } else if (rawStatus === 'training') {
@@ -1292,8 +1292,12 @@
             } else if (rawStatus === 'error') {
                 badgeClass = 'error';
                 displayStatus = 'Error';
-            } else {
+            } else if (['idle', 'stopped', 'checkpoint'].indexOf(rawStatus) !== -1) {
                 displayStatus = 'Idle';
+            } else {
+                // Unknown status -- pass through as-is rather than showing "Idle"
+                displayStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+                badgeClass = 'playing';
             }
 
             var badge = $('#status-badge');
