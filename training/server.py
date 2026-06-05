@@ -212,6 +212,8 @@ def stream_game_progress():
     """Stream game moves + current position eval via SSE."""
     global current_game_moves, current_game_status
     
+    print(f'[SERVER] Starting stream_game_progress...', flush=True)
+    
     with _lock:
         move_sans = list(current_game_moves)
         status = current_game_status
@@ -223,6 +225,7 @@ def stream_game_progress():
         except Exception:
             break
     
+    print(f'[SERVER] Computing eval for {len(move_sans)} moves...', flush=True)
     eval_data = get_or_compute_eval(board)
     
     move_qualities = []
@@ -252,7 +255,7 @@ def stream_game_progress():
             current_pre_eval = current_post_eval
         except Exception:
             break
-
+    
     final_eval = current_post_eval if 'current_post_eval' in locals() else eval_data
     
     send_sse({
@@ -269,6 +272,8 @@ def stream_game_progress():
         'move_qualities': move_qualities,
         'timestamp': time.time()
     })
+    print(f'[SERVER] Finished stream_game_progress', flush=True)
+
 
 def stream_status_update():
     t = get_trainer()
