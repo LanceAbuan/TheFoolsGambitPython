@@ -268,6 +268,10 @@ def stream_game_progress():
 def stream_status_update():
     t = get_trainer()
     status = t.get_status()
+    # Override trainer's internal status with current_game_status
+    # (e.g., "playing"/"self-play"/"supervised" instead of "idle")
+    if current_game_status not in ('idle', 'stopped', 'checkpoint', 'error'):
+        status['status'] = current_game_status
     status['recent_games'] = recent_games[:5]
     status['current_game'] = {
         'moves': list(current_game_moves),
