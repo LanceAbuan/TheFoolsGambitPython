@@ -1,16 +1,7 @@
- * Tip: There are .env files present. Install python-dotenv to use them.
- * Serving Flask app 'train_server'
- * Debug mode: off
-WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
- * Running on all addresses (0.0.0.0)
- * Running on http://127.0.0.1:5001
- * Running on http://192.168.1.217:5001
-Press CTRL+C to quit
-[SF] Shared Stockfish instance created
-[TRAINER] Model on CUDA
-[TRAINER] Using shared Stockfish instance
-[TRAIN] Starting training thread: games=20, steps=50, mcts=500
-[TRAIN] Starting game 1/20
-127.0.0.1 - - [05/Jun/2026 08:28:00] "POST /api/train/start HTTP/1.1" 200 -
-127.0.0.1 - - [05/Jun/2026 08:28:14] "GET /api/train/stream HTTP/1.1" 200 -
-127.0.0.1 - - [05/Jun/2026 08:36:29] "GET /api/train/stream HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "/home/lance/TheFoolsGambitPython/train_server.py", line 22, in <module>
+    from training.server import training_bp
+  File "/home/lance/TheFoolsGambitPython/training/server.py", line 74
+    def _classify_move_quality(diff_cp):
+    ^
+IndentationError: expected an indented block after function definition on line 71

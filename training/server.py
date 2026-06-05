@@ -33,12 +33,37 @@ current_game_status = "idle"
 _stockfish_instance = None
 _stockfish_lock = threading.Lock()
 
+# ... (lines 1-35 unchanged)
 # ---- EVAL CACHE ----
 # LRU cache: FEN -> {eval_cp, eval_norm, top_moves, move_analysis, timestamp}
 eval_cache = OrderedDict()
 eval_cache_lock = threading.Lock()
 EVAL_CACHE_MAX = 2000
 EVAL_CACHE_TTL = 600  # seconds
+
+# ---- PERSISTENT STORAGE ----
+import json
+import os
+CACHE_FILE = "eval_cache.json"
+
+def load_persistent_cache():
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f'[CACHE] Error loading cache: {e}', flush=True)
+    return {}
+
+def save_persistent_cache(cache):
+    try:
+        with open(CACHE_FILE, 'w') as f:
+            json.dump(cache, f)
+    except Exception as e:
+        print(f'[CACHE] Error saving cache: {e}', flush=True)
+
+# Initialize persistent cache
+persistent_cache = load_persistent_cache()
 
 # ---- Default play mode ----
 play_mode = 'critic'
@@ -108,6 +133,13 @@ def get_cached_eval(fen):
         entry = eval_cache.get(fen)
         if entry and (time.time() - entry['timestamp']) < EVAL_CACHE_TTL:
             return entry
+        
+        # Check persistent cache
+        if fen in persistent_cache:
+            # Note: We don't have a timestamp for persistent entries, 
+            # so we treat them as valid but could implement a TTL if needed.
+            return persistent_cache[fen]
+            
         return None
 
 def set_cached_eval(fen, eval_data):
@@ -120,6 +152,10 @@ def set_cached_eval(fen, eval_data):
             if len(eval_cache) >= EVAL_CACHE_MAX:
                 eval_cache.popitem(last=False)
         eval_cache[fen] = eval_data
+    
+    # Update persistent cache
+    persistent_cache[fen] = eval_data
+    save_persistent_cache(persistent_cache)
 
 def get_or_compute_eval(board):
     """Get evaluation from cache or compute it. Always returns fresh data."""
@@ -283,8 +319,16 @@ def stream_status_update():
         current_game_moves_snapshot = list(current_game_moves)
         current_game_status_snapshot = current_game_status
         
-    if current_game_status_snapshot not in ('idle', 'stopped', 'checkpoint', 'error'):
+    # Fix 'idle' status: if the server is running but no game is active, 
+    # it should show 'Active' or 'Training' rather than 'Idle'
+    active_states = ['playing', 'self-play', 'supervised', 'critic', 'stockfish', 'training', 'starting']
+    
+    if current_game_status_snapshot in active_states:
         status['status'] = current_game_status_snapshot
+    elif status['status'] == 'idle':
+        # If we are in a state that is technically "waiting" but the server is on
+        status['status'] = 'Active'
+        
     status['recent_games'] = recent_games_snapshot
     status['current_game'] = {
         'moves': current_game_moves_snapshot,
@@ -414,129 +458,139 @@ def train_start():
     with _lock:
         current_game_status = "starting"
     
-    def run_training():
-        try:
-            print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}', flush=True)
-            while t.running:
-                for i in range(games_per_cycle):
-                    if not t.running:
-                        break
-                    
-                    with _lock:
-                        current_game_moves = []
-                        current_game_status = "self-play"
-                    
-                    print(f'[TRAIN] Starting game {i+1}/{games_per_cycle}', flush=True)
-                    send_sse({'type': 'game_start', 'mode': 'self-play'})
-                    
-                    if use_stockfish:
-                        sf = get_stockfish()
-                        if sf:
-                            with _lock:
-                                current_game_status = "supervised"
-                            send_sse({'type': 'game_start', 'mode': 'critic'})
-                            sg = CriticGame(t.model, sf, temperature=0.15)
-                            game_data = sg.play(on_move=lambda moves: (
-                                update_game_state(moves),
-                                stream_game_progress()
-                            ))
-                            t.buffer.add(game_data.get('examples', []))
-                            t.games_played += 1
-                            t.last_game_pgn = game_data.get('pgn', '')
-                            t.last_game_result = game_data.get('result', '*')
-                            t.last_game_moves = game_data.get('moves', [])
-                        else:
-                            game_data = t.play_game(on_move=lambda moves: (
-                                update_game_state(moves),
-                                stream_game_progress()
-                            ))
+def run_training():
+    try:
+        print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}', flush=True)
+        while t.running:
+            for i in range(games_per_cycle):
+                if not t.running:
+                    break
+                
+                print(f'[TRAIN] --- Starting game {i+1}/{games_per_cycle} ---', flush=True)
+                with _lock:
+                    current_game_moves = []
+                    current_game_status = "self-play"
+                
+                send_sse({'type': 'game_start', 'mode': 'self-play'})
+                
+                if use_stockfish:
+                    sf = get_stockfish()
+                    if sf:
+                        with _lock:
+                            current_game_status = "supervised"
+                        print(f'[TRAIN] Entering Critic mode for game {i+1}', flush=True)
+                        send_sse({'type': 'game_start', 'mode': 'critic'})
+                        sg = CriticGame(t.model, sf, temperature=0.15)
+                        game_data = sg.play(on_move=lambda moves: (
+                            update_game_state(moves),
+                            stream_game_progress()
+                        ))
+                        t.buffer.add(game_data.get('examples', []))
+                        t.games_played += 1
+                        t.last_game_pgn = game_data.get('pgn', '')
+                        t.last_game_result = game_data.get('result', '*')
+                        t.last_game_moves = game_data.get('moves', [])
                     else:
+                        print(f'[TRAIN] Warning: Stockfish unavailable, falling back to self-play', flush=True)
                         game_data = t.play_game(on_move=lambda moves: (
                             update_game_state(moves),
                             stream_game_progress()
                         ))
-                    
-                    print(f'[TRAIN] Game {i+1} done, moves: {len(game_data.get("moves", []))}', flush=True)
-                    
-                    with _lock:
-                        current_game_moves = game_data.get('moves', [])
-                    
-                    if game_data.get('pgn'):
-                        with _lock:
-                            recent_games.append({
-                                'game_num': t.games_played,
-                                'pgn': game_data.get('pgn', ''),
-                                'result': game_data.get('result', '*'),
-                                'mode': game_data.get('mode', 'self-play'),
-                                'timestamp': time.time()
-                            })
+                else:
+                    print(f'[TRAIN] Entering self-play mode (no critic) for game {i+1}', flush=True)
+                    game_data = t.play_game(on_move=lambda moves: (
+                        update_game_state(moves),
                         stream_game_progress()
-                        stream_status_update()
-                    
-                    if use_stockfish and (i + 1) % 2 == 0:
-                        sf = get_stockfish()
-                        if sf:
-                            with _lock:
-                                current_game_status = "stockfish"
-                            send_sse({'type': 'game_start', 'mode': 'stockfish'})
-                            sf_game = sf.play_game(
-                                opponent_move_fn=mcts_select_move
-                            )
-                            with _lock:
-                                current_game_moves = sf_game.get('moves', [])
-                            if sf_game.get('pgn'):
-                                with _lock:
-                                    recent_games.append({
-                                        'game_num': len(recent_games) + 1,
-                                        'pgn': sf_game.get('pgn', ''),
-                                        'result': sf_game.get('result', '*'),
-                                        'mode': 'stockfish',
-                                        'timestamp': time.time()
-                                    })
-                                stream_game_progress()
-                                stream_status_update()
-                    
-                    if (i + 1) % 2 == 0:
-                        with _lock:
-                            current_game_status = "training"
-                        steps_between = max(10, steps_per_cycle // max(games_per_cycle // 2, 1))
-                        for _ in range(steps_between):
-                            if not t.running:
-                                break
-                            result = t.train_step()
-                            if result:
-                                send_sse({'type': 'train_step', 'data': result})
-                                stream_status_update()
-                        t.save_checkpoint()
-                        with _lock:
-                            current_game_status = "self-play"
+                    ))
                 
-                for _ in range(steps_per_cycle):
-                    if not t.running:
-                        break
+                print(f'[TRAIN] Game {i+1} finished. Moves: {len(game_data.get("moves", []))}', flush=True)
+                
+                with _lock:
+                    current_game_moves = game_data.get('moves', [])
+                
+                if game_data.get('pgn'):
+                    with _lock:
+                        recent_games.append({
+                            'game_num': t.games_played,
+                            'pgn': game_data.get('pgn', ''),
+                            'result': game_data.get('result', '*'),
+                            'mode': game_data.get('mode', 'self-play'),
+                            'timestamp': time.time()
+                        })
+                    stream_game_progress()
+                    stream_status_update()
+                
+                if use_stockfish and (i + 1) % 2 == 0:
+                    sf = get_stockfish()
+                    if sf:
+                        print(f'[TRAIN] Entering Stockfish mode for game {i+1}', flush=True)
+                        with _lock:
+                            current_game_status = "stockfish"
+                        send_sse({'type': 'game_start', 'mode': 'stockfish'})
+                        sf_game = sf.play_game(
+                            opponent_move_fn=mcts_select_move
+                        )
+                        with _lock:
+                            current_game_moves = sf_game.get('moves', [])
+                        if sf_game.get('pgn'):
+                            with _lock:
+                                recent_games.append({
+                                    'game_num': len(recent_games) + 1,
+                                    'pgn': sf_game.get('pgn', ''),
+                                    'result': sf_game.get('result', '*'),
+                                    'mode': 'stockfish',
+                                    'timestamp': time.time()
+                                })
+                            stream_game_progress()
+                            stream_status_update()
+                
+                if (i + 1) % 2 == 0:
                     with _lock:
                         current_game_status = "training"
-                    result = t.train_step()
-                    if result:
-                        send_sse({'type': 'train_step', 'data': result})
+                    steps_between = max(10, steps_per_cycle // max(games_per_cycle // 2, 1))
+                    print(f'[TRAIN] Running {steps_between} training steps...', flush=True)
+                    for _ in range(steps_between):
+                        if not t.running:
+                            break
+                        result = t.train_step()
+                        if result:
+                            send_sse({'type': 'train_step', 'data': result})
+                            stream_status_update()
+                    t.save_checkpoint()
+                    with _lock:
+                        current_game_status = "self-play"
+                
+            for _ in range(steps_per_cycle):
                 if not t.running:
                     break
                 with _lock:
                     current_game_status = "training"
+                print(f'[TRAIN] Running final training steps ({_+1}/{steps_per_cycle})...', flush=True)
                 result = t.train_step()
                 if result:
                     send_sse({'type': 'train_step', 'data': result})
             
-            t.save_checkpoint()
+            if not t.running:
+                break
+            
             with _lock:
-                current_game_status = "checkpoint"
-            time.sleep(0.1)
-        except Exception as e:
-            print(f'[TRAIN] ERROR: {e}', flush=True)
-            import traceback
-            traceback.print_exc()
-            with _lock:
-                current_game_status = "error"
+                current_game_status = "training"
+            result = t.train_step()
+            if result:
+                send_sse({'type': 'train_step', 'data': result})
+        
+        t.save_checkpoint()
+        with _lock:
+            current_game_status = "checkpoint"
+        print('[TRAIN] Checkpoint saved.', flush=True)
+        time.sleep(0.1)
+        
+    except Exception as e:
+        print(f'[TRAIN] ERROR: {e}', flush=True)
+        import traceback
+        traceback.print_exc()
+        with _lock:
+            current_game_status = "error"
     
     training_thread = threading.Thread(target=run_training, daemon=True)
     training_thread.start()
