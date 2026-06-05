@@ -123,24 +123,26 @@
             display: flex;
             flex: 1;
             justify-content: center;
-            align-items: flex-start;
-            padding: 16px;
-            gap: 0;
+            align-items: center;
+            padding: 16px 24px;
+            gap: 16px;
         }
 
         /* Eval bar (Chess.com style, vertical) */
         .eval-bar-container {
-            width: 24px;
+            width: 14px;
             min-height: 480px;
+            max-height: 480px;
             display: flex;
             flex-direction: column;
             position: relative;
-            margin-right: 0;
+            flex-shrink: 0;
+            cursor: default;
         }
         .eval-bar-track {
             flex: 1;
-            background: #5a5550;
-            border-radius: 12px;
+            background: #3d3935;
+            border-radius: 7px;
             overflow: hidden;
             position: relative;
             margin: 4px 0;
@@ -152,13 +154,13 @@
             right: 0;
             background: #f0ece4;
             transition: height 0.6s ease;
-            border-radius: 0 0 12px 12px;
+            border-radius: 0 0 7px 7px;
         }
         .eval-bar-fill.negative {
             bottom: auto;
             top: 0;
             background: #5a5550;
-            border-radius: 12px 12px 0 0;
+            border-radius: 7px 7px 0 0;
         }
         .eval-bar-top, .eval-bar-bottom {
             font-size: 9px;
@@ -169,14 +171,21 @@
         }
         .eval-bar-value {
             position: absolute;
-            left: 28px;
+            left: 22px;
             top: 50%;
             transform: translateY(-50%);
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
-            font-family: 'Courier New', monospace;
-            color: var(--text-secondary);
+            font-family: 'Inter', monospace;
+            color: var(--text-muted);
             z-index: 10;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        .eval-bar-container:hover .eval-bar-value {
+            opacity: 1;
         }
 
         /* Board wrapper */
@@ -184,6 +193,7 @@
             display: flex;
             flex-direction: column;
             gap: 0;
+            width: 480px;
         }
         .player-info-bar {
             display: flex;
@@ -285,12 +295,69 @@
             overflow: hidden;
         }
 
+        /* ===== TOOLTIP SYSTEM ===== */
+        [data-tooltip] {
+            position: relative;
+        }
+        [data-tooltip]::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%) translateY(4px);
+            background: #1a1915;
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.4;
+            padding: 6px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s, transform 0.15s;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            border: 1px solid var(--border-color);
+        }
+        [data-tooltip]:hover::after {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        /* Tooltip for bottom-aligned elements */
+        [data-tooltip-bottom]::after {
+            content: attr(data-tooltip-bottom);
+            position: absolute;
+            top: calc(100% + 8px);
+            bottom: auto;
+            left: 50%;
+            transform: translateX(-50%) translateY(-4px);
+            background: #1a1915;
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 1.4;
+            padding: 6px 10px;
+            border-radius: 6px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s, transform 0.15s;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            border: 1px solid var(--border-color);
+        }
+        [data-tooltip-bottom]:hover::after {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
         /* Move list (Chess.com style) */
         .move-list-section {
-            flex: 1;
+            max-height: 220px;
+            min-height: 120px;
             display: flex;
             flex-direction: column;
-            min-height: 0;
             border-bottom: 1px solid var(--border-color);
         }
         .move-list-header {
@@ -305,7 +372,9 @@
         .move-list-container {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 4px 0;
+            min-height: 0;
         }
         .move-list-container::-webkit-scrollbar { width: 4px; }
         .move-list-container::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
@@ -345,6 +414,7 @@
             height: 8px;
             border-radius: 50%;
             flex-shrink: 0;
+            cursor: help;
         }
         .move-quality.best { background: var(--best); }
         .move-quality.good { background: var(--good); }
@@ -355,7 +425,7 @@
 
         /* Analysis section */
         .analysis-section {
-            max-height: 240px;
+            max-height: 200px;
             overflow-y: auto;
             border-bottom: 1px solid var(--border-color);
         }
@@ -414,6 +484,7 @@
             border-radius: 3px;
             text-transform: uppercase;
             letter-spacing: 0.3px;
+            cursor: help;
         }
         .quality-badge.best { background: rgba(129,182,76,0.15); color: var(--best); }
         .quality-badge.good { background: rgba(74,144,217,0.15); color: var(--good); }
@@ -423,7 +494,7 @@
 
         /* Metrics */
         .metrics-section {
-            padding: 12px;
+            padding: 10px 12px;
             border-bottom: 1px solid var(--border-color);
         }
         .metrics-header {
@@ -433,6 +504,9 @@
             letter-spacing: 0.5px;
             color: var(--text-muted);
             margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         .metrics-row {
             display: grid;
@@ -444,6 +518,7 @@
             padding: 6px;
             background: var(--bg-tertiary);
             border-radius: 4px;
+            cursor: help;
         }
         .metric-val {
             font-size: 16px;
@@ -501,6 +576,7 @@
             border-radius: 2px;
             font-weight: 700;
             text-transform: uppercase;
+            cursor: help;
         }
         .game-mode.critic { background: rgba(232,135,51,0.15); color: var(--accent-orange); }
         .game-mode.selfplay { background: rgba(74,144,217,0.15); color: var(--accent-blue); }
@@ -533,8 +609,10 @@
         @media (max-width: 900px) {
             .main { flex-direction: column; align-items: center; }
             .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); }
-            .board-area { padding: 8px; }
-            .eval-bar-container { min-height: 320px; }
+            .board-area { padding: 8px; flex-direction: column; align-items: center; }
+            .board-wrapper { width: 100%; max-width: 480px; }
+            .eval-bar-container { min-height: 320px; max-height: 320px; }
+            .move-list-section { max-height: 160px; }
         }
     </style>
 </head>
@@ -548,9 +626,9 @@
                 <span id="status-text">Idle</span>
             </div>
         </div>
-        <div class="topbar-right">
-            <button class="topbar-btn" onclick="window.flipBoard()">&#8645; Flip</button>
-            <button class="topbar-btn" onclick="window.analyzeCurrent()">&#9906; Analyze</button>
+      <div class="topbar-right">
+            <button class="topbar-btn" onclick="window.flipBoard()" data-tooltip="Flip board orientation white↔black">&#8645; Flip</button>
+            <button class="topbar-btn" onclick="window.analyzeCurrent()" data-tooltip="Analyze current position with Stockfish depth 12">&#9906; Analyze</button>
         </div>
     </div>
 
@@ -558,13 +636,13 @@
     <div class="main">
         <!-- BOARD AREA -->
         <div class="board-area">
-            <!-- Eval Bar -->
-            <div class="eval-bar-container">
-                <div class="eval-bar-top" id="eval-black-label">B +0.0</div>
+           <!-- Eval Bar -->
+            <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
+                <div class="eval-bar-top" id="eval-black-label">B</div>
                 <div class="eval-bar-track">
                     <div class="eval-bar-fill" id="eval-bar-fill" style="height: 50%;"></div>
                 </div>
-                <div class="eval-bar-bottom" id="eval-white-label">W +0.0</div>
+                <div class="eval-bar-bottom" id="eval-white-label">W</div>
                 <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
             </div>
 
@@ -603,7 +681,7 @@
         <div class="sidebar">
             <!-- Move List -->
             <div class="move-list-section">
-                <div class="move-list-header">Moves</div>
+                <div class="move-list-header" data-tooltip="Moves played in the current game. Click to navigate.">Moves</div>
                 <div class="move-list-container" id="move-list-container">
                     <div style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 12px;">
                         Waiting for game moves...
@@ -613,13 +691,18 @@
 
             <!-- Analysis -->
             <div class="analysis-section">
-                <div class="analysis-header">
+                <div class="analysis-header" data-tooltip="Stockfish evaluation of each move. CP = centipawns (100 = 1 pawn advantage).">
                     Move Analysis
-                    <span>depth 12 &middot; cp (1.00 = 1 pawn)</span>
+                    <span>depth 12 &middot; cp (100 = 1 pawn)</span>
                 </div>
                 <table class="analysis-table">
-                    <thead>
-                        <tr><th>#</th><th>Move</th><th>Eval</th><th>Quality</th></tr>
+             <thead>
+                        <tr>
+                            <th data-tooltip="Rank">#</th>
+                            <th data-tooltip="Algebraic notation for the move">Move</th>
+                            <th data-tooltip="Centipawns after the move. + = white advantage">Eval</th>
+                            <th data-tooltip="How far from the best move. Best = 0">Quality</th>
+                        </tr>
                     </thead>
                     <tbody id="analysis-body">
                         <tr><td colspan="4" style="color: var(--text-muted); text-align: center; padding: 20px;">
@@ -632,31 +715,31 @@
                 </div>
             </div>
 
-            <!-- Metrics -->
+          <!-- Metrics -->
             <div class="metrics-section">
-                <div class="metrics-header">Training</div>
+                <div class="metrics-header" data-tooltip="Neural network training progress and quality metrics">Training</div>
                 <div class="metrics-row">
-                    <div class="metric">
+                    <div class="metric" data-tooltip="Total self-play & critic games completed">
                         <div class="metric-val" id="m-games">—</div>
                         <div class="metric-lbl">Games</div>
                     </div>
-                    <div class="metric">
+                    <div class="metric" data-tooltip="Training steps (gradient updates) completed">
                         <div class="metric-val" id="m-steps">—</div>
                         <div class="metric-lbl">Steps</div>
                     </div>
-                    <div class="metric">
+                    <div class="metric" data-tooltip="Combined policy + value loss. Lower = better fit.">
                         <div class="metric-val" id="m-loss">—</div>
                         <div class="metric-lbl">Loss</div>
                     </div>
-                    <div class="metric">
+                    <div class="metric" data-tooltip="Replay buffer size (stored game positions)">
                         <div class="metric-val" id="m-buffer">—</div>
                         <div class="metric-lbl">Buffer</div>
                     </div>
-                    <div class="metric">
+                    <div class="metric" data-tooltip="Estimated rating. Increases as the AI improves.">
                         <div class="metric-val" id="m-elo">~200</div>
                         <div class="metric-lbl">ELO</div>
                     </div>
-                    <div class="metric">
+                    <div class="metric" data-tooltip="Stockfish vs Neural Network evaluation blend in MCTS search">
                         <div class="metric-val" id="m-blend">60/40</div>
                         <div class="metric-lbl">SF/NN</div>
                     </div>
@@ -665,7 +748,7 @@
 
             <!-- Recent Games -->
             <div class="games-section">
-                <div class="games-header">Recent Games</div>
+                <div class="games-header" data-tooltip="Recent training games. Critic = guided by Stockfish. Self-play = AI vs itself.">Recent Games</div>
                 <div id="game-list">
                     <div style="padding: 12px; color: var(--text-muted); font-size: 11px; font-style: italic;">No games yet.</div>
                 </div>
@@ -765,6 +848,17 @@
             }
         }
 
+        function getMoveQualityTooltip(quality) {
+            switch(quality) {
+                case 'best': return 'Best move — equal to Stockfish top pick';
+                case 'good': return 'Good move — within 15cp of best';
+                case 'ok': return 'Okay move — within 50cp of best';
+                case 'bad': return 'Mistake — 50-200cp worse than best';
+                case 'blunder': return 'Blunder — 200+cp worse than best';
+                default: return '';
+            }
+        }
+
         function buildMoveList() {
             var container = document.getElementById('move-list-container');
             if (allMoves.length === 0) {
@@ -782,8 +876,9 @@
                 if (wIdx === currentViewIndex) wCls += ' active';
                 else if (wIdx > currentViewIndex) wCls += ' far';
                 var wQuality = getMoveQualityClass(wIdx);
-                var wDot = wQuality ? '<span class="move-quality ' + wQuality + '" title="' + getQualityLabel(wQuality) + '"></span>' : '';
-                html += '<div class="' + wCls + '" onclick="window.goToMove(' + wIdx + ')" title="' + getQualityLabel(wQuality) + '">' + wDot + allMoves[i] + '</div>';
+                var wTooltip = getMoveQualityTooltip(wQuality);
+                var wDot = wQuality ? '<span class="move-quality ' + wQuality + '" data-tooltip="' + wTooltip + '"></span>' : '';
+                html += '<div class="' + wCls + '" onclick="window.goToMove(' + wIdx + ')" data-tooltip="' + (wTooltip || allMoves[i]) + '">' + wDot + allMoves[i] + '</div>';
                 // Black move
                 if (i + 1 < allMoves.length) {
                     var bIdx = i + 1;
@@ -791,8 +886,9 @@
                     if (bIdx === currentViewIndex) bCls += ' active';
                     else if (bIdx > currentViewIndex) bCls += ' far';
                     var bQuality = getMoveQualityClass(bIdx);
-                    var bDot = bQuality ? '<span class="move-quality ' + bQuality + '" title="' + getQualityLabel(bQuality) + '"></span>' : '';
-                    html += '<div class="' + bCls + '" onclick="window.goToMove(' + bIdx + ')" title="' + getQualityLabel(bQuality) + '">' + bDot + allMoves[i + 1] + '</div>';
+                    var bTooltip = getMoveQualityTooltip(bQuality);
+                    var bDot = bQuality ? '<span class="move-quality ' + bQuality + '" data-tooltip="' + bTooltip + '"></span>' : '';
+                    html += '<div class="' + bCls + '" onclick="window.goToMove(' + bIdx + ')" data-tooltip="' + (bTooltip || allMoves[i + 1]) + '">' + bDot + allMoves[i + 1] + '</div>';
                 } else {
                     html += '<div class="move-cell"></div>';
                 }
@@ -1010,9 +1106,12 @@
                 html += '<div class="game-item">';
                 html += '<div class="game-left">';
                 html += '<span class="game-num">#' + g.game_num + '</span>';
-                html += '<span class="game-mode ' + modeClass + '">' + (g.mode || 'selfplay') + '</span>';
+                var modeLabel = g.mode || 'selfplay';
+                var modeTooltip = modeLabel.toLowerCase().includes('critic') ? 'Stockfish-guided: NN picks moves, Stockfish critiques' : 'AI plays against itself using MCTS search';
+                html += '<span class="game-mode ' + modeClass + '" data-tooltip="' + modeTooltip + '">' + modeLabel + '</span>';
                 html += '</div>';
-                html += '<span class="game-result ' + cls + '">' + (g.result || '*') + '</span>';
+                var resultTooltip = cls === 'w' ? 'White won' : (cls === 'l' ? 'Black won' : 'Draw or unfinished');
+                html += '<span class="game-result ' + cls + '" data-tooltip="' + resultTooltip + '">' + (g.result || '*') + '</span>';
                 html += '</div>';
             }
             $('#game-list').html(html);
@@ -1134,13 +1233,19 @@
                 } else {
                     evalStr = (m.evaluation >= 0 ? '+' : '') + (m.evaluation / 100).toFixed(2);
                 }
-                var quality = classifyMoveQuality(m.evaluation, bestEval);
+              var quality = classifyMoveQuality(m.evaluation, bestEval);
                 var rowCls = i === 0 ? ' class="best-row"' : '';
+                var qualityTooltip = '';
+                if (quality === 'best') qualityTooltip = 'This is the best move';
+                else if (quality === 'good') qualityTooltip = 'Solid move, close to best';
+                else if (quality === 'ok') qualityTooltip = 'Acceptable but not ideal';
+                else if (quality === 'bad') qualityTooltip = 'Below average move';
+                else if (quality === 'blunder') qualityTooltip = 'Significantly worse than best';
                 html += '<tr' + rowCls + '>';
                 html += '<td>' + (i + 1) + '</td>';
                 html += '<td>' + m.san + '</td>';
-                html += '<td class="' + evalClass + '" title="' + m.evaluation + ' cp">' + evalStr + '</td>';
-                html += '<td><span class="quality-badge ' + quality + '">' + getQualityLabel(quality) + '</span></td>';
+                html += '<td class="' + evalClass + '" data-tooltip="' + m.evaluation + ' centipawns">' + evalStr + '</td>';
+                html += '<td><span class="quality-badge ' + quality + '" data-tooltip="' + qualityTooltip + '">' + getQualityLabel(quality) + '</span></td>';
                 html += '</tr>';
             }
             $('#analysis-body').html(html);
