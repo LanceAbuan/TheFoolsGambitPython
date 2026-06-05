@@ -121,6 +121,7 @@
         }
 
 
+
         /* ====== LEFT: EVAL + BOARD ====== */
         .board-area {
             display: flex;
@@ -297,8 +298,8 @@
                 display: flex;
                 flex-direction: column;
                 overflow: hidden;
-                max-height: 50vh;
-                margin: 10px 0;
+                height: 480px;
+                margin: 0;
                 border-radius: 8px;
                 padding: 10px;
                 box-shadow: 0 4px 20px rgba(0,0,0,0.3);
@@ -1215,7 +1216,19 @@
             $('#fs-white-clock').text($('#white-clock').text());
             // Mode label
             var statusText = $('#status-text').text();
-            var gameMode = $('#what-happening').text().split('Move')[0].trim().replace('AI is', '').replace('strong', '').replace('/strong', '').trim();
+            var whatHappening = $('#what-happening').text();
+            var gameMode = 'Unknown';
+            
+            if (whatHappening.includes('playing against itself')) {
+                gameMode = 'Self-play';
+            } else if (whatHappening.includes('playing against Stockfish')) {
+                gameMode = 'Critic';
+            } else if (whatHappening.includes('training')) {
+                gameMode = 'Training';
+            } else if (whatHappening.includes('Stockfish')) {
+                gameMode = 'Stockfish';
+            }
+            
             $('#fs-mode-label').text(statusText + (statusText !== 'Idle' ? ' — ' + gameMode : ''));
         }
 
@@ -1524,7 +1537,7 @@
                 } else {
                     evalStr = (m.evaluation >= 0 ? '+' : '') + (m.evaluation / 100).toFixed(2);
                 }
-              var quality = classifyMoveQuality(m.evaluation, bestEval);
+                var quality = classifyMoveQuality(m.evaluation, bestEval);
                 var rowCls = i === 0 ? ' class="best-row"' : '';
                 var qualityTooltip = '';
                 if (quality === 'best') qualityTooltip = 'This is the best move';
@@ -1532,14 +1545,33 @@
                 else if (quality === 'ok') qualityTooltip = 'Acceptable but not ideal';
                 else if (quality === 'bad') qualityTooltip = 'Below average move';
                 else if (quality === 'blunder') qualityTooltip = 'Significantly worse than best';
-                html += '<tr' + rowCls + '>';
-                html += '<td>' + (i + 1) + '</td>';
-                html += '<td>' + m.san + '</td>';
-                html += '<td class="' + evalClass + '" data-tooltip="' + m.evaluation + ' centipawns">' + evalStr + '</td>';
-                html += '<td><span class="quality-badge ' + quality + '" data-tooltip="' + qualityTooltip + '">' + getQualityLabel(quality) + '</span></td>';
-                html += '</tr>';
-            }
-            $('#analysis-body').html(html);
+                
+                var tr = document.createElement('tr');
+                if (rowCls) tr.className = rowCls;
+                
+                var evalClass = m.evaluation >= 0 ? 'eval-pos' : 'eval-neg';
+                var evalStr;
+                if (Math.abs(m.evaluation) >= 10000) {
+                    evalStr = (m.evaluation >= 0 ? '+' : '-') + 'M' + Math.round(Math.abs(m.evaluation) / 100);
+                } else {
+                    evalStr = (m.evaluation >= 0 ? '+' : '') + (m.evaluation / 100).toFixed(2);
+                }
+
+                tr.innerHTML = `
+                    <td>${i + 1}</td>
+                    <td>${m.san}</td>
+                    <td class="${evalClass}" data-tooltip="${m.evaluation} centipawns">${evalStr}</td>
+                    <td><span class="quality-badge ${quality}" data-tooltip="${qualityTooltip}">${getQualityLabel(quality)}</span></td>
+                `;
+                
+                var body = document.getElementById('analysis-body');
+                if (body.children.length === 0) {
+                    body.appendChild(tr);
+                } else {
+                    body.innerHTML = '';
+                    body.appendChild(tr);
+                }
+
         }
 
         /* ---------- SSE ---------- */
@@ -1605,7 +1637,7 @@
             initLiveBoard();
             pollStatus();
             connectSSE();
-            setInterval(pollStatus, 2500);
+            setInterval(pollStatus, 5000);
             updateEvalBar(0, 0);
             // Escape key closes fullscreen
             $(document).on('keydown', function(e) {
