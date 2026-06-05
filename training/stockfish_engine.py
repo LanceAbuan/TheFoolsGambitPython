@@ -29,7 +29,7 @@ _MAX_RESTART = 1  # How many times to auto-restart a dead engine per call
 
 class StockfishPlayer:
     def __init__(self, depth=SF_DEPTH, threads=SF_THREADS, hash_mb=SF_HASH):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._depth = depth
         self._threads = threads
         self._hash_mb = hash_mb
