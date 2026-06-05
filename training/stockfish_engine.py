@@ -57,38 +57,48 @@ class StockfishPlayer:
 
     def _is_alive(self):
         """Probe whether the engine subprocess is still responsive."""
+        def _inner():
+            try:
+                self._engine.get_evaluation()
+                return True
+            except Exception:
+                return False
         try:
-            self._engine.get_evaluation()
-            return True
+            return self._safe_call(_inner)
         except Exception:
             return False
 
     def _restart(self):
         """Kill the dead subprocess and spawn a fresh one."""
-        try:
-            self._engine.close()
-        except Exception:
-            pass
-        self._engine = self._create_engine()
-        self._alive = True
-        print('[SF] Engine restarted after crash', flush=True)
+        with self._lock:
+            try:
+                self._engine.close()
+            except Exception:
+                pass
+            self._engine = self._create_engine()
+            self._alive = True
+            print('[SF] Engine restarted after crash', flush=True)
 
     def _ensure_multipv_1(self):
         """Reset MultiPV to 1 — critical cleanup after batch operations."""
-        try:
-            self._engine.update_engine_parameters({"MultiPV": 1})
-        except Exception:
-            pass
+        with self._lock:
+            try:
+                self._engine.update_engine_parameters({"MultiPV": 1})
+            except Exception:
+                pass
 
     def _safe_call(self, fn, *args, **kwargs):
         """Call *fn* under _lock with automatic crash-recovery and timeout."""
         for attempt in range(_MAX_RESTART + 1):
             acquired = self._lock.acquire(timeout=2.0)
             if not acquired:
+                print(f'[SF] TIMEOUT: Failed to acquire Stockfish lock within 2 seconds', flush=True)
                 raise TimeoutError("Failed to acquire Stockfish lock within 2 seconds")
             try:
-                return fn(*args, **kwargs)
-            except Exception:
+                res = fn(*args, **kwargs)
+                return res
+            except Exception as e:
+                print(f'[SF] ERROR in _safe_call: {e}', flush=True)
                 if attempt < _MAX_RESTART:
                     self._restart()
                 else:
