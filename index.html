@@ -112,9 +112,9 @@
         .main {
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: stretch;
             gap: 24px;
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
             min-height: calc(100vh - 48px);
@@ -157,14 +157,14 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: #f0ece4;
+            background: #ffffff;
             transition: height 0.6s ease;
             border-radius: 0 0 7px 7px;
         }
         .eval-bar-fill.negative {
             bottom: auto;
             top: 0;
-            background: #5a5550;
+            background: #1a1a1a;
             border-radius: 7px 7px 0 0;
         }
         .eval-bar-top, .eval-bar-bottom {
@@ -291,38 +291,45 @@
 
         /* ====== RIGHT SIDEBAR ====== */
             .sidebar {
-                width: 280px;
-                min-width: 280px;
+                width: 310px;
+                min-width: 310px;
                 background: var(--bg-secondary);
                 border-left: 1px solid var(--border-color);
                 display: flex;
                 flex-direction: column;
-                overflow: hidden;
-                height: 480px;
+                overflow-y: auto;
+                overflow-x: hidden;
+                height: auto;
+                align-self: stretch;
                 margin: 0;
                 border-radius: 8px;
                 padding: 10px;
                 box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             }
+            .sidebar::-webkit-scrollbar { width: 6px; }
+            .sidebar::-webkit-scrollbar-track { background: transparent; }
+            .sidebar::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+            .sidebar::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 
 
 
 
 
-        /* ===== TOOLTIP SYSTEM ===== */
-        [data-tooltip] {
-            position: relative;
-        }
-        [data-tooltip]::after {
-            content: attr(data-tooltip);
+        /* ===== TOOLTIP SYSTEM (JS-driven, appended to body) ===== */
+        #tooltip-root {
             position: fixed;
-            bottom: auto;
-            top: -999px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 99999;
+        }
+        #tooltip-root .tip {
+            position: absolute;
             background: #1a1915;
-            color: var(--text-secondary);
+            color: #c4c0b8;
             font-size: 11px;
             font-weight: 500;
             line-height: 1.4;
@@ -330,56 +337,23 @@
             border-radius: 6px;
             white-space: nowrap;
             pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.15s;
-            z-index: 10000;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            border: 1px solid var(--border-color);
-        }
-        [data-tooltip]:hover::after {
-            top: auto;
-            bottom: 100%;
-            margin-bottom: 8px;
-            opacity: 1;
-        }
-        /* Tooltip for bottom-aligned elements */
-        [data-tooltip-bottom]::after {
-            content: attr(data-tooltip-bottom);
-            position: fixed;
-            top: -999px;
-            bottom: auto;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1a1915;
-            color: var(--text-secondary);
-            font-size: 11px;
-            font-weight: 500;
-            line-height: 1.4;
-            padding: 6px 10px;
-            border-radius: 6px;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.15s;
-            z-index: 10000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            border: 1px solid var(--border-color);
-        }
-        [data-tooltip-bottom]:hover::after {
-            top: auto;
-            bottom: auto;
-            opacity: 1;
+            border: 1px solid #2d2a24;
+            transition: opacity 0.12s;
         }
 
         /* Move list (Chess.com style) */
             .move-list-section {
-                max-height: 180px;
-                min-height: 100px;
+                max-height: 200px;
+                min-height: 80px;
                 display: flex;
                 flex-direction: column;
                 border-bottom: 1px solid var(--border-color);
                 margin-bottom: 12px;
             }
+            .move-list-section::-webkit-scrollbar { width: 4px; }
+            .move-list-section::-webkit-scrollbar-track { background: transparent; }
+            .move-list-section::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
 
             .move-list-header {
                 padding: 4px 8px;
@@ -449,13 +423,15 @@
 
         /* Analysis section */
         .analysis-section {
-            max-height: 200px;
+            max-height: 240px;
             overflow-y: auto;
             overflow-x: hidden;
             border-bottom: 1px solid var(--border-color);
         }
         .analysis-section::-webkit-scrollbar { width: 4px; }
+        .analysis-section::-webkit-scrollbar-track { background: transparent; }
         .analysis-section::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+        .analysis-section::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
             .analysis-header {
                 padding: 8px 10px;
                 font-size: 11px;
@@ -579,7 +555,9 @@
             padding: 0;
         }
         .games-section::-webkit-scrollbar { width: 4px; }
+        .games-section::-webkit-scrollbar-track { background: transparent; }
         .games-section::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 2px; }
+        .games-section::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
         .games-header {
             padding: 10px 12px;
             font-size: 11px;
@@ -737,7 +715,7 @@
 
         @media (max-width: 900px) {
             .main { flex-direction: column; align-items: center; }
-            .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; }
+            .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; height: auto; max-height: 600px; }
             .board-area { padding: 8px; flex-direction: column; align-items: center; }
             .board-wrapper { width: 100%; max-width: 480px; }
             .eval-bar-container { min-height: 320px; max-height: 320px; }
@@ -932,6 +910,9 @@
         </div>
     </div>
 
+    <!-- Tooltip container (rendered above everything) -->
+    <div id="tooltip-root"></div>
+
     <script src="/static/jquery.min.js"></script>
     <script src="/static/chessboard.js"></script>
     <script>
@@ -942,6 +923,77 @@
     <script>
     window.Chess = exports.Chess || module.exports.Chess || exports;
     </script>
+    <!-- Tooltip engine (JS-driven, appended to body so overflow:hidden can't clip) -->
+    <script>
+    (function() {
+        var tip = null; // single tooltip element
+        var delay = null;
+
+        function show(el) {
+            var text = el.getAttribute('data-tooltip') || el.getAttribute('data-tooltip-bottom') || '';
+            if (!text) return;
+
+            if (!tip) {
+                tip = document.createElement('div');
+                tip.className = 'tip';
+                document.getElementById('tooltip-root').appendChild(tip);
+            }
+            tip.textContent = text;
+
+            var rect = el.getBoundingClientRect();
+            var above = el.getAttribute('data-tooltip-bottom') ? false : true;
+
+            if (above) {
+                tip.style.left = rect.left + 'px';
+                tip.style.top = (rect.top - 8) + 'px';
+                tip.style.bottom = 'auto';
+                // flip below if would overflow viewport top
+                var th = tip.offsetHeight;
+                if (rect.top - 8 - th < 0) {
+                    tip.style.top = (rect.bottom + 8) + 'px';
+                }
+            } else {
+                tip.style.left = rect.left + 'px';
+                tip.style.top = (rect.bottom + 8) + 'px';
+            }
+
+            // center horizontally if wide enough, else left-align
+            tip.style.transform = 'none';
+            var tw = tip.offsetWidth;
+            var cx = rect.left + rect.width / 2 - tw / 2;
+            if (cx >= 0 && cx + tw <= window.innerWidth) {
+                tip.style.left = cx + 'px';
+            } else {
+                tip.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - tw - 4)) + 'px';
+            }
+
+            tip.style.opacity = '1';
+        }
+
+        function hide() {
+            if (tip) tip.style.opacity = '0';
+        }
+
+        document.addEventListener('mouseover', function(e) {
+            var el = e.target;
+            if (el.hasAttribute('data-tooltip') || el.hasAttribute('data-tooltip-bottom')) {
+                delay = setTimeout(function() { show(el); }, 200);
+            } else {
+                if (delay) { clearTimeout(delay); delay = null; }
+                hide();
+            }
+        });
+
+        document.addEventListener('mouseout', function(e) {
+            var el = e.target;
+            if (el.hasAttribute('data-tooltip') || el.hasAttribute('data-tooltip-bottom')) {
+                if (delay) { clearTimeout(delay); delay = null; }
+                hide();
+            }
+        });
+    })();
+    </script>
+
     <script>
     (function () {
         var liveBoard = null;
@@ -1049,8 +1101,8 @@
                 // White move
                 var wIdx = i;
                 var wCls = 'move-cell';
-                if (wIdx === currentViewIndex) wCls += ' active';
-                else if (wIdx > currentViewIndex) wCls += ' far';
+                if (wIdx === currentViewIndex - 1) wCls += ' active';
+                else if (wIdx >= currentViewIndex) wCls += ' far';
                 var wQuality = getMoveQualityClass(wIdx);
                 var wTooltip = getMoveQualityTooltip(wQuality);
                 var wDot = wQuality ? '<span class="move-quality ' + wQuality + '" data-tooltip="' + wTooltip + '"></span>' : '';
@@ -1059,8 +1111,8 @@
                 if (i + 1 < allMoves.length) {
                     var bIdx = i + 1;
                     var bCls = 'move-cell';
-                    if (bIdx === currentViewIndex) bCls += ' active';
-                    else if (bIdx > currentViewIndex) bCls += ' far';
+                    if (bIdx === currentViewIndex - 1) bCls += ' active';
+                    else if (bIdx >= currentViewIndex) bCls += ' far';
                     var bQuality = getMoveQualityClass(bIdx);
                     var bTooltip = getMoveQualityTooltip(bQuality);
                     var bDot = bQuality ? '<span class="move-quality ' + bQuality + '" data-tooltip="' + bTooltip + '"></span>' : '';
@@ -1084,8 +1136,8 @@
                 if (!idxMatch) continue;
                 var idx = parseInt(idxMatch[1]);
                 cell.classList.remove('active', 'far');
-                if (idx === currentViewIndex) cell.classList.add('active');
-                else if (idx > currentViewIndex) cell.classList.add('far');
+                if (idx === currentViewIndex - 1) cell.classList.add('active');
+                else if (idx >= currentViewIndex) cell.classList.add('far');
             }
             scrollToActiveMove();
         }

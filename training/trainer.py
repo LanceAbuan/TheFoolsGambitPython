@@ -134,7 +134,7 @@ class Trainer:
         if stockfish is None:
             try:
                 from .stockfish_engine import StockfishPlayer
-                self.stockfish = StockfishPlayer(depth=10)
+                self.stockfish = StockfishPlayer(depth=11)
                 print(f'[TRAINER] Stockfish initialized (depth=10, own instance)', flush=True)
             except Exception as e:
                 print(f'[TRAINER] Stockfish unavailable: {e}', flush=True)
