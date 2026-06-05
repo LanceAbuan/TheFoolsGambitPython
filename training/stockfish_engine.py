@@ -81,16 +81,20 @@ class StockfishPlayer:
             pass
 
     def _safe_call(self, fn, *args, **kwargs):
-        """Call *fn* under _lock with automatic crash-recovery."""
+        """Call *fn* under _lock with automatic crash-recovery and timeout."""
         for attempt in range(_MAX_RESTART + 1):
-            with self._lock:
-                try:
-                    return fn(*args, **kwargs)
-                except Exception:
-                    if attempt < _MAX_RESTART:
-                        self._restart()
-                    else:
-                        raise
+            acquired = self._lock.acquire(timeout=2.0)
+            if not acquired:
+                raise TimeoutError("Failed to acquire Stockfish lock within 2 seconds")
+            try:
+                return fn(*args, **kwargs)
+            except Exception:
+                if attempt < _MAX_RESTART:
+                    self._restart()
+                else:
+                    raise
+            finally:
+                self._lock.release()
 
     # ---- public API (thread-safe, crash-safe) ----
 
@@ -250,17 +254,31 @@ class StockfishPlayer:
             'accuracy': accuracy,
         }
 
+    def _parse_best_move_eval(self, uci):
+        """Extract centipawn evaluation from a UCI best move string."""
+        try:
+            # Example: "e2e4(cp 15)" or "e2e4(mate 3)"
+            if '(' in uci and ')' in uci:
+                content = uci[uci.find('('):uci.find(')')+1]
+                if 'cp' in content:
+                    return int(content.split('cp')[1].split(')')[0].strip())
+                elif 'mate' in content:
+                    return int(content.split('mate')[1].split(')')[0].strip()) * 10000
+        except Exception:
+            pass
+        return 0
+
     def get_top_moves(self, board, num_moves=5):
         """Get Stockfish's top N moves with evaluations."""
         def _inner():
             legal_count = len(list(board.legal_moves))
             if legal_count == 0:
                 return []
-
+            
             actual_num = min(num_moves, legal_count)
             self._engine.set_fen_position(board.fen())
             self._engine.update_engine_parameters({"MultiPV": actual_num})
-
+            
             moves = []
             try:
                 for i in range(actual_num):
@@ -270,30 +288,30 @@ class StockfishPlayer:
                             break
                         move = chess.Move.from_uci(uci)
                         san = board.san(move)
-                        board_copy = board.copy()
-                        board_copy.push(move)
-                        # Get eval inside the lock since MultiPV is still active
-                        self._engine.set_fen_position(board_copy.fen())
-                        info = self._engine.get_evaluation()
-                        eval_cp = 0
-                        if info['type'] == 'cp':
-                            eval_cp = info['value']
-                        elif info['type'] == 'mate':
-                            eval_cp = info['value'] * 10000
-                        if board_copy.turn == chess.BLACK:
+                        
+                        # Parse evaluation from UCI string
+                        eval_cp = self._parse_best_move_eval(uci)
+                        
+                        # If it's White's turn, the position after the move is Black's turn.
+                        # In our class's get_evaluation, if it's Black's turn, we flip.
+                        # The UCI string evaluation is for the side-to-move.
+                        # If White moves, it's Black's turn, so the UCI eval is from Black's perspective.
+                        # We want to flip it to White's perspective.
+                        if board.turn == chess.WHITE:
                             eval_cp = -eval_cp
+                        
                         moves.append({
                             'uci': uci,
                             'san': san,
                             'evaluation': eval_cp,
                             'depth': self._engine.get_depth() if hasattr(self._engine, 'get_depth') else self._depth,
-                        })
+                            })
                     except Exception:
                         break
             finally:
                 self._ensure_multipv_1()
             return moves
-
+        
         try:
             return self._safe_call(_inner)
         except Exception:
@@ -310,12 +328,12 @@ class StockfishPlayer:
                 val = pos_eval['value'] * 10000
             if board.turn == chess.BLACK:
                 val = -val
-
+            
             top_moves = self.get_top_moves(board, num_moves=5)
-
+            
             legal_moves = list(board.legal_moves)
             eval_map = self.evaluate_legal_moves_batch(board, depth=self._depth)
-
+            
             move_analysis = []
             for m in legal_moves:
                 uci = m.uci()
@@ -326,7 +344,7 @@ class StockfishPlayer:
                     'evaluation': cp,
                 })
             move_analysis.sort(key=lambda x: x['evaluation'], reverse=True)
-
+            
             return {
                 'evaluation': val,
                 'evaluation_normalized': max(-1.0, min(1.0, val / 2000.0)),
@@ -335,7 +353,7 @@ class StockfishPlayer:
                 'move_analysis': move_analysis[:10],
                 'num_legal_moves': len(legal_moves),
             }
-
+        
         try:
             return self._safe_call(_inner)
         except Exception:
@@ -351,11 +369,11 @@ class StockfishPlayer:
         """Play a complete game, optionally with a custom opponent."""
         board = chess.Board()
         move_sans = []
-
+        
         for _ in range(max_moves):
             if board.is_game_over():
                 break
-
+            
             if board.turn == chess.WHITE:
                 uci = self.get_move(board)
             else:
@@ -363,10 +381,10 @@ class StockfishPlayer:
                     uci = opponent_move_fn(board)
                 else:
                     uci = self.get_move(board)
-
+            
             if uci in ('0-1', '1-0', 'resign', None):
                 break
-
+            
             try:
                 move = chess.Move.from_uci(uci)
                 san = board.san(move)
@@ -374,7 +392,7 @@ class StockfishPlayer:
                 move_sans.append(san)
             except Exception:
                 break
-
+        
         # Build PGN
         board2 = chess.Board()
         for san in move_sans:
@@ -392,14 +410,14 @@ class StockfishPlayer:
             except Exception:
                 pass
         pgn = str(game)
-
+        
         if board.is_checkmate():
             result = '1-0' if board.turn == chess.BLACK else '0-1'
         elif board.is_insufficient_material() or board.is_fivefold_repetition() or board.can_claim_draw():
             result = '1/2-1/2'
         else:
             result = '1/2-1/2'
-
+        
         return {
             'moves': move_sans,
             'pgn': pgn,
