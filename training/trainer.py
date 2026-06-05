@@ -15,7 +15,6 @@ from datetime import datetime
 from .model import ChessNet
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .selfplay import SelfPlayGame
-from .stockfish_engine import StockfishPlayer
 
 HF_REPO = os.environ.get('HF_REPO', 'LanceAbuan/chess-alpha-zero')
 HF_TOKEN = os.environ.get('HF_TOKEN', '')
@@ -108,7 +107,13 @@ class TrainingBuffer:
 
 
 class Trainer:
-    def __init__(self, num_residual_blocks=2, residual_filters=32):
+    def __init__(self, num_residual_blocks=2, residual_filters=32, stockfish=None):
+        """Initialize trainer.
+
+        Args:
+            stockfish: Optional shared StockfishPlayer instance. If None,
+                       creates its own (not recommended — prefer shared instance).
+        """
         os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
         try:
             self.device = torch.device('cuda')
@@ -124,12 +129,18 @@ class Trainer:
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
 
-        self.stockfish = None
-        try:
-            self.stockfish = StockfishPlayer(depth=10)
-            print(f'[TRAINER] Stockfish initialized (depth=10)', flush=True)
-        except Exception as e:
-            print(f'[TRAINER] Stockfish unavailable: {e}', flush=True)
+        # Use provided stockfish or create fallback
+        self.stockfish = stockfish
+        if stockfish is None:
+            try:
+                from .stockfish_engine import StockfishPlayer
+                self.stockfish = StockfishPlayer(depth=10)
+                print(f'[TRAINER] Stockfish initialized (depth=10, own instance)', flush=True)
+            except Exception as e:
+                print(f'[TRAINER] Stockfish unavailable: {e}', flush=True)
+                self.stockfish = None
+        else:
+            print(f'[TRAINER] Using shared Stockfish instance', flush=True)
 
         self.selfplay = SelfPlayGame(self.model, stockfish=self.stockfish)
         self.step = 0
