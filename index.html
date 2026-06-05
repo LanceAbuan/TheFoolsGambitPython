@@ -157,14 +157,14 @@
             bottom: 0;
             left: 0;
             right: 0;
-            background: #f0ece4;
+            background: #ffffff;
             transition: height 0.6s ease;
             border-radius: 0 0 7px 7px;
         }
         .eval-bar-fill.negative {
             bottom: auto;
             top: 0;
-            background: #5a5550;
+            background: #1a1a1a;
             border-radius: 7px 7px 0 0;
         }
         .eval-bar-top, .eval-bar-bottom {
@@ -310,19 +310,20 @@
 
 
 
-        /* ===== TOOLTIP SYSTEM ===== */
-        [data-tooltip] {
-            position: relative;
-        }
-        [data-tooltip]::after {
-            content: attr(data-tooltip);
+        /* ===== TOOLTIP SYSTEM (JS-driven, appended to body) ===== */
+        #tooltip-root {
             position: fixed;
-            bottom: auto;
-            top: -999px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 99999;
+        }
+        #tooltip-root .tip {
+            position: absolute;
             background: #1a1915;
-            color: var(--text-secondary);
+            color: #c4c0b8;
             font-size: 11px;
             font-weight: 500;
             line-height: 1.4;
@@ -330,45 +331,9 @@
             border-radius: 6px;
             white-space: nowrap;
             pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.15s;
-            z-index: 10000;
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            border: 1px solid var(--border-color);
-        }
-        [data-tooltip]:hover::after {
-            top: auto;
-            bottom: 100%;
-            margin-bottom: 8px;
-            opacity: 1;
-        }
-        /* Tooltip for bottom-aligned elements */
-        [data-tooltip-bottom]::after {
-            content: attr(data-tooltip-bottom);
-            position: fixed;
-            top: -999px;
-            bottom: auto;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1a1915;
-            color: var(--text-secondary);
-            font-size: 11px;
-            font-weight: 500;
-            line-height: 1.4;
-            padding: 6px 10px;
-            border-radius: 6px;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.15s;
-            z-index: 10000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            border: 1px solid var(--border-color);
-        }
-        [data-tooltip-bottom]:hover::after {
-            top: auto;
-            bottom: auto;
-            opacity: 1;
+            border: 1px solid #2d2a24;
+            transition: opacity 0.12s;
         }
 
         /* Move list (Chess.com style) */
@@ -932,6 +897,9 @@
         </div>
     </div>
 
+    <!-- Tooltip container (rendered above everything) -->
+    <div id="tooltip-root"></div>
+
     <script src="/static/jquery.min.js"></script>
     <script src="/static/chessboard.js"></script>
     <script>
@@ -942,6 +910,77 @@
     <script>
     window.Chess = exports.Chess || module.exports.Chess || exports;
     </script>
+    <!-- Tooltip engine (JS-driven, appended to body so overflow:hidden can't clip) -->
+    <script>
+    (function() {
+        var tip = null; // single tooltip element
+        var delay = null;
+
+        function show(el) {
+            var text = el.getAttribute('data-tooltip') || el.getAttribute('data-tooltip-bottom') || '';
+            if (!text) return;
+
+            if (!tip) {
+                tip = document.createElement('div');
+                tip.className = 'tip';
+                document.getElementById('tooltip-root').appendChild(tip);
+            }
+            tip.textContent = text;
+
+            var rect = el.getBoundingClientRect();
+            var above = el.getAttribute('data-tooltip-bottom') ? false : true;
+
+            if (above) {
+                tip.style.left = rect.left + 'px';
+                tip.style.top = (rect.top - 8) + 'px';
+                tip.style.bottom = 'auto';
+                // flip below if would overflow viewport top
+                var th = tip.offsetHeight;
+                if (rect.top - 8 - th < 0) {
+                    tip.style.top = (rect.bottom + 8) + 'px';
+                }
+            } else {
+                tip.style.left = rect.left + 'px';
+                tip.style.top = (rect.bottom + 8) + 'px';
+            }
+
+            // center horizontally if wide enough, else left-align
+            tip.style.transform = 'none';
+            var tw = tip.offsetWidth;
+            var cx = rect.left + rect.width / 2 - tw / 2;
+            if (cx >= 0 && cx + tw <= window.innerWidth) {
+                tip.style.left = cx + 'px';
+            } else {
+                tip.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - tw - 4)) + 'px';
+            }
+
+            tip.style.opacity = '1';
+        }
+
+        function hide() {
+            if (tip) tip.style.opacity = '0';
+        }
+
+        document.addEventListener('mouseover', function(e) {
+            var el = e.target;
+            if (el.hasAttribute('data-tooltip') || el.hasAttribute('data-tooltip-bottom')) {
+                delay = setTimeout(function() { show(el); }, 200);
+            } else {
+                if (delay) { clearTimeout(delay); delay = null; }
+                hide();
+            }
+        });
+
+        document.addEventListener('mouseout', function(e) {
+            var el = e.target;
+            if (el.hasAttribute('data-tooltip') || el.hasAttribute('data-tooltip-bottom')) {
+                if (delay) { clearTimeout(delay); delay = null; }
+                hide();
+            }
+        });
+    })();
+    </script>
+
     <script>
     (function () {
         var liveBoard = null;
