@@ -10,3 +10,4 @@ node_modules/
 *.bin
 chess-models/
 model_dir/
+nohup.out

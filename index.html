@@ -427,6 +427,7 @@
         .analysis-section {
             max-height: 200px;
             overflow-y: auto;
+            overflow-x: hidden;
             border-bottom: 1px solid var(--border-color);
         }
         .analysis-section::-webkit-scrollbar { width: 4px; }
@@ -453,6 +454,7 @@
         .analysis-table {
             width: 100%;
             font-size: 12px;
+            table-layout: fixed;
         }
         .analysis-table th {
             position: sticky;
@@ -464,14 +466,20 @@
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.3px;
-            padding: 6px 12px;
+            padding: 6px 8px;
             border-bottom: 1px solid var(--border-color);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .analysis-table td {
-            padding: 4px 12px;
+            padding: 4px 8px;
             border-bottom: 1px solid rgba(255,255,255,0.03);
             color: var(--text-secondary);
             font-family: 'Inter', monospace;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .analysis-table tr:hover td { background: var(--bg-hover); }
         .analysis-table .best-row td { color: var(--accent-green); font-weight: 700; }
@@ -539,6 +547,7 @@
         .games-section {
             max-height: 180px;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 0;
         }
         .games-section::-webkit-scrollbar { width: 4px; }
@@ -606,6 +615,98 @@
             font-size: 11px;
         }
 
+        /* ===== FULLSCREEN OVERLAY ===== */
+        .fullscreen-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(33, 31, 28, 0.97);
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            backdrop-filter: blur(12px);
+        }
+        .fullscreen-overlay.active {
+            display: flex;
+        }
+        .fullscreen-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 720px;
+            margin-bottom: 12px;
+        }
+        .fullscreen-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .fullscreen-header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .fullscreen-mode {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+        .fullscreen-close {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 14px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .fullscreen-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        .fullscreen-body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+        }
+        .fs-eval-bar {
+            min-height: 640px;
+            max-height: 640px;
+            width: 16px;
+        }
+        .fs-eval-bar .eval-bar-track {
+            margin: 6px 0;
+        }
+        .fs-eval-bar .eval-bar-value {
+            left: 24px;
+            font-size: 12px;
+        }
+        .fullscreen-board-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            width: 640px;
+        }
+        #fullscreen-board {
+            width: 100%;
+            max-width: 640px;
+        }
+        .fullscreen-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
         @media (max-width: 900px) {
             .main { flex-direction: column; align-items: center; }
             .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); }
@@ -629,6 +730,7 @@
       <div class="topbar-right">
             <button class="topbar-btn" onclick="window.flipBoard()" data-tooltip="Flip board orientation white↔black">&#8645; Flip</button>
             <button class="topbar-btn" onclick="window.analyzeCurrent()" data-tooltip="Analyze current position with Stockfish depth 12">&#9906; Analyze</button>
+            <button class="topbar-btn" onclick="window.openFullscreen()" data-tooltip="Open board in full-screen overlay">&#9477; Expand</button>
         </div>
     </div>
 
@@ -752,6 +854,52 @@
                 <div id="game-list">
                     <div style="padding: 12px; color: var(--text-muted); font-size: 11px; font-style: italic;">No games yet.</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- FULLSCREEN OVERLAY -->
+        <div class="fullscreen-overlay" id="fullscreen-overlay">
+            <div class="fullscreen-header">
+                <span class="fullscreen-title">The Fool's Gambit — Board View</span>
+                <div class="fullscreen-header-right">
+                    <span class="fullscreen-mode" id="fs-mode-label"></span>
+                    <button class="topbar-btn fullscreen-close" onclick="window.closeFullscreen()">✕ Close</button>
+                </div>
+            </div>
+            <div class="fullscreen-body">
+                <!-- FS Eval Bar -->
+                <div class="eval-bar-container fs-eval-bar">
+                    <div class="eval-bar-top" id="fs-eval-black">B</div>
+                    <div class="eval-bar-track">
+                        <div class="eval-bar-fill" id="fs-eval-bar-fill" style="height: 50%;"></div>
+                    </div>
+                    <div class="eval-bar-bottom" id="fs-eval-white">W</div>
+                    <div class="eval-bar-value" id="fs-eval-bar-cp">0 cp</div>
+                </div>
+                <div class="fullscreen-board-wrapper">
+                    <div class="player-info-bar top">
+                        <div>
+                            <div class="player-name" id="fs-opponent-name">Stockfish (depth 12)</div>
+                            <div class="player-detail" id="fs-opponent-detail"></div>
+                        </div>
+                        <div class="player-clock" id="fs-black-clock">--:--</div>
+                    </div>
+                    <div id="fullscreen-board"></div>
+                    <div class="player-info-bar bottom">
+                        <div>
+                            <div class="player-name">Fool's Gambit AI</div>
+                            <div class="player-detail" id="fs-ai-detail"></div>
+                        </div>
+                        <div class="player-clock" id="fs-white-clock">--:--</div>
+                    </div>
+                </div>
+            </div>
+            <div class="fullscreen-nav">
+                <button class="nav-btn" id="fs-btn-back" onclick="window.fsNavMove(-1)">&#8592;</button>
+                <button class="nav-btn" id="fs-btn-first" onclick="window.fsGoToMove(0)">&#9664;</button>
+                <span class="move-label" id="fs-move-label">Move 0/0</span>
+                <button class="nav-btn" id="fs-btn-fwd" onclick="window.fsNavMove(1)">&#9654;</button>
+                <button class="nav-btn" id="fs-btn-last" onclick="window.fsGoToMove(9999)">&#9656;</button>
             </div>
         </div>
     </div>
@@ -971,11 +1119,82 @@
         window.flipBoard = function() {
             boardOrientation = boardOrientation === 'white' ? 'black' : 'white';
             if (liveBoard) liveBoard.orientation(boardOrientation);
+            if (fsBoard) fsBoard.orientation(boardOrientation);
         };
 
         window.analyzeCurrent = function() {
             doEval(true);
         };
+
+        /* ---------- Fullscreen ---------- */
+
+        var fsBoard = null;
+        var fsViewIndex = 0;
+        var fsAutoFollow = true;
+
+        window.openFullscreen = function() {
+            document.getElementById('fullscreen-overlay').classList.add('active');
+            if (!fsBoard) {
+                fsBoard = Chessboard('fullscreen-board', {
+                    position: 'start',
+                    orientation: boardOrientation,
+                    pieceTheme: function(piece) {
+                        return '/static/img/chesspieces/wikipedia/' + piece + '.png';
+                    },
+                    draggable: false,
+                    showNotation: true
+                });
+            }
+            fsViewIndex = currentViewIndex;
+            fsAutoFollow = true;
+            updateFsView();
+            syncFsPlayerInfo();
+        };
+
+        window.closeFullscreen = function() {
+            document.getElementById('fullscreen-overlay').classList.remove('active');
+        };
+
+        window.fsNavMove = function(dir) {
+            fsAutoFollow = false;
+            fsViewIndex = Math.max(0, Math.min(allMoves.length, fsViewIndex + dir));
+            updateFsView();
+        };
+
+        window.fsGoToMove = function(moveIdx) {
+            fsAutoFollow = false;
+            if (moveIdx >= allMoves.length) moveIdx = allMoves.length - 1;
+            fsViewIndex = Math.max(0, moveIdx + 1);
+            updateFsView();
+        };
+
+        function updateFsView() {
+            if (fsBoard && fenCache[fsViewIndex]) {
+                fsBoard.position(fenCache[fsViewIndex]);
+            }
+            var label = fsViewIndex + '/' + allMoves.length;
+            $('#fs-move-label').text('Move ' + label);
+            $('#fs-btn-back').prop('disabled', fsViewIndex <= 0);
+            $('#fs-btn-first').prop('disabled', fsViewIndex <= 0);
+            $('#fs-btn-fwd').prop('disabled', fsViewIndex >= allMoves.length);
+            $('#fs-btn-last').prop('disabled', fsViewIndex >= allMoves.length);
+        }
+
+        function syncFsPlayerInfo() {
+            // Sync opponent info from main board
+            var oppName = $('.player-info-bar.top .player-name').text() || 'Stockfish (depth 12)';
+            var oppDetail = $('#black-detail').text() || '';
+            var aiDetail = $('#white-detail').text() || 'ELO ~200';
+            $('#fs-opponent-name').text(oppName);
+            $('#fs-opponent-detail').text(oppDetail);
+            $('#fs-ai-detail').text(aiDetail);
+            $('#fs-black-clock').text($('#black-clock').text());
+            $('#fs-white-clock').text($('#white-clock').text());
+            // Mode label
+            var statusText = $('#status-text').text();
+            var gameMode = $('#what-happening').text().split('Move')[0].trim().replace('AI is', '').replace('strong', '').replace('/strong', '').trim();
+            $('#fs-mode-label').text(statusText + (statusText !== 'Idle' ? ' — ' + gameMode : ''));
+        }
 
         /* ---------- Eval Bar (Chess.com style) ---------- */
 
@@ -1002,6 +1221,22 @@
             var cpText = (cp >= 0 ? '+' : '') + Math.round(cp) + ' cp';
             if (Math.abs(cp) >= 10000) cpText = 'M#' + Math.round(Math.abs(cp) / 100);
             $('#eval-bar-cp').text(cpText);
+
+            // Sync fullscreen eval bar
+            var fsFill = document.getElementById('fs-eval-bar-fill');
+            if (fsFill) {
+                fsFill.style.height = pct + '%';
+                fsFill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
+            }
+            var fsAdvantage = advantage;
+            if (pct >= 50) {
+                $('#fs-eval-white').text('W +' + displayVal);
+                $('#fs-eval-black').text('B +0.0');
+            } else {
+                $('#fs-eval-black').text('B +' + displayVal);
+                $('#fs-eval-white').text('W +0.0');
+            }
+            $('#fs-eval-bar-cp').text(cpText);
         }
 
         /* ---------- Status ---------- */
@@ -1036,19 +1271,37 @@
             $('#m-loss').text(status.loss ? status.loss.toFixed(4) : '—');
             $('#m-elo').text(status.estimated_elo ? '~' + status.estimated_elo.toLocaleString() : '~200');
 
+            // Dynamic opponent display based on current game mode
+            var gameMode = rawStatus;
+            var oppName = 'Stockfish (depth 12)';
+            var oppDetail = 'Critic opponent';
+            if (gameMode === 'self-play') {
+                oppName = 'Fool\'s Gambit AI';
+                oppDetail = 'Self-play opponent';
+            } else if (['supervised', 'critic', 'stockfish'].indexOf(gameMode) !== -1) {
+                oppName = 'Stockfish (depth 12)';
+                oppDetail = 'Critic opponent';
+            }
+            if (status.stockfish_available === false && gameMode !== 'self-play') {
+                oppDetail = 'Stockfish unavailable';
+            }
+            $('.player-info-bar.top .player-name').text(oppName);
+            $('#black-detail').text(oppDetail);
+
             // Update player details
             if (status.estimated_elo) {
                 $('#white-detail').text('ELO ~' + status.estimated_elo.toLocaleString());
-            }
-            if (status.stockfish_available === false) {
-                $('#black-detail').text('Stockfish unavailable');
             }
 
             // What's happening
             var what = '';
             if (badgeClass === 'playing') {
                 var moves = (status.current_game && status.current_game.moves) ? status.current_game.moves : [];
-                what = 'AI is <strong>playing</strong> against Stockfish (critic-guided). ';
+                if (gameMode === 'self-play') {
+                    what = 'AI is <strong>playing against itself</strong> (self-play mode). ';
+                } else {
+                    what = 'AI is <strong>playing</strong> against Stockfish (critic-guided). ';
+                }
                 if (moves.length > 0) {
                     what += 'Move <strong>' + moves.length + '</strong> in progress.';
                 } else {
@@ -1068,7 +1321,7 @@
                 renderGames(status.recent_games);
             }
 
-            // Update moves
+             // Update moves
             if (status.current_game && status.current_game.moves) {
                 var newMoves = status.current_game.moves;
                 if (newMoves.length > allMoves.length || newMoves.length === 0) {
@@ -1079,6 +1332,12 @@
                     autoFollow = true;
                     isPlaying = false;
                     updatePlayBtn();
+                    // Sync fullscreen on new game
+                    if (fsBoard) {
+                        fsViewIndex = allMoves.length;
+                        fsAutoFollow = true;
+                        updateFsView();
+                    }
                 } else {
                     allMoves = newMoves;
                     buildFenCache(allMoves);
@@ -1086,8 +1345,17 @@
                     if (autoFollow) {
                         currentViewIndex = allMoves.length;
                     }
+                    // Sync fullscreen
+                    if (fsBoard) {
+                        if (fsAutoFollow) fsViewIndex = allMoves.length;
+                        updateFsView();
+                    }
                 }
                 updateView();
+            }
+            // Sync fullscreen player info
+            if (document.getElementById('fullscreen-overlay').classList.contains('active')) {
+                syncFsPlayerInfo();
             }
         }
 
@@ -1316,6 +1584,12 @@
             connectSSE();
             setInterval(pollStatus, 2500);
             updateEvalBar(0, 0);
+            // Escape key closes fullscreen
+            $(document).on('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    window.closeFullscreen();
+                }
+            });
         });
     })();
     </script>
