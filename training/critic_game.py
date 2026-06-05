@@ -16,15 +16,17 @@ from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 
 
 class CriticGame:
-    """Play games where NN chooses moves, Stockfish acts as position critic."""
+    """Play games where NN chooses moves, Stockfish acts as position critic.
+
+    IMPORTANT: The stockfish instance passed here should be the SHARED instance
+    from training.server.get_stockfish() — do NOT create a new StockfishPlayer.
+    """
 
     def __init__(self, model, stockfish, temperature=0.3, max_moves=200):
         self.model = model
         self.stockfish = stockfish
         self.temperature = temperature
         self.max_moves = max_moves
-
-
 
     def play(self, on_move=None):
         """Play one complete game. NN plays both sides, Stockfish critiques.
@@ -44,18 +46,20 @@ class CriticGame:
             if not legal_moves:
                 break
 
+            # Single batch eval covers everything — position + all legal moves
+            eval_map = self.stockfish.evaluate_legal_moves_batch(board)
+
+            # Current position eval (from the engine's perspective)
             current_eval = self.stockfish.get_evaluation(board)
 
-            # --- Step 2: Evaluate every legal move with Stockfish (batch) ---
-            eval_map = self.stockfish.evaluate_legal_moves_batch(board)
+            # Build move evals list
             move_evals = []
             for m in board.legal_moves:
                 cp = eval_map.get(m.uci(), 0)
                 move_evals.append((m, board.san(m), cp))
 
-            # --- Step 3: Build weighted policy target from evals ---
+            # Build weighted policy target from evals
             eval_values = np.array([mv[2] for mv in move_evals], dtype=np.float32)
-            # Shift to positive range, softmax to get weights
             eval_shifted = eval_values - np.min(eval_values) + 1e-10
             weights = eval_shifted / eval_shifted.sum()
 
@@ -63,15 +67,14 @@ class CriticGame:
             for idx, mv in enumerate(move_evals):
                 target_policy[move_to_idx(mv[0])] = weights[idx]
 
-            # --- Step 4: NN picks a move (own policy + small critic bias) ---
+            # NN picks a move
             chosen_move, chosen_san = self._nn_pick_move(board, legal_moves, move_evals)
             if chosen_move is None:
                 break
 
-            # --- Step 5: Record training example ---
+            # Record training example
             value = np.clip(current_eval / 2000.0, -1.0, 1.0)
 
-            # Find eval of the chosen move
             chosen_eval = 0
             for mv, san, cp in move_evals:
                 if mv == chosen_move:
@@ -108,15 +111,13 @@ class CriticGame:
         device = next(self.model.parameters()).device
         self.model.eval()
 
-        # NN logits for current position
         board_tensor = board_to_tensor(board)
         with torch.no_grad():
             x = torch.FloatTensor(board_tensor).unsqueeze(0).to(device)
             logits, _ = self.model(x)
             logits = logits.squeeze(0).cpu().numpy()
 
-        # Add critic bias: scale evals to logits-space nudge
-        # 100cp difference = 0.1 logit boost (subtle guidance, not forcing)
+        # Add critic bias
         critic_bias = np.zeros(NUM_POSSIBLE_MOVES, dtype=np.float32)
         for mv, san, cp in move_evals:
             critic_bias[move_to_idx(mv)] = cp * 0.001
@@ -142,7 +143,6 @@ class CriticGame:
                 return mv, san
 
         # Fallback to random legal move
-        mv, san, _ = legal_moves[0], board.san(legal_moves[0]), 0
         idx = np.random.randint(len(legal_moves))
         return legal_moves[idx], board.san(legal_moves[idx])
 

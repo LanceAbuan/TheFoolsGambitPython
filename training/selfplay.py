@@ -195,11 +195,32 @@ class MCTS:
         nn_value = self._nn_evaluate(board)
 
         if self.stockfish:
-            sf_cp = self.stockfish.get_evaluation(board)
-            sf_norm = max(-1.0, min(1.0, sf_cp / 2000.0))
-            noise = np.random.normal(0, SF_EVAL_NOISE_SIGMA)
-            sf_noisy = max(-1.0, min(1.0, sf_norm + noise))
-            return SF_LEAF_BLEND * sf_noisy + (1 - SF_LEAF_BLEND) * nn_value
+            # Use a timeout lock — if Stockfish is busy (e.g., during
+            # sf.play_game()), fall back to NN-only to prevent deadlock.
+            import threading
+            acquired = self.stockfish._lock.acquire(timeout=0.05)
+            if not acquired:
+                # Stockfish locked by another thread — use NN only
+                return nn_value
+            try:
+                self.stockfish._engine.set_fen_position(board.fen())
+                info = self.stockfish._engine.get_evaluation()
+                sf_cp = 0
+                if info['type'] == 'cp':
+                    sf_cp = info['value']
+                elif info['type'] == 'mate':
+                    sf_cp = info['value'] * 10000
+                if board.turn == chess.BLACK:
+                    sf_cp = -sf_cp
+                sf_norm = max(-1.0, min(1.0, sf_cp / 2000.0))
+                noise = np.random.normal(0, SF_EVAL_NOISE_SIGMA)
+                sf_noisy = max(-1.0, min(1.0, sf_norm + noise))
+                return SF_LEAF_BLEND * sf_noisy + (1 - SF_LEAF_BLEND) * nn_value
+            except Exception:
+                # Engine dead or unresponsive — fall back to NN
+                return nn_value
+            finally:
+                self.stockfish._lock.release()
 
         return nn_value
 
