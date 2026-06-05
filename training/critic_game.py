@@ -93,7 +93,12 @@ class CriticGame:
             move_sans.append(chosen_san)
             print(f'[CRITIC] move {i+1}: {chosen_san} (eval={current_eval}cp)', flush=True)
             if on_move:
-                on_move(list(move_sans))
+                try:
+                    on_move(list(move_sans))
+                except Exception as e:
+                    print(f'[CRITIC] Error in on_move callback: {e}', flush=True)
+                    import traceback
+                    traceback.print_exc()
 
         result = self._game_result(board)
         elapsed = time.time() - t0
