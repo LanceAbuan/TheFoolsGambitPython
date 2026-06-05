@@ -183,7 +183,7 @@ def get_stockfish():
     with _stockfish_lock:
         if _stockfish_instance is None:
             try:
-                _stockfish_instance = StockfishPlayer(depth=12, threads=2, hash_mb=256)
+                _stockfish_instance = StockfishPlayer(depth=11, threads=2, hash_mb=256)
                 print('[SF] Shared Stockfish instance created', flush=True)
             except Exception as e:
                 print(f'[SF] Failed to create Stockfish: {e}', flush=True)
