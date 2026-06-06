@@ -153,19 +153,27 @@
         }
         .eval-bar-fill {
             position: absolute;
-            bottom: 0;
             left: 0;
             right: 0;
             background: #ffffff;
-            transition: height 0.3s ease;
+            transition: height 0.3s ease, top 0.3s ease, bottom 0.3s ease;
+            bottom: 0;
+        }
+        .eval-bar-fill.flipped {
+            bottom: auto;
+            top: 0;
         }
         .eval-bar-fill.negative {
             position: absolute;
-            bottom: 0;
             left: 0;
             right: 0;
             background: #000000;
-            transition: height 0.3s ease;
+            transition: height 0.3s ease, top 0.3s ease, bottom 0.3s ease;
+            top: 0;
+        }
+        .eval-bar-fill.negative.flipped {
+            top: auto;
+            bottom: 0;
         }
         .eval-bar-top, .eval-bar-bottom {
             font-size: 10px;
@@ -1269,6 +1277,9 @@
             boardOrientation = boardOrientation === 'white' ? 'black' : 'white';
             if (liveBoard) liveBoard.orientation(boardOrientation);
             if (fsBoard) fsBoard.orientation(boardOrientation);
+            // Flip eval bar to match orientation
+            var fill = document.getElementById('eval-fill');
+            if (fill) fill.classList.toggle('flipped');
         };
 
         window.analyzeCurrent = function() {
