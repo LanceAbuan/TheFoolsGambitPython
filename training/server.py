@@ -74,6 +74,24 @@ def save_persistent_cache(cache):
 # Initialize persistent cache
 persistent_cache = load_persistent_cache()
 
+# ---- EAGER INIT: trainer + side games live on boot ----
+def _eager_init():
+    """Initialize the trainer and start side games immediately on server boot."""
+    global trainer
+    try:
+        sf = get_stockfish()
+        trainer = Trainer(stockfish=sf)
+        print('[BOOT] Trainer initialized eagerly', flush=True)
+        # Start side game workers — they'll spin continuously
+        start_side_games(trainer)
+        print('[BOOT] Side games started on boot', flush=True)
+    except Exception as e:
+        print(f'[BOOT] Eager init failed: {e}', flush=True)
+        import traceback
+        traceback.print_exc()
+
+_eager_init()
+
 # ---- Default play mode ----
 play_mode = 'critic'
 
@@ -382,7 +400,16 @@ def stream_status_update():
         recent_games_snapshot = list(recent_games[:5])
         current_game_moves_snapshot = list(current_game_moves)
         current_game_status_snapshot = current_game_status
-        
+
+    # Include side game statuses
+    side_statuses = {}
+    for gid in range(1, NUM_GAMES):
+        with game_locks[gid]:
+            side_statuses[str(gid)] = {
+                'status': game_statuses[gid],
+                'moves': list(game_moves[gid])
+            }
+    
     # Use current_game_status as the authoritative status source
     status['status'] = current_game_status_snapshot
 
@@ -391,6 +418,7 @@ def stream_status_update():
         'moves': current_game_moves_snapshot,
         'status': current_game_status_snapshot
     }
+    status['side_games'] = side_statuses
     
     board = chess.Board()
     for san in current_game_moves_snapshot:
@@ -665,8 +693,8 @@ def run_side_game(game_id, trainer):
     """Run a self-play game in a side slot, streaming via SSE with game_id."""
     from .selfplay import SelfPlayGame
     
-    # Side games use reduced MCTS (150 sims vs 800 main) to preserve main game speed
-    side_mcts = max(150, trainer.selfplay.num_mcts_simulations // 4)
+    # Side games use reduced MCTS (75 sims vs 500 main) to preserve main game speed
+    side_mcts = max(75, trainer.selfplay.num_mcts_simulations // 8)
     sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts)
     
     with game_locks[game_id]:

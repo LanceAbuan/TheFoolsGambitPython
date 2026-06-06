@@ -21,7 +21,7 @@ import chess
 from stockfish import Stockfish as SF
 
 STOCKFISH_PATH = os.environ.get('STOCKFISH_PATH', '/home/lance/.local/bin/stockfish')
-SF_DEPTH = 11
+SF_DEPTH = 10
 SF_THREADS = 2
 SF_HASH = 256
 _MAX_RESTART = 1  # How many times to auto-restart a dead engine per call

@@ -757,6 +757,10 @@
             .eval-bar-container { min-height: 320px; max-height: 320px; }
             .player-info-bar { width: 100% !important; max-width: 400px !important; }
             .move-list-section { max-height: 160px; }
+            /* Mobile order: board → side boards → eval bar */
+            .board-area > .board-wrapper { order: -1; }
+            .board-area > .side-boards { order: 0; }
+            .board-area > .eval-bar-container { order: 1; }
         }
     </style>
 </head>
@@ -772,7 +776,7 @@
         </div>
       <div class="topbar-right">
             <button class="topbar-btn" onclick="window.flipBoard()" data-tooltip="Flip board orientation white↔black">&#8645; Flip</button>
-            <button class="topbar-btn" onclick="window.analyzeCurrent()" data-tooltip="Analyze current position with Stockfish depth 11">&#9906; Analyze</button>
+            <button class="topbar-btn" onclick="window.analyzeCurrent()" data-tooltip="Analyze current position with Stockfish depth 10">&#9906; Analyze</button>
             <button class="topbar-btn" onclick="window.openFullscreen()" data-tooltip="Open board in full-screen overlay">&#9477; Expand</button>
         </div>
     </div>
@@ -781,16 +785,6 @@
     <div class="main">
         <!-- BOARD AREA -->
         <div class="board-area">
-           <!-- Eval Bar -->
-            <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
-                <div class="eval-bar-top" id="eval-black-label"></div>
-                <div class="eval-bar-track">
-                    <div class="eval-bar-fill" id="eval-bar-fill" style="height: 50%;"></div>
-                </div>
-                <div class="eval-bar-bottom" id="eval-white-label"></div>
-                <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
-            </div>
-
             <!-- Side Game Boards -->
             <div class="side-boards">
                 <div class="side-board" id="side-board-1">
@@ -805,11 +799,21 @@
                 </div>
             </div>
 
+           <!-- Eval Bar -->
+            <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
+                <div class="eval-bar-top" id="eval-black-label"></div>
+                <div class="eval-bar-track">
+                    <div class="eval-bar-fill" id="eval-bar-fill" style="height: 50%;"></div>
+                </div>
+                <div class="eval-bar-bottom" id="eval-white-label"></div>
+                <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
+            </div>
+
             <!-- Board -->
             <div class="board-wrapper">
                 <div class="player-info-bar top">
                     <div>
-                        <div class="player-name">Stockfish (depth 11)</div>
+                        <div class="player-name">Stockfish (depth 10)</div>
                         <div class="player-detail" id="black-detail">Critic opponent</div>
                     </div>
                     <div class="player-clock" id="black-clock">--:--</div>
@@ -852,7 +856,7 @@
             <div class="analysis-section">
                 <div class="analysis-header" data-tooltip="Stockfish evaluation of each move. CP = centipawns (100 = 1 pawn advantage).">
                     Move Analysis
-                    <span>depth 11 &middot; cp (100 = 1 pawn)</span>
+                    <span>depth 10 &middot; cp (100 = 1 pawn)</span>
                 </div>
                 <table class="analysis-table">
              <thead>
@@ -936,7 +940,7 @@
                 <div class="fullscreen-board-wrapper">
                     <div class="player-info-bar top">
                         <div>
-                            <div class="player-name" id="fs-opponent-name">Stockfish (depth 11)</div>
+                            <div class="player-name" id="fs-opponent-name">Stockfish (depth 10)</div>
                             <div class="player-detail" id="fs-opponent-detail"></div>
                         </div>
                         <div class="player-clock" id="fs-black-clock">--:--</div>
@@ -1327,7 +1331,7 @@
 
         function syncFsPlayerInfo() {
             // Sync opponent info from main board
-            var oppName = $('.player-info-bar.top .player-name').text() || 'Stockfish (depth 11)';
+            var oppName = $('.player-info-bar.top .player-name').text() || 'Stockfish (depth 10)';
             var oppDetail = $('#black-detail').text() || '';
             var aiDetail = $('#white-detail').text() || 'ELO ~200';
             $('#fs-opponent-name').text(oppName);
@@ -1430,13 +1434,13 @@
 
             // Dynamic opponent display based on current game mode
             var gameMode = rawStatus;
-            var oppName = 'Stockfish (depth 11)';
+            var oppName = 'Stockfish (depth 10)';
             var oppDetail = 'Critic opponent';
             if (gameMode === 'self-play') {
                 oppName = 'Fool\'s Gambit AI';
                 oppDetail = 'Self-play opponent';
             } else if (['supervised', 'critic', 'stockfish'].indexOf(gameMode) !== -1) {
-                oppName = 'Stockfish (depth 11)';
+                oppName = 'Stockfish (depth 10)';
                 oppDetail = 'Critic opponent';
             }
             if (status.stockfish_available === false && gameMode !== 'self-play') {

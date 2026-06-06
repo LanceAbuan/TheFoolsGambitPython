@@ -117,7 +117,7 @@ class CriticGame:
         self.model.eval()
 
         board_tensor = board_to_tensor(board)
-        with torch.no_grad():
+        with torch.inference_mode():
             x = torch.FloatTensor(board_tensor).unsqueeze(0).to(device)
             logits, _ = self.model(x)
             logits = logits.squeeze(0).cpu().numpy()
