@@ -145,7 +145,7 @@
         }
         .eval-bar-track {
             flex: 1;
-            background: #3d3935;
+            background: #666666;
             border-radius: 7px;
             overflow: hidden;
             position: relative;
@@ -161,10 +161,13 @@
             border-radius: 0 0 7px 7px;
         }
         .eval-bar-fill.negative {
-            bottom: auto;
-            top: 0;
-            background: #1a1a1a;
-            border-radius: 7px 7px 0 0;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #111111;
+            transition: height 0.6s ease;
+            border-radius: 0 0 7px 7px;
         }
         .eval-bar-top, .eval-bar-bottom {
             font-size: 9px;
@@ -1006,6 +1009,7 @@
         var moveQualities = {};
         var currentFen = '';
         var isAnalyzing = false;
+        var currentAnalysisId = 0;
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -1289,30 +1293,26 @@
 
         /* ---------- Eval Bar (Chess.com style) ---------- */
 
+        function formatEval(cp) {
+            if (Math.abs(cp) >= 10000) return (cp >= 0 ? '+' : '-') + 'M' + Math.round(Math.abs(cp) / 100);
+            return (cp >= 0 ? '+' : '') + (cp / 100).toFixed(2);
+        }
+
         function updateEvalBar(evalNormalized, cp) {
             var pct = Math.max(0, Math.min(100, (evalNormalized + 1) * 50));
             var fill = document.getElementById('eval-bar-fill');
             fill.style.height = pct + '%';
             fill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
 
-            // Always display in centipawns for consistency
-            var displayVal;
-            if (Math.abs(cp) >= 10000) {
-                displayVal = 'M#' + Math.round(Math.abs(cp) / 100);
-            } else {
-                displayVal = Math.round(cp);
-            }
-            var advantage = Math.abs(cp) / 100;
+            var cpStr = formatEval(cp);
             if (pct >= 50) {
-                $('#eval-white-label').text('W +cp' + displayVal);
-                $('#eval-black-label').text('B +cp0');
+                $('#eval-white-label').text('W +' + cpStr);
+                $('#eval-black-label').text('B');
             } else {
-                $('#eval-black-label').text('B +cp' + displayVal);
-                $('#eval-white-label').text('W +cp0');
+                $('#eval-black-label').text('B +' + cpStr);
+                $('#eval-white-label').text('W');
             }
-            var cpText = (cp >= 0 ? '+' : '') + Math.round(cp) + ' cp';
-            if (Math.abs(cp) >= 10000) cpText = 'M#' + Math.round(Math.abs(cp) / 100);
-            $('#eval-bar-cp').text(cpText);
+            $('#eval-bar-cp').text(cpStr);
 
             // Sync fullscreen eval bar
             var fsFill = document.getElementById('fs-eval-bar-fill');
@@ -1320,15 +1320,14 @@
                 fsFill.style.height = pct + '%';
                 fsFill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
             }
-            var fsAdvantage = advantage;
             if (pct >= 50) {
-                $('#fs-eval-white').text('W +' + displayVal);
-                $('#fs-eval-black').text('B +0.0');
+                $('#fs-eval-white').text('W +' + cpStr);
+                $('#fs-eval-black').text('B');
             } else {
-                $('#fs-eval-black').text('B +' + displayVal);
-                $('#fs-eval-white').text('W +0.0');
+                $('#fs-eval-black').text('B +' + cpStr);
+                $('#fs-eval-white').text('W');
             }
-            $('#fs-eval-bar-cp').text(cpText);
+            $('#fs-eval-bar-cp').text(cpStr);
         }
 
         /* ---------- Status ---------- */
@@ -1399,7 +1398,8 @@
                     what = 'AI is <strong>playing</strong> against Stockfish (critic-guided). ';
                 }
                 if (moves.length > 0) {
-                    what += 'Move <strong>' + moves.length + '</strong> in progress.';
+                    var turn = (moves.length % 2 === 1) ? 'White' : 'Black';
+                    what += 'Move <strong>' + moves.length + '</strong>, <strong>' + turn + '</strong> to move.';
                 } else {
                     what += 'New game started.';
                 }
@@ -1487,6 +1487,7 @@
 
         function scheduleEval() {
             clearTimeout(evalTimer);
+            currentAnalysisId++;
             evalTimer = setTimeout(function() {
                 doEval(false);
             }, 500);
@@ -1507,6 +1508,8 @@
             // Show loading
             $('#analysis-loading').show();
 
+            var myAnalysisId = currentAnalysisId;
+
             // Eval request
             $.ajax({
                 url: API + '/api/train/evaluate',
@@ -1515,6 +1518,7 @@
                 data: JSON.stringify({fen: fen}),
                 timeout: 10000,
                 success: function(res) {
+                    if (myAnalysisId !== currentAnalysisId) return; // stale
                     var cp = 0;
                     if (res.stockfish && res.stockfish.centipawns != null) {
                         cp = res.stockfish.centipawns;
@@ -1540,13 +1544,17 @@
                 data: JSON.stringify({fen: fen}),
                 timeout: 20000,
                 success: function(analysis) {
+                    if (myAnalysisId !== currentAnalysisId) return; // stale
                     renderAnalysis(analysis);
                 },
                 error: function() {
+                    if (myAnalysisId !== currentAnalysisId) return; // stale
                     $('#analysis-body').html('<tr><td colspan="4" style="color: var(--text-muted); text-align: center; padding: 12px;">Analysis timeout</td></tr>');
                 },
                 complete: function() {
-                    $('#analysis-loading').hide();
+                    if (myAnalysisId === currentAnalysisId) {
+                        $('#analysis-loading').hide();
+                    }
                     isAnalyzing = false;
                 }
             });
@@ -1565,12 +1573,23 @@
 
         function renderAnalysis(analysis) {
             if (!analysis || !analysis.move_analysis) return;
-            var moves = analysis.move_analysis.slice(0, 8);
+
+            // Deduplicate by SAN (castling variants, en passant aliases)
+            var seenSan = {};
+            var moves = [];
+            for (var k = 0; k < analysis.move_analysis.length && moves.length < 8; k++) {
+                var san = analysis.move_analysis[k].san;
+                if (!seenSan[san]) {
+                    seenSan[san] = true;
+                    moves.push(analysis.move_analysis[k]);
+                }
+            }
+
             if (moves.length === 0) {
                 $('#analysis-body').html('<tr><td colspan="4" style="color: var(--text-muted); text-align: center; padding: 12px;">No analysis</td></tr>');
                 return;
             }
-        
+
             var bestEval = moves[0].evaluation;
             var body = document.getElementById('analysis-body');
             body.innerHTML = '';
