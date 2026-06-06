@@ -246,6 +246,9 @@ def _start_side_games_on_boot():
 
 def send_sse(data, event=None):
     global sse_clients
+    # Auto-use data['type'] as event name if not explicitly provided
+    if event is None and 'type' in data:
+        event = data['type']
     if event:
         msg = f"event: {event}\n"
         msg += f"data: {json.dumps(data)}\n\n"
