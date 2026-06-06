@@ -546,6 +546,25 @@ def train_status():
     
     status['save_interval'] = 'every 2 games'
     status['hf_upload_interval'] = 'every 50 training steps'
+    
+    # Include side game statuses (non-blocking)
+    side_statuses = {}
+    for gid in range(1, NUM_GAMES):
+        if game_locks[gid].acquire(timeout=0.5):
+            try:
+                side_statuses[str(gid)] = {
+                    'status': game_statuses[gid],
+                    'moves': list(game_moves[gid])
+                }
+            finally:
+                game_locks[gid].release()
+        else:
+            side_statuses[str(gid)] = {
+                'status': 'busy',
+                'moves': list(game_moves[gid])
+            }
+    status['side_games'] = side_statuses
+    
     return jsonify(status)
 
 @training_bp.route('/api/train/start', methods=['POST'])
@@ -1007,3 +1026,6 @@ def train_reset():
     with eval_cache_lock:
         eval_cache.clear()
     return jsonify({"status": "reset"})
+
+# Defer side game start until after all functions are defined
+_start_side_games_on_boot()
