@@ -194,6 +194,40 @@
             opacity: 1;
         }
 
+        /* Side game boards */
+        .side-boards {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .side-board {
+            width: 200px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .side-board-header {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .side-board-inner {
+            width: 200px;
+            height: 200px;
+        }
+        .side-board-footer {
+            font-size: 10px;
+            color: var(--text-muted);
+            padding: 4px 8px;
+            text-align: center;
+            border-top: 1px solid var(--border-color);
+        }
+
         /* Board wrapper */
         .board-wrapper {
             display: flex;
@@ -757,6 +791,20 @@
                 <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
             </div>
 
+            <!-- Side Game Boards -->
+            <div class="side-boards">
+                <div class="side-board" id="side-board-1">
+                    <div class="side-board-header">Game 2</div>
+                    <div class="side-board-inner" id="side-board-inner-1"></div>
+                    <div class="side-board-footer" id="side-board-status-1">Waiting...</div>
+                </div>
+                <div class="side-board" id="side-board-2">
+                    <div class="side-board-header">Game 3</div>
+                    <div class="side-board-inner" id="side-board-inner-2"></div>
+                    <div class="side-board-footer" id="side-board-status-2">Waiting...</div>
+                </div>
+            </div>
+
             <!-- Board -->
             <div class="board-wrapper">
                 <div class="player-info-bar top">
@@ -1002,6 +1050,7 @@
         var liveBoard = null;
         var allMoves = [];
         var currentViewIndex = 0;
+        var sideBoards = [null, null, null]; // index 0 unused; 1-2 = side game boards
         var autoFollow = true;
         var isPlaying = false;
         var playInterval = null;
@@ -1032,6 +1081,18 @@
                 draggable: false,
                 showNotation: true
             });
+            // Side boards (game_id 1 = side board 1, game_id 2 = side board 2)
+            for (var i = 1; i <= 2; i++) {
+                sideBoards[i] = Chessboard('side-board-inner-' + i, {
+                    position: 'start',
+                    orientation: 'white',
+                    pieceTheme: function (piece) {
+                        return '/static/img/chesspieces/wikipedia/' + piece + '.png';
+                    },
+                    draggable: false,
+                    showNotation: true
+                });
+            }
         }
 
         function buildFenCache(moves) {
@@ -1638,6 +1699,38 @@
             }
         }
 
+        /* ---------- Side Boards ---------- */
+
+        function fenFromMoves(moves) {
+            var c = new Chess();
+            for (var i = 0; i < moves.length; i++) {
+                try { c.move(moves[i]); } catch(e) { break; }
+            }
+            return c.fen();
+        }
+
+        function renderSideBoard(data) {
+            var gid = data.game_id;
+            if (!sideBoards[gid]) return;
+            // Compute FEN from moves
+            var fen = '';
+            if (data.fen) {
+                fen = data.fen;
+            } else if (data.moves) {
+                fen = fenFromMoves(data.moves);
+            }
+            if (fen) {
+                sideBoards[gid].position(fen);
+            }
+            // Update status
+            var moveCount = data.moves ? data.moves.length : 0;
+            var statusText = moveCount + ' moves';
+            if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
+                statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
+            }
+            $('#side-board-status-' + gid).text(statusText);
+        }
+
         /* ---------- SSE ---------- */
 
         function connectSSE() {
@@ -1654,6 +1747,12 @@
                 });
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
+                    // Side games (game_id 1 or 2) → render on mini boards
+                    if (data.game_id && (data.game_id === 1 || data.game_id === 2)) {
+                        renderSideBoard(data);
+                        return;
+                    }
+                    // Main game (game_id 0 or absent)
                     if (data.moves) {
                         allMoves = data.moves;
                         moveQualities = {};

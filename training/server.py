@@ -26,14 +26,25 @@ _lock = threading.Lock()
 recent_games = []
 sse_clients = set()
 sse_clients_lock = threading.Lock()
-current_game_moves = []
+# ---- GAME STATE ----
+# Game 0 = main game. Games 1-2 = side games (self-play only, reduced MCTS).
+current_game_moves = []  # legacy: still used for main game status endpoint
 current_game_status = "idle"
 
-# ---- SINGLE SHARED STOCKFISH ----
+NUM_GAMES = 3  # 1 main + 2 side games
+# Per-game state
+game_moves = [[] for _ in range(NUM_GAMES)]
+game_fens = ['' for _ in range(NUM_GAMES)]
+game_statuses = ['idle' for _ in range(NUM_GAMES)]
+game_locks = [threading.Lock() for _ in range(NUM_GAMES)]
+
+# Per-game SF instances for side games (main game still uses shared _stockfish_instance)
+_side_game_sfs = [None] * NUM_GAMES  # index 0 unused; 1-2 for side games
+
+# ---- SINGLE SHARED STOCKFISH (main game) ----
 _stockfish_instance = None
 _stockfish_lock = threading.Lock()
 
-# ... (lines 1-35 unchanged)
 # ---- EVAL CACHE ----
 # LRU cache: FEN -> {eval_cp, eval_norm, top_moves, move_analysis, timestamp}
 eval_cache = OrderedDict()
@@ -42,8 +53,6 @@ EVAL_CACHE_MAX = 2000
 EVAL_CACHE_TTL = 600  # seconds
 
 # ---- PERSISTENT STORAGE ----
-import json
-import os
 CACHE_FILE = "eval_cache.json"
 
 def load_persistent_cache():
@@ -239,16 +248,70 @@ def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
     except queue.Full:
         pass
 
-def update_game_state(moves):
+def update_game_state(moves, game_id=0):
+    """Update move state for a specific game slot. game_id=0 is main game."""
     global current_game_moves
-    with _lock:
-        current_game_moves = list(moves)
+    with game_locks[game_id]:
+        game_moves[game_id] = list(moves)
+        # Keep main game state in sync for legacy endpoints
+        if game_id == 0:
+            current_game_moves = list(moves)
+        # Track current FEN
+        board = chess.Board()
+        for san in moves:
+            try:
+                board.push_san(san)
+            except:
+                break
+        game_fens[game_id] = board.fen()
 
-def stream_game_progress():
-    """Stream game moves + current position eval via SSE."""
+def stream_game_progress(game_id=0):
+    """Stream game moves + current position eval via SSE for a specific game."""
     global current_game_moves, current_game_status
     
-    print(f'[SERVER] Starting stream_game_progress...', flush=True)
+    with game_locks[game_id]:
+        move_sans = list(game_moves[game_id])
+        status = game_statuses[game_id]
+    
+    board = chess.Board()
+    for san in move_sans:
+        try:
+            board.push_san(san)
+        except:
+            break
+    
+    fen = board.fen()
+    eval_data = get_cached_eval(fen) or compute_eval_with_stockfish(board)
+    
+    if game_id == 0:
+        send_sse({
+            'type': 'game_progress',
+            'game_id': game_id,
+            'moves': move_sans,
+            'status': status,
+            'fen': fen,
+            'eval': eval_data.get('eval_cp', 0),
+            'eval_norm': eval_data.get('eval_norm', 0.0),
+            'is_check': board.is_check(),
+            'is_checkmate': board.is_checkmate(),
+            'is_stalemate': board.is_stalemate()
+        })
+    else:
+        # Side games: lighter stream (no eval)
+        send_sse({
+            'type': 'game_progress',
+            'game_id': game_id,
+            'moves': move_sans,
+            'status': status,
+            'fen': fen,
+            'is_check': board.is_check(),
+            'is_checkmate': board.is_checkmate(),
+            'is_stalemate': board.is_stalemate()
+        })
+
+def stream_game_progress_main():
+    """Backward-compatible stream_game_progress for main game (game_id=0)."""
+    global current_game_moves, current_game_status
     
     with _lock:
         move_sans = list(current_game_moves)
@@ -261,13 +324,11 @@ def stream_game_progress():
         except Exception:
             break
     
-    print(f'[SERVER] Computing eval for {len(move_sans)} moves...', flush=True)
     eval_data = get_or_compute_eval(board)
     
     move_qualities = []
     b = chess.Board()
     
-    # Initial evaluation (position before any moves)
     current_pre_eval = get_or_compute_eval(b)
     
     for idx, san in enumerate(move_sans):
@@ -296,6 +357,7 @@ def stream_game_progress():
     
     send_sse({
         'type': 'game_progress',
+        'game_id': 0,
         'moves': move_sans,
         'fen': board.fen(),
         'status': status,
@@ -306,9 +368,11 @@ def stream_game_progress():
             'move_analysis': final_eval['move_analysis'],
         },
         'move_qualities': move_qualities,
+        'is_check': board.is_check(),
+        'is_checkmate': board.is_checkmate(),
+        'is_stalemate': board.is_stalemate(),
         'timestamp': time.time()
     })
-    print(f'[SERVER] Finished stream_game_progress', flush=True)
 
 
 def stream_status_update():
@@ -458,6 +522,8 @@ def train_start():
 def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
     try:
         print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}', flush=True)
+        # Start 2 side game workers
+        start_side_games(t)
         while t.running:
             for i in range(games_per_cycle):
                 if not t.running:
@@ -467,6 +533,9 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                 with _lock:
                     current_game_moves = []
                     current_game_status = "self-play"
+                with game_locks[0]:
+                    game_moves[0] = []
+                    game_statuses[0] = "self-play"
                 
                 send_sse({'type': 'game_start', 'mode': 'self-play'})
                 
@@ -514,7 +583,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                             'mode': game_data.get('mode', 'self-play'),
                             'timestamp': time.time()
                         })
-                    stream_game_progress()
+                    stream_game_progress_main()
                     stream_status_update()
                 
                 if use_stockfish and (i + 1) % 2 == 0:
@@ -538,7 +607,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                                     'mode': 'stockfish',
                                     'timestamp': time.time()
                                 })
-                            stream_game_progress()
+                            stream_game_progress_main()
                             stream_status_update()
                 
                 if (i + 1) % 2 == 0:
@@ -581,14 +650,80 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
             current_game_status = "checkpoint"
         print('[TRAIN] Checkpoint saved.', flush=True)
         time.sleep(0.1)
-        
     except Exception as e:
         print(f'[TRAIN] ERROR: {e}', flush=True)
         import traceback
         traceback.print_exc()
         with _lock:
             current_game_status = "error"
+    finally:
+        stop_side_games()
     
+# ---- SIDE GAME WORKERS ----
+# Each side game runs in its own thread with its own SF instance.
+def run_side_game(game_id, trainer):
+    """Run a self-play game in a side slot, streaming via SSE with game_id."""
+    from .selfplay import SelfPlayGame
+    
+    # Side games use reduced MCTS (150 sims vs 800 main) to preserve main game speed
+    side_mcts = max(150, trainer.selfplay.num_mcts_simulations // 4)
+    sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts)
+    
+    with game_locks[game_id]:
+        game_statuses[game_id] = 'self-play'
+        game_moves[game_id] = []
+    
+    send_sse({'type': 'game_start', 'game_id': game_id, 'mode': 'self-play'})
+    
+    game_data = sp.play(on_move=lambda moves: (
+        update_game_state(moves, game_id),
+        stream_game_progress(game_id)
+    ))
+    
+    # Feed into shared replay buffer
+    if game_data.get('examples'):
+        trainer.buffer.add(game_data['examples'])
+        trainer.games_played += 1
+    
+    with game_locks[game_id]:
+        game_statuses[game_id] = 'idle'
+    
+    send_sse({'type': 'game_end', 'game_id': game_id, 'result': game_data.get('result', '*')})
+
+
+# Global side game threads
+_side_game_threads = [None] * NUM_GAMES
+_side_game_running = [False] * NUM_GAMES
+
+
+def start_side_games(trainer):
+    """Start 2 side game workers (indices 1-2)."""
+    for gid in range(1, NUM_GAMES):
+        if _side_game_threads[gid] and _side_game_threads[gid].is_alive():
+            continue
+        _side_game_running[gid] = True
+        t = threading.Thread(target=side_game_loop, args=(gid, trainer), daemon=True)
+        _side_game_threads[gid] = t
+        t.start()
+        print(f'[SIDE-GAME] Started side game {gid}', flush=True)
+
+
+def stop_side_games():
+    """Stop all side game workers."""
+    for gid in range(1, NUM_GAMES):
+        _side_game_running[gid] = False
+        if _side_game_threads[gid]:
+            _side_game_threads[gid].join(timeout=5)
+            _side_game_threads[gid] = None
+
+
+def side_game_loop(game_id, trainer):
+    """Loop: play side games continuously until stopped."""
+    while _side_game_running[game_id] and trainer.running:
+        run_side_game(game_id, trainer)
+        time.sleep(0.5)
+
+
 @training_bp.route('/api/train/stop', methods=['POST'])
 def train_stop():
     t = get_trainer()
@@ -630,7 +765,7 @@ def train_play():
                 'timestamp': time.time()
             })
     
-    stream_game_progress()
+    stream_game_progress_main()
     return jsonify(game_data)
 
 @training_bp.route('/api/train/play-supervised', methods=['POST'])
@@ -668,8 +803,8 @@ def train_play_supervised():
             'timestamp': time.time()
         })
     
-    stream_game_progress()
-    
+    stream_game_progress_main()
+
     return jsonify({
         'moves': game_data.get('moves', []),
         'pgn': game_data.get('pgn', ''),
@@ -708,7 +843,7 @@ def train_play_stockfish():
                 'timestamp': time.time()
             })
     
-    stream_game_progress()
+    stream_game_progress_main()
     return jsonify(sf_game)
 
 @training_bp.route('/api/train/step', methods=['POST'])

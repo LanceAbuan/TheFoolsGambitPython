@@ -18,7 +18,7 @@ from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 
 SF_LEAF_BLEND = 0.6
-SF_LEAF_DEPTH = 10
+SF_LEAF_DEPTH = 11
 SF_EVAL_NOISE_SIGMA = 0.1
 
 RESIGN_THRESHOLD = -0.8  # NN value below this → resign
