@@ -35,6 +35,9 @@ class StockfishPlayer:
         self._hash_mb = hash_mb
         self._engine = self._create_engine()
         self._alive = True
+        # Incremental position cache — keeps SF's TT warm across consecutive moves
+        self._cached_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+        self._cached_board = chess.Board(self._cached_fen)
 
     # ---- internal helpers ----
 
@@ -77,7 +80,75 @@ class StockfishPlayer:
                 pass
             self._engine = self._create_engine()
             self._alive = True
+            self._cached_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+            self._cached_board = chess.Board(self._cached_fen)
             print('[SF] Engine restarted after crash', flush=True)
+
+    def _sync_engine_to_fen(self, fen):
+        """Sync the engine to the target FEN, reusing its TT when possible.
+
+        If the target FEN is reachable by pushing moves from the cached
+        position, incrementally play those moves so the transposition
+        table stays warm.  Otherwise, do a hard set_fen_position reset.
+        """
+        if fen == self._cached_fen:
+            return  # already at target
+
+        # Quick sanity check
+        try:
+            target_board = chess.Board(fen)
+        except Exception:
+            self._engine.set_fen_position(fen)
+            self._cached_fen = fen
+            self._cached_board = chess.Board(fen)
+            return
+
+        # Same side to move — check if positions are equivalent
+        if target_board.turn == self._cached_board.turn:
+            try:
+                if self._cached_board.board_fen() == target_board.board_fen() and \
+                   self._cached_board.castling_rights == target_board.castling_rights:
+                    self._cached_fen = fen
+                    self._cached_board = target_board
+                    return
+            except Exception:
+                pass
+
+        # Incremental: try playing 1-2 moves forward from cached position.
+        # This is the common case during live games (opponent just moved,
+        # or we jumped 1-2 moves forward in history).
+        try:
+            temp = self._cached_board.copy()
+            moves_to_play = []
+            for _ in range(2):
+                if temp.board_fen() == target_board.board_fen() and temp.turn == target_board.turn:
+                    break
+                found = None
+                for m in temp.legal_moves:
+                    temp.push(m)
+                    if temp.board_fen() == target_board.board_fen():
+                        found = m
+                        break
+                    temp.pop()
+                if found is None:
+                    break
+                moves_to_play.append(found)
+                temp.push(found)
+
+            if moves_to_play and temp.board_fen() == target_board.board_fen() and \
+               temp.turn == target_board.turn:
+                for m in moves_to_play:
+                    self._engine.set_fen_position(m.uci())
+                self._cached_fen = fen
+                self._cached_board = target_board
+                return
+        except Exception:
+            pass
+
+        # Fallback: hard reset
+        self._engine.set_fen_position(fen)
+        self._cached_fen = fen
+        self._cached_board = target_board
 
     def _ensure_multipv_1(self):
         """Reset MultiPV to 1 — critical cleanup after batch operations."""
@@ -128,7 +199,7 @@ class StockfishPlayer:
     def get_move(self, board, depth=None):
         """Get Stockfish's best move as UCI string."""
         def _inner():
-            self._engine.set_fen_position(board.fen())
+            self._sync_engine_to_fen(board.fen())
             if depth:
                 self._engine.set_depth(depth)
             return self._engine.get_best_move()
@@ -148,7 +219,7 @@ class StockfishPlayer:
     def get_evaluation(self, board):
         """Get Stockfish's evaluation in centipawns (positive = white advantage)."""
         def _inner():
-            self._engine.set_fen_position(board.fen())
+            self._sync_engine_to_fen(board.fen())
             info = self._engine.get_evaluation()
             val = 0
             if info['type'] == 'cp':
@@ -197,7 +268,7 @@ class StockfishPlayer:
                 return {}
 
             num_moves = len(legal_moves)
-            self._engine.set_fen_position(board.fen())
+            self._sync_engine_to_fen(board.fen())
             if depth:
                 self._engine.set_depth(depth)
 
@@ -292,7 +363,7 @@ class StockfishPlayer:
                 return []
 
             actual_num = min(num_moves, legal_count)
-            self._engine.set_fen_position(board.fen())
+            self._sync_engine_to_fen(board.fen())
             self._engine.update_engine_parameters({"MultiPV": actual_num})
 
             try:
@@ -330,22 +401,19 @@ class StockfishPlayer:
             return []
 
     def analyze_position(self, board):
-        """Full position analysis for UI display."""
+        """Full position analysis for UI display.
+
+        Single search: uses evaluate_legal_moves_batch for all moves,
+        then picks top_moves from the same results. No redundant searches.
+        """
         def _inner():
-            pos_eval = self._engine.get_evaluation()
-            val = 0
-            if pos_eval['type'] == 'cp':
-                val = pos_eval['value']
-            elif pos_eval['type'] == 'mate':
-                val = pos_eval['value'] * 10000
-            if board.turn == chess.BLACK:
-                val = -val
-            
-            top_moves = self.get_top_moves(board, num_moves=5)
-            
             legal_moves = list(board.legal_moves)
             eval_map = self.evaluate_legal_moves_batch(board, depth=self._depth)
-            
+
+            # Position eval = best move eval (from the single search)
+            best_cp = max(eval_map.values()) if eval_map else 0
+            val = best_cp if board.turn == chess.WHITE else -best_cp
+
             move_analysis = []
             for m in legal_moves:
                 uci = m.uci()
@@ -356,16 +424,29 @@ class StockfishPlayer:
                     'evaluation': cp,
                 })
             move_analysis.sort(key=lambda x: x['evaluation'], reverse=True)
-            
+
+            # Top moves come from the same eval_map — no second search needed
+            top_moves = []
+            seen = set()
+            for entry in move_analysis[:5]:
+                san = entry['san']
+                if san not in seen:
+                    seen.add(san)
+                    top_moves.append({
+                        'san': san,
+                        'uci': entry['uci'],
+                        'evaluation': entry['evaluation'],
+                    })
+
             return {
                 'evaluation': val,
                 'evaluation_normalized': max(-1.0, min(1.0, val / 2000.0)),
-                'depth': self._engine.get_depth() if hasattr(self._engine, 'get_depth') else self._depth,
+                'depth': self._depth,
                 'top_moves': top_moves,
                 'move_analysis': move_analysis[:10],
                 'num_legal_moves': len(legal_moves),
             }
-        
+
         try:
             return self._safe_call(_inner)
         except Exception:

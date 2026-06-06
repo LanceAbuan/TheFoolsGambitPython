@@ -112,7 +112,7 @@
         .main {
             display: flex;
             justify-content: center;
-            align-items: stretch;
+            align-items: center;
             gap: 24px;
             max-width: 1400px;
             margin: 0 auto;
@@ -135,9 +135,8 @@
 
         /* Eval bar (Chess.com style, vertical) */
         .eval-bar-container {
-            width: 14px;
-            min-height: 480px;
-            max-height: 480px;
+            width: 16px;
+            height: 672px;
             display: flex;
             flex-direction: column;
             position: relative;
@@ -146,11 +145,12 @@
         }
         .eval-bar-track {
             flex: 1;
-            background: #3d3935;
-            border-radius: 7px;
+            background: #e8e8e8;
+            border: 1px solid #333333;
+            border-radius: 3px;
             overflow: hidden;
             position: relative;
-            margin: 4px 0;
+            margin: 0;
         }
         .eval-bar-fill {
             position: absolute;
@@ -158,25 +158,29 @@
             left: 0;
             right: 0;
             background: #ffffff;
-            transition: height 0.6s ease;
-            border-radius: 0 0 7px 7px;
+            transition: height 0.3s ease;
+            border-radius: 0;
         }
         .eval-bar-fill.negative {
-            bottom: auto;
-            top: 0;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
             background: #1a1a1a;
-            border-radius: 7px 7px 0 0;
+            transition: height 0.3s ease;
+            border-radius: 0;
         }
         .eval-bar-top, .eval-bar-bottom {
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
             color: var(--text-muted);
             text-align: center;
             padding: 2px 0;
+            font-family: 'Inter', monospace;
         }
         .eval-bar-value {
             position: absolute;
-            left: 22px;
+            left: 24px;
             top: 50%;
             transform: translateY(-50%);
             font-size: 10px;
@@ -198,7 +202,7 @@
             display: flex;
             flex-direction: column;
             gap: 0;
-            width: 480px;
+            width: 672px;
         }
         .player-info-bar {
             display: flex;
@@ -206,11 +210,12 @@
             justify-content: space-between;
             padding: 6px 10px;
             background: var(--bg-secondary);
-            border-radius: 6px;
+            border-radius: 0;
             margin: 0 0;
+            width: 672px;
         }
-        .player-info-bar.top { margin-bottom: 4px; border-radius: 6px 6px 0 0; }
-        .player-info-bar.bottom { margin-top: 4px; border-radius: 0 0 6px 6px; }
+        .player-info-bar.top { margin-bottom: 0; border-radius: 0; }
+        .player-info-bar.bottom { margin-top: 0; border-radius: 0; }
         .player-name {
             font-size: 13px;
             font-weight: 700;
@@ -236,7 +241,7 @@
 
         #live-board {
             width: 100%;
-            max-width: 480px;
+            max-width: 672px;
             border-radius: 0;
         }
 
@@ -299,8 +304,7 @@
                 flex-direction: column;
                 overflow-y: auto;
                 overflow-x: hidden;
-                height: auto;
-                align-self: stretch;
+                height: 672px;
                 margin: 0;
                 border-radius: 8px;
                 padding: 10px;
@@ -423,10 +427,11 @@
 
         /* Analysis section */
         .analysis-section {
-            max-height: 240px;
+            height: 200px;
             overflow-y: auto;
             overflow-x: hidden;
             border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
         }
         .analysis-section::-webkit-scrollbar { width: 4px; }
         .analysis-section::-webkit-scrollbar-track { background: transparent; }
@@ -684,8 +689,8 @@
             gap: 16px;
         }
         .fs-eval-bar {
-            min-height: 640px;
-            max-height: 640px;
+            min-height: 672px;
+            max-height: 672px;
             width: 16px;
         }
         .fs-eval-bar .eval-bar-track {
@@ -699,11 +704,11 @@
             display: flex;
             flex-direction: column;
             gap: 0;
-            width: 640px;
+            width: 672px;
         }
         #fullscreen-board {
             width: 100%;
-            max-width: 640px;
+            max-width: 672px;
         }
         .fullscreen-nav {
             display: flex;
@@ -717,8 +722,9 @@
             .main { flex-direction: column; align-items: center; }
             .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; height: auto; max-height: 600px; }
             .board-area { padding: 8px; flex-direction: column; align-items: center; }
-            .board-wrapper { width: 100%; max-width: 480px; }
+            .board-wrapper { width: 100%; max-width: 400px; }
             .eval-bar-container { min-height: 320px; max-height: 320px; }
+            .player-info-bar { width: 100% !important; max-width: 400px !important; }
             .move-list-section { max-height: 160px; }
         }
     </style>
@@ -746,11 +752,11 @@
         <div class="board-area">
            <!-- Eval Bar -->
             <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
-                <div class="eval-bar-top" id="eval-black-label">B</div>
+                <div class="eval-bar-top" id="eval-black-label"></div>
                 <div class="eval-bar-track">
                     <div class="eval-bar-fill" id="eval-bar-fill" style="height: 50%;"></div>
                 </div>
-                <div class="eval-bar-bottom" id="eval-white-label">W</div>
+                <div class="eval-bar-bottom" id="eval-white-label"></div>
                 <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
             </div>
 
@@ -780,7 +786,7 @@
                     <span class="move-label" id="move-label">Move 0/0</span>
                     <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
                     <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Jump to last move">&#9658;</button>
-                    <button class="nav-btn play-btn" id="btn-play" onclick="window.togglePlay()" title="Auto-play">&#9654; Play</button>
+
                 </div>
             </div>
         </div>
@@ -875,11 +881,11 @@
             <div class="fullscreen-body">
                 <!-- FS Eval Bar -->
                 <div class="eval-bar-container fs-eval-bar">
-                    <div class="eval-bar-top" id="fs-eval-black">B</div>
+                    <div class="eval-bar-top" id="fs-eval-black"></div>
                     <div class="eval-bar-track">
                         <div class="eval-bar-fill" id="fs-eval-bar-fill" style="height: 50%;"></div>
                     </div>
-                    <div class="eval-bar-bottom" id="fs-eval-white">W</div>
+                    <div class="eval-bar-bottom" id="fs-eval-white"></div>
                     <div class="eval-bar-value" id="fs-eval-bar-cp">0 cp</div>
                 </div>
                 <div class="fullscreen-board-wrapper">
@@ -1007,6 +1013,7 @@
         var moveQualities = {};
         var currentFen = '';
         var isAnalyzing = false;
+        var currentAnalysisId = 0;
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -1290,30 +1297,26 @@
 
         /* ---------- Eval Bar (Chess.com style) ---------- */
 
+        function formatEval(cp) {
+            if (Math.abs(cp) >= 10000) return (cp >= 0 ? '+' : '-') + 'M' + Math.round(Math.abs(cp) / 100);
+            return (cp >= 0 ? '+' : '') + (cp / 100).toFixed(2);
+        }
+
         function updateEvalBar(evalNormalized, cp) {
             var pct = Math.max(0, Math.min(100, (evalNormalized + 1) * 50));
             var fill = document.getElementById('eval-bar-fill');
             fill.style.height = pct + '%';
             fill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
 
-            // Always display in centipawns for consistency
-            var displayVal;
-            if (Math.abs(cp) >= 10000) {
-                displayVal = 'M#' + Math.round(Math.abs(cp) / 100);
-            } else {
-                displayVal = Math.round(cp);
-            }
-            var advantage = Math.abs(cp) / 100;
+            var cpStr = formatEval(cp);
             if (pct >= 50) {
-                $('#eval-white-label').text('W +cp' + displayVal);
-                $('#eval-black-label').text('B +cp0');
+                $('#eval-white-label').text(cpStr);
+                $('#eval-black-label').text('');
             } else {
-                $('#eval-black-label').text('B +cp' + displayVal);
-                $('#eval-white-label').text('W +cp0');
+                $('#eval-black-label').text(cpStr);
+                $('#eval-white-label').text('');
             }
-            var cpText = (cp >= 0 ? '+' : '') + Math.round(cp) + ' cp';
-            if (Math.abs(cp) >= 10000) cpText = 'M#' + Math.round(Math.abs(cp) / 100);
-            $('#eval-bar-cp').text(cpText);
+            $('#eval-bar-cp').text(cpStr);
 
             // Sync fullscreen eval bar
             var fsFill = document.getElementById('fs-eval-bar-fill');
@@ -1321,15 +1324,14 @@
                 fsFill.style.height = pct + '%';
                 fsFill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
             }
-            var fsAdvantage = advantage;
             if (pct >= 50) {
-                $('#fs-eval-white').text('W +' + displayVal);
-                $('#fs-eval-black').text('B +0.0');
+                $('#fs-eval-white').text(cpStr);
+                $('#fs-eval-black').text('');
             } else {
-                $('#fs-eval-black').text('B +' + displayVal);
-                $('#fs-eval-white').text('W +0.0');
+                $('#fs-eval-black').text(cpStr);
+                $('#fs-eval-white').text('');
             }
-            $('#fs-eval-bar-cp').text(cpText);
+            $('#fs-eval-bar-cp').text(cpStr);
         }
 
         /* ---------- Status ---------- */
@@ -1400,7 +1402,8 @@
                     what = 'AI is <strong>playing</strong> against Stockfish (critic-guided). ';
                 }
                 if (moves.length > 0) {
-                    what += 'Move <strong>' + moves.length + '</strong> in progress.';
+                    var turn = (moves.length % 2 === 1) ? 'White' : 'Black';
+                    what += 'Move <strong>' + moves.length + '</strong>, <strong>' + turn + '</strong> to move.';
                 } else {
                     what += 'New game started.';
                 }
@@ -1488,6 +1491,7 @@
 
         function scheduleEval() {
             clearTimeout(evalTimer);
+            currentAnalysisId++;
             evalTimer = setTimeout(function() {
                 doEval(false);
             }, 500);
@@ -1508,6 +1512,8 @@
             // Show loading
             $('#analysis-loading').show();
 
+            var myAnalysisId = currentAnalysisId;
+
             // Eval request
             $.ajax({
                 url: API + '/api/train/evaluate',
@@ -1516,6 +1522,7 @@
                 data: JSON.stringify({fen: fen}),
                 timeout: 10000,
                 success: function(res) {
+                    if (myAnalysisId !== currentAnalysisId) return; // stale
                     var cp = 0;
                     if (res.stockfish && res.stockfish.centipawns != null) {
                         cp = res.stockfish.centipawns;
@@ -1541,13 +1548,17 @@
                 data: JSON.stringify({fen: fen}),
                 timeout: 20000,
                 success: function(analysis) {
+                    if (myAnalysisId !== currentAnalysisId) return; // stale
                     renderAnalysis(analysis);
                 },
                 error: function() {
+                    if (myAnalysisId !== currentAnalysisId) return; // stale
                     $('#analysis-body').html('<tr><td colspan="4" style="color: var(--text-muted); text-align: center; padding: 12px;">Analysis timeout</td></tr>');
                 },
                 complete: function() {
-                    $('#analysis-loading').hide();
+                    if (myAnalysisId === currentAnalysisId) {
+                        $('#analysis-loading').hide();
+                    }
                     isAnalyzing = false;
                 }
             });
@@ -1566,12 +1577,23 @@
 
         function renderAnalysis(analysis) {
             if (!analysis || !analysis.move_analysis) return;
-            var moves = analysis.move_analysis.slice(0, 8);
+
+            // Deduplicate by SAN (castling variants, en passant aliases)
+            var seenSan = {};
+            var moves = [];
+            for (var k = 0; k < analysis.move_analysis.length && moves.length < 8; k++) {
+                var san = analysis.move_analysis[k].san;
+                if (!seenSan[san]) {
+                    seenSan[san] = true;
+                    moves.push(analysis.move_analysis[k]);
+                }
+            }
+
             if (moves.length === 0) {
                 $('#analysis-body').html('<tr><td colspan="4" style="color: var(--text-muted); text-align: center; padding: 12px;">No analysis</td></tr>');
                 return;
             }
-        
+
             var bestEval = moves[0].evaluation;
             var body = document.getElementById('analysis-body');
             body.innerHTML = '';
