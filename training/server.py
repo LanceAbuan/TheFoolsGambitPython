@@ -4,11 +4,12 @@ import sys
 import json
 import time
 import threading
+import queue
 import chess
-from flask import Blueprint, jsonify, request, Response
 from datetime import datetime
 from collections import OrderedDict
 from huggingface_hub import HfApi, login
+from flask import Blueprint, jsonify, request, Response
 
 import torch
 torch.backends.cudnn.benchmark = False
@@ -24,8 +25,7 @@ trainer = None
 training_thread = None
 _lock = threading.Lock()
 recent_games = []
-sse_clients = set()
-sse_clients_lock = threading.Lock()
+sse_event_queue = queue.Queue(maxsize=200)
 # ---- GAME STATE ----
 # Game 0 = main game. Games 1-2 = side games (self-play only, reduced MCTS).
 current_game_moves = []  # legacy: still used for main game status endpoint
@@ -212,15 +212,12 @@ def get_stockfish():
 
 # ---- EAGER INIT: trainer + side games live on boot ----
 def _eager_init():
-    """Initialize the trainer and start side games immediately on server boot."""
+    """Initialize the trainer immediately on server boot."""
     global trainer
     try:
         sf = get_stockfish()
         trainer = Trainer(stockfish=sf)
         print('[BOOT] Trainer initialized eagerly', flush=True)
-        # Start side game workers — they'll spin continuously
-        start_side_games(trainer)
-        print('[BOOT] Side games started on boot', flush=True)
     except Exception as e:
         print(f'[BOOT] Eager init failed: {e}', flush=True)
         import traceback
@@ -248,31 +245,17 @@ def _start_side_games_on_boot():
             print(f'[BOOT] Side game start failed: {e}', flush=True)
 
 def send_sse(data, event=None):
-    global sse_clients
-    # Auto-use data['type'] as event name if not explicitly provided
-    if event is None and 'type' in data:
-        event = data['type']
-    if event:
-        msg = f"event: {event}\n"
-        msg += f"data: {json.dumps(data)}\n\n"
-    else:
-        msg = f"data: {json.dumps(data)}\n\n"
-    
-    with sse_clients_lock:
-        clients = list(sse_clients)
-    
-    to_remove = set()
-    for client in clients:
-        try:
-            client.settimeout(0.1)
-            client.send(msg)
-        except Exception:
-            to_remove.add(client)
-    
-    if to_remove:
-        with sse_clients_lock:
-            for client in to_remove:
-                sse_clients.discard(client)
+    # Auto-use data["type"] as event name if not explicitly provided
+    if event is None and "type" in data:
+        event = data["type"]
+    # Push to queue; generator will yield it
+    try:
+        sse_event_queue.put_nowait({
+            "event": event,
+            "data": json.dumps(data)
+        })
+    except queue.Full:
+        pass  # Drop if queue full
 
 import queue
 mcts_progress_queue = queue.Queue(maxsize=100)
@@ -483,29 +466,27 @@ def mcts_select_move(board):
     move_idx = np.random.choice(len(legal_moves), p=probs)
     return legal_moves[move_idx].uci()
 
-@training_bp.route('/api/train/stream')
+@training_bp.route("/api/train/stream")
 def sse_stream():
     """SSE endpoint for real-time training updates."""
-    client_socket = request.environ.get('werkzeug.socket')
-    sse_clients.add(client_socket)
-    
     def generate():
         import time as _time
-        try:
-            while True:
-                yield ''
-                _time.sleep(0.5)
-        except GeneratorExit:
-            pass
-        finally:
-            sse_clients.discard(client_socket)
-    
-    resp = Response(generate(), mimetype='text/event-stream')
-    resp.headers['Cache-Control'] = 'no-cache'
-    resp.headers['X-Accel-Buffering'] = 'no'
-    resp.headers['Connection'] = 'keep-alive'
-    resp.headers['X-Content-Type-Options'] = 'nosniff'
+        while True:
+            try:
+                item = sse_event_queue.get(timeout=0.5)
+                if item.get("event"):
+                    yield f"event: {item['event']}\ndata: {item['data']}\n\n"
+                else:
+                    yield f"data: {item['data']}\n\n"
+            except queue.Empty:
+                yield ": keepalive\n\n"
+    resp = Response(generate(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    resp.headers["Connection"] = "close"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
     return resp
+
 
 @training_bp.route('/api/train/status')
 def train_status():
