@@ -38,6 +38,9 @@ game_fens = ['' for _ in range(NUM_GAMES)]
 game_statuses = ['idle' for _ in range(NUM_GAMES)]
 game_locks = [threading.Lock() for _ in range(NUM_GAMES)]
 
+# Lock-free snapshots for HTTP status endpoint (written by side games after releasing locks)
+side_game_snapshots = [{'status': 'idle', 'moves': []} for _ in range(NUM_GAMES)]
+
 # Per-game SF instances for side games (main game still uses shared _stockfish_instance)
 _side_game_sfs = [None] * NUM_GAMES  # index 0 unused; 1-2 for side games
 
@@ -73,24 +76,6 @@ def save_persistent_cache(cache):
 
 # Initialize persistent cache
 persistent_cache = load_persistent_cache()
-
-# ---- EAGER INIT: trainer + side games live on boot ----
-def _eager_init():
-    """Initialize the trainer and start side games immediately on server boot."""
-    global trainer
-    try:
-        sf = get_stockfish()
-        trainer = Trainer(stockfish=sf)
-        print('[BOOT] Trainer initialized eagerly', flush=True)
-        # Start side game workers — they'll spin continuously
-        start_side_games(trainer)
-        print('[BOOT] Side games started on boot', flush=True)
-    except Exception as e:
-        print(f'[BOOT] Eager init failed: {e}', flush=True)
-        import traceback
-        traceback.print_exc()
-
-_eager_init()
 
 # ---- Default play mode ----
 play_mode = 'critic'
@@ -210,7 +195,7 @@ def get_stockfish():
     with _stockfish_lock:
         if _stockfish_instance is None:
             try:
-                _stockfish_instance = StockfishPlayer(depth=11, threads=2, hash_mb=256)
+                _stockfish_instance = StockfishPlayer(depth=10, threads=2, hash_mb=256)
                 print('[SF] Shared Stockfish instance created', flush=True)
             except Exception as e:
                 print(f'[SF] Failed to create Stockfish: {e}', flush=True)
@@ -225,8 +210,48 @@ def get_stockfish():
                 return None
         return _stockfish_instance
 
+# ---- EAGER INIT: trainer + side games live on boot ----
+def _eager_init():
+    """Initialize the trainer and start side games immediately on server boot."""
+    global trainer
+    try:
+        sf = get_stockfish()
+        trainer = Trainer(stockfish=sf)
+        print('[BOOT] Trainer initialized eagerly', flush=True)
+        # Start side game workers — they'll spin continuously
+        start_side_games(trainer)
+        print('[BOOT] Side games started on boot', flush=True)
+    except Exception as e:
+        print(f'[BOOT] Eager init failed: {e}', flush=True)
+        import traceback
+        traceback.print_exc()
+
+_eager_init()
+
+# Defer side games until after start_side_games is defined
+# (Called at bottom of file once all functions are in scope)
+
+# Placeholder — will be set at module bottom after start_side_games is defined
+_side_games_started = False
+
+def _start_side_games_on_boot():
+    """Called at module bottom once start_side_games is defined."""
+    global _side_games_started
+    if _side_games_started:
+        return
+    if trainer is not None:
+        try:
+            start_side_games(trainer)
+            print('[BOOT] Side games started on boot', flush=True)
+            _side_games_started = True
+        except Exception as e:
+            print(f'[BOOT] Side game start failed: {e}', flush=True)
+
 def send_sse(data, event=None):
     global sse_clients
+    # Auto-use data['type'] as event name if not explicitly provided
+    if event is None and 'type' in data:
+        event = data['type']
     if event:
         msg = f"event: {event}\n"
         msg += f"data: {json.dumps(data)}\n\n"
@@ -282,6 +307,9 @@ def update_game_state(moves, game_id=0):
             except:
                 break
         game_fens[game_id] = board.fen()
+    # Write lock-free snapshot for HTTP status endpoint (outside lock)
+    if game_id > 0:
+        side_game_snapshots[game_id] = {'status': 'playing', 'moves': list(moves)}
 
 def stream_game_progress(game_id=0):
     """Stream game moves + current position eval via SSE for a specific game."""
@@ -401,14 +429,14 @@ def stream_status_update():
         current_game_moves_snapshot = list(current_game_moves)
         current_game_status_snapshot = current_game_status
 
-    # Include side game statuses
+    # Use lock-free snapshots for side games (no deadlock)
     side_statuses = {}
     for gid in range(1, NUM_GAMES):
-        with game_locks[gid]:
-            side_statuses[str(gid)] = {
-                'status': game_statuses[gid],
-                'moves': list(game_moves[gid])
-            }
+        snap = side_game_snapshots[gid]
+        side_statuses[str(gid)] = {
+            'status': snap['status'],
+            'moves': list(snap['moves'])
+        }
     
     # Use current_game_status as the authoritative status source
     status['status'] = current_game_status_snapshot
@@ -519,6 +547,17 @@ def train_status():
     
     status['save_interval'] = 'every 2 games'
     status['hf_upload_interval'] = 'every 50 training steps'
+    
+    # Use lock-free snapshots for side games (no deadlock)
+    side_statuses = {}
+    for gid in range(1, NUM_GAMES):
+        snap = side_game_snapshots[gid]
+        side_statuses[str(gid)] = {
+            'status': snap['status'],
+            'moves': list(snap['moves'])
+        }
+    status['side_games'] = side_statuses
+    
     return jsonify(status)
 
 @training_bp.route('/api/train/start', methods=['POST'])
@@ -980,3 +1019,6 @@ def train_reset():
     with eval_cache_lock:
         eval_cache.clear()
     return jsonify({"status": "reset"})
+
+# Defer side game start until after all functions are defined
+_start_side_games_on_boot()
