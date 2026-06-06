@@ -334,21 +334,21 @@
         .what-happening strong { color: var(--text-secondary); }
 
         /* ====== RIGHT SIDEBAR ====== */
-            .sidebar {
-                width: 310px;
-                min-width: 310px;
-                background: var(--bg-secondary);
-                border-left: 1px solid var(--border-color);
-                display: flex;
-                flex-direction: column;
-                overflow-y: auto;
-                overflow-x: hidden;
-                height: 672px;
-                margin: 0;
-                border-radius: 8px;
-                padding: 10px;
-                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            }
+        .sidebar {
+            width: 350px;
+            min-width: 350px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+            height: 672px;
+            margin: 0;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
             .sidebar::-webkit-scrollbar { width: 6px; }
             .sidebar::-webkit-scrollbar-track { background: transparent; }
             .sidebar::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
@@ -1040,7 +1040,8 @@
         document.addEventListener('mouseover', function(e) {
             var el = e.target;
             if (el.hasAttribute('data-tooltip') || el.hasAttribute('data-tooltip-bottom')) {
-                delay = setTimeout(function() { show(el); }, 200);
+                 delay = setTimeout(function() { show(el); }, 100);
+
             } else {
                 if (delay) { clearTimeout(delay); delay = null; }
                 hide();
@@ -1376,11 +1377,11 @@
         }
 
         function updateEvalBar(evalNormalized, cp) {
-            var pct = Math.max(0, Math.min(100, (evalNormalized + 1) * 50));
+            var pct = Math.max(0, Math.min(100, 50 + (evalNormalized * 200)));
             var fill = document.getElementById('eval-bar-fill');
             fill.style.height = pct + '%';
             fill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
-
+            
             var cpStr = formatEval(cp);
             if (pct >= 50) {
                 $('#eval-white-label').text(cpStr);
@@ -1390,7 +1391,7 @@
                 $('#eval-white-label').text('');
             }
             $('#eval-bar-cp').text(cpStr);
-
+            
             // Sync fullscreen eval bar
             var fsFill = document.getElementById('fs-eval-bar-fill');
             if (fsFill) {
