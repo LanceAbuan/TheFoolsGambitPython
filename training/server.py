@@ -38,6 +38,9 @@ game_fens = ['' for _ in range(NUM_GAMES)]
 game_statuses = ['idle' for _ in range(NUM_GAMES)]
 game_locks = [threading.Lock() for _ in range(NUM_GAMES)]
 
+# Lock-free snapshots for HTTP status endpoint (written by side games after releasing locks)
+side_game_snapshots = [{'status': 'idle', 'moves': []} for _ in range(NUM_GAMES)]
+
 # Per-game SF instances for side games (main game still uses shared _stockfish_instance)
 _side_game_sfs = [None] * NUM_GAMES  # index 0 unused; 1-2 for side games
 
@@ -304,6 +307,9 @@ def update_game_state(moves, game_id=0):
             except:
                 break
         game_fens[game_id] = board.fen()
+    # Write lock-free snapshot for HTTP status endpoint (outside lock)
+    if game_id > 0:
+        side_game_snapshots[game_id] = {'status': 'playing', 'moves': list(moves)}
 
 def stream_game_progress(game_id=0):
     """Stream game moves + current position eval via SSE for a specific game."""
@@ -423,22 +429,14 @@ def stream_status_update():
         current_game_moves_snapshot = list(current_game_moves)
         current_game_status_snapshot = current_game_status
 
-    # Include side game statuses (non-blocking to avoid deadlock)
+    # Use lock-free snapshots for side games (no deadlock)
     side_statuses = {}
     for gid in range(1, NUM_GAMES):
-        if game_locks[gid].acquire(timeout=0.5):
-            try:
-                side_statuses[str(gid)] = {
-                    'status': game_statuses[gid],
-                    'moves': list(game_moves[gid])
-                }
-            finally:
-                game_locks[gid].release()
-        else:
-            side_statuses[str(gid)] = {
-                'status': 'busy',
-                'moves': list(game_moves[gid])  # best-effort snapshot
-            }
+        snap = side_game_snapshots[gid]
+        side_statuses[str(gid)] = {
+            'status': snap['status'],
+            'moves': list(snap['moves'])
+        }
     
     # Use current_game_status as the authoritative status source
     status['status'] = current_game_status_snapshot
@@ -550,22 +548,14 @@ def train_status():
     status['save_interval'] = 'every 2 games'
     status['hf_upload_interval'] = 'every 50 training steps'
     
-    # Include side game statuses (non-blocking)
+    # Use lock-free snapshots for side games (no deadlock)
     side_statuses = {}
     for gid in range(1, NUM_GAMES):
-        if game_locks[gid].acquire(timeout=0.5):
-            try:
-                side_statuses[str(gid)] = {
-                    'status': game_statuses[gid],
-                    'moves': list(game_moves[gid])
-                }
-            finally:
-                game_locks[gid].release()
-        else:
-            side_statuses[str(gid)] = {
-                'status': 'busy',
-                'moves': list(game_moves[gid])
-            }
+        snap = side_game_snapshots[gid]
+        side_statuses[str(gid)] = {
+            'status': snap['status'],
+            'moves': list(snap['moves'])
+        }
     status['side_games'] = side_statuses
     
     return jsonify(status)
