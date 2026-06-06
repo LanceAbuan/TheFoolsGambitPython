@@ -135,8 +135,8 @@
 
         /* Eval bar (Chess.com style, vertical) */
         .eval-bar-container {
-            width: 14px;
-            height: 560px;
+            width: 16px;
+            height: 672px;
             display: flex;
             flex-direction: column;
             position: relative;
@@ -145,11 +145,12 @@
         }
         .eval-bar-track {
             flex: 1;
-            background: #666666;
-            border-radius: 7px;
+            background: #e8e8e8;
+            border: 1px solid #333333;
+            border-radius: 3px;
             overflow: hidden;
             position: relative;
-            margin: 4px 0;
+            margin: 0;
         }
         .eval-bar-fill {
             position: absolute;
@@ -157,28 +158,29 @@
             left: 0;
             right: 0;
             background: #ffffff;
-            transition: height 0.6s ease;
-            border-radius: 0 0 7px 7px;
+            transition: height 0.3s ease;
+            border-radius: 0;
         }
         .eval-bar-fill.negative {
             position: absolute;
             bottom: 0;
             left: 0;
             right: 0;
-            background: #111111;
-            transition: height 0.6s ease;
-            border-radius: 0 0 7px 7px;
+            background: #1a1a1a;
+            transition: height 0.3s ease;
+            border-radius: 0;
         }
         .eval-bar-top, .eval-bar-bottom {
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
             color: var(--text-muted);
             text-align: center;
             padding: 2px 0;
+            font-family: 'Inter', monospace;
         }
         .eval-bar-value {
             position: absolute;
-            left: 22px;
+            left: 24px;
             top: 50%;
             transform: translateY(-50%);
             font-size: 10px;
@@ -200,7 +202,7 @@
             display: flex;
             flex-direction: column;
             gap: 0;
-            width: 560px;
+            width: 672px;
         }
         .player-info-bar {
             display: flex;
@@ -208,11 +210,12 @@
             justify-content: space-between;
             padding: 6px 10px;
             background: var(--bg-secondary);
-            border-radius: 6px;
+            border-radius: 0;
             margin: 0 0;
+            width: 672px;
         }
-        .player-info-bar.top { margin-bottom: 4px; border-radius: 6px 6px 0 0; }
-        .player-info-bar.bottom { margin-top: 4px; border-radius: 0 0 6px 6px; }
+        .player-info-bar.top { margin-bottom: 0; border-radius: 0; }
+        .player-info-bar.bottom { margin-top: 0; border-radius: 0; }
         .player-name {
             font-size: 13px;
             font-weight: 700;
@@ -238,7 +241,7 @@
 
         #live-board {
             width: 100%;
-            max-width: 560px;
+            max-width: 672px;
             border-radius: 0;
         }
 
@@ -301,7 +304,7 @@
                 flex-direction: column;
                 overflow-y: auto;
                 overflow-x: hidden;
-                height: 640px;
+                height: 672px;
                 margin: 0;
                 border-radius: 8px;
                 padding: 10px;
@@ -686,8 +689,8 @@
             gap: 16px;
         }
         .fs-eval-bar {
-            min-height: 640px;
-            max-height: 640px;
+            min-height: 672px;
+            max-height: 672px;
             width: 16px;
         }
         .fs-eval-bar .eval-bar-track {
@@ -701,11 +704,11 @@
             display: flex;
             flex-direction: column;
             gap: 0;
-            width: 640px;
+            width: 672px;
         }
         #fullscreen-board {
             width: 100%;
-            max-width: 640px;
+            max-width: 672px;
         }
         .fullscreen-nav {
             display: flex;
@@ -719,8 +722,9 @@
             .main { flex-direction: column; align-items: center; }
             .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; height: auto; max-height: 600px; }
             .board-area { padding: 8px; flex-direction: column; align-items: center; }
-            .board-wrapper { width: 100%; max-width: 480px; }
+            .board-wrapper { width: 100%; max-width: 400px; }
             .eval-bar-container { min-height: 320px; max-height: 320px; }
+            .player-info-bar { width: 100% !important; max-width: 400px !important; }
             .move-list-section { max-height: 160px; }
         }
     </style>
@@ -748,11 +752,11 @@
         <div class="board-area">
            <!-- Eval Bar -->
             <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
-                <div class="eval-bar-top" id="eval-black-label">B</div>
+                <div class="eval-bar-top" id="eval-black-label"></div>
                 <div class="eval-bar-track">
                     <div class="eval-bar-fill" id="eval-bar-fill" style="height: 50%;"></div>
                 </div>
-                <div class="eval-bar-bottom" id="eval-white-label">W</div>
+                <div class="eval-bar-bottom" id="eval-white-label"></div>
                 <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
             </div>
 
@@ -782,7 +786,7 @@
                     <span class="move-label" id="move-label">Move 0/0</span>
                     <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
                     <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Jump to last move">&#9658;</button>
-                    <button class="nav-btn play-btn" id="btn-play" onclick="window.togglePlay()" title="Auto-play">&#9654; Play</button>
+
                 </div>
             </div>
         </div>
@@ -877,11 +881,11 @@
             <div class="fullscreen-body">
                 <!-- FS Eval Bar -->
                 <div class="eval-bar-container fs-eval-bar">
-                    <div class="eval-bar-top" id="fs-eval-black">B</div>
+                    <div class="eval-bar-top" id="fs-eval-black"></div>
                     <div class="eval-bar-track">
                         <div class="eval-bar-fill" id="fs-eval-bar-fill" style="height: 50%;"></div>
                     </div>
-                    <div class="eval-bar-bottom" id="fs-eval-white">W</div>
+                    <div class="eval-bar-bottom" id="fs-eval-white"></div>
                     <div class="eval-bar-value" id="fs-eval-bar-cp">0 cp</div>
                 </div>
                 <div class="fullscreen-board-wrapper">
@@ -1306,11 +1310,11 @@
 
             var cpStr = formatEval(cp);
             if (pct >= 50) {
-                $('#eval-white-label').text('W +' + cpStr);
-                $('#eval-black-label').text('B');
+                $('#eval-white-label').text(cpStr);
+                $('#eval-black-label').text('');
             } else {
-                $('#eval-black-label').text('B +' + cpStr);
-                $('#eval-white-label').text('W');
+                $('#eval-black-label').text(cpStr);
+                $('#eval-white-label').text('');
             }
             $('#eval-bar-cp').text(cpStr);
 
@@ -1321,11 +1325,11 @@
                 fsFill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
             }
             if (pct >= 50) {
-                $('#fs-eval-white').text('W +' + cpStr);
-                $('#fs-eval-black').text('B');
+                $('#fs-eval-white').text(cpStr);
+                $('#fs-eval-black').text('');
             } else {
-                $('#fs-eval-black').text('B +' + cpStr);
-                $('#fs-eval-white').text('W');
+                $('#fs-eval-black').text(cpStr);
+                $('#fs-eval-white').text('');
             }
             $('#fs-eval-bar-cp').text(cpStr);
         }
