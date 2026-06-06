@@ -18,7 +18,7 @@ from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 
 SF_LEAF_BLEND = 0.6
-SF_LEAF_DEPTH = 11
+SF_LEAF_DEPTH = 10
 SF_EVAL_NOISE_SIGMA = 0.1
 
 RESIGN_THRESHOLD = -0.8  # NN value below this → resign
@@ -31,6 +31,8 @@ class MCTS:
         self.cpuct = cpuct
         self.noise_epsilon = noise_epsilon
         self.noise_alpha = noise_alpha
+        self._eval_cache = {}  # FEN -> value cache
+        self._device = next(model.parameters()).device
 
     def search(self, board, num_simulations=800):
         t0 = time.time()
@@ -104,11 +106,12 @@ class MCTS:
             'expanded': True
         }
 
-    def _simulate(self, root, board):
+    def _simulate(self, root, board, max_depth=15):
         node = root
         path = []
+        depth = 0
 
-        while node['children']:
+        while node['children'] and depth < max_depth:
             selected = self._select_child(node)
             path.append((node, selected))
 
@@ -118,6 +121,7 @@ class MCTS:
                 self._expand(selected, board)
 
             node = selected
+            depth += 1
 
         value = self._evaluate(board)
 
@@ -162,10 +166,8 @@ class MCTS:
             legal_mask[move_to_idx(m)] = 1.0
 
         self.model.eval()
-        with torch.no_grad():
-            x = torch.FloatTensor(board_tensor).unsqueeze(0)
-            device = next(self.model.parameters()).device
-            x = x.to(device)
+        with torch.inference_mode():
+            x = torch.FloatTensor(board_tensor).unsqueeze(0).to(self._device)
             policy_logits, _ = self.model(x)
             policy_logits = policy_logits.squeeze(0).cpu().numpy()
 
@@ -198,7 +200,7 @@ class MCTS:
             # Use a timeout lock — if Stockfish is busy (e.g., during
             # sf.play_game()), fall back to NN-only to prevent deadlock.
             import threading
-            acquired = self.stockfish._lock.acquire(timeout=0.05)
+            acquired = self.stockfish._lock.acquire(timeout=0.2)
             if not acquired:
                 # Stockfish locked by another thread — use NN only
                 return nn_value
@@ -225,14 +227,17 @@ class MCTS:
         return nn_value
 
     def _nn_evaluate(self, board):
+        fen = board.fen()
+        if fen in self._eval_cache:
+            return self._eval_cache[fen]
         board_tensor = board_to_tensor(board)
         self.model.eval()
-        with torch.no_grad():
-            x = torch.FloatTensor(board_tensor).unsqueeze(0)
-            device = next(self.model.parameters()).device
-            x = x.to(device)
+        with torch.inference_mode():
+            x = torch.FloatTensor(board_tensor).unsqueeze(0).to(self._device)
             _, value = self.model(x)
-            return float(value.squeeze().cpu())
+            v = float(value.squeeze().cpu())
+        self._eval_cache[fen] = v
+        return v
 
 
 class SelfPlayGame:
