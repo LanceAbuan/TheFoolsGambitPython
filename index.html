@@ -127,7 +127,7 @@
             display: flex;
             flex: 1;
             justify-content: center;
-            align-items: center;
+            align-items: stretch;
             padding: 20px;
             gap: 16px;
         }
@@ -136,7 +136,7 @@
         /* Eval bar (Chess.com style, vertical) */
         .eval-bar-container {
             width: 16px;
-            height: 672px;
+            height: auto;
             display: flex;
             flex-direction: column;
             position: relative;
@@ -145,7 +145,7 @@
         }
         .eval-bar-track {
             flex: 1;
-            background: #ffffff;
+            background: #000000;
             border: 1px solid #000000;
             overflow: hidden;
             position: relative;
@@ -163,18 +163,7 @@
             bottom: auto;
             top: 0;
         }
-        .eval-bar-fill.negative {
-            position: absolute;
-            left: 0;
-            right: 0;
-            background: #000000;
-            transition: height 0.3s ease, top 0.3s ease, bottom 0.3s ease;
-            top: 0;
-        }
-        .eval-bar-fill.negative.flipped {
-            top: auto;
-            bottom: 0;
-        }
+        
         .eval-bar-top, .eval-bar-bottom {
             font-size: 10px;
             font-weight: 700;
@@ -208,6 +197,7 @@
             flex-direction: column;
             gap: 8px;
             flex-shrink: 0;
+            align-self: center;
         }
         .side-board {
             width: 200px;
@@ -343,7 +333,7 @@
             flex-direction: column;
             overflow-y: auto;
             overflow-x: hidden;
-            height: 672px;
+            height: auto;
             margin: 0;
             border-radius: 8px;
             padding: 10px;
@@ -486,7 +476,7 @@
                 border-bottom: 1px solid var(--border-color);
                 display: flex;
                 justify-content: space-between;
-                align-items: center;
+            align-items: stretch;
             }
 
         .analysis-header span {
@@ -1040,7 +1030,7 @@
         document.addEventListener('mouseover', function(e) {
             var el = e.target;
             if (el.hasAttribute('data-tooltip') || el.hasAttribute('data-tooltip-bottom')) {
-                 delay = setTimeout(function() { show(el); }, 100);
+                  delay = setTimeout(function() { show(el); }, 50);
 
             } else {
                 if (delay) { clearTimeout(delay); delay = null; }
@@ -1279,7 +1269,7 @@
             if (liveBoard) liveBoard.orientation(boardOrientation);
             if (fsBoard) fsBoard.orientation(boardOrientation);
             // Flip eval bar to match orientation
-            var fill = document.getElementById('eval-fill');
+            var fill = document.getElementById('eval-bar-fill');
             if (fill) fill.classList.toggle('flipped');
         };
 
@@ -1380,7 +1370,7 @@
             var pct = Math.max(0, Math.min(100, 50 + (evalNormalized * 200)));
             var fill = document.getElementById('eval-bar-fill');
             fill.style.height = pct + '%';
-            fill.className = 'eval-bar-fill' + (pct < 50 ? ' negative' : '');
+            fill.className = 'eval-bar-fill';
             
             var cpStr = formatEval(cp);
             if (pct >= 50) {
