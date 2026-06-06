@@ -330,22 +330,19 @@ class StockfishPlayer:
             return []
 
     def analyze_position(self, board):
-        """Full position analysis for UI display."""
+        """Full position analysis for UI display.
+
+        Single search: uses evaluate_legal_moves_batch for all moves,
+        then picks top_moves from the same results. No redundant searches.
+        """
         def _inner():
-            pos_eval = self._engine.get_evaluation()
-            val = 0
-            if pos_eval['type'] == 'cp':
-                val = pos_eval['value']
-            elif pos_eval['type'] == 'mate':
-                val = pos_eval['value'] * 10000
-            if board.turn == chess.BLACK:
-                val = -val
-            
-            top_moves = self.get_top_moves(board, num_moves=5)
-            
             legal_moves = list(board.legal_moves)
             eval_map = self.evaluate_legal_moves_batch(board, depth=self._depth)
-            
+
+            # Position eval = best move eval (from the single search)
+            best_cp = max(eval_map.values()) if eval_map else 0
+            val = best_cp if board.turn == chess.WHITE else -best_cp
+
             move_analysis = []
             for m in legal_moves:
                 uci = m.uci()
@@ -356,16 +353,29 @@ class StockfishPlayer:
                     'evaluation': cp,
                 })
             move_analysis.sort(key=lambda x: x['evaluation'], reverse=True)
-            
+
+            # Top moves come from the same eval_map — no second search needed
+            top_moves = []
+            seen = set()
+            for entry in move_analysis[:5]:
+                san = entry['san']
+                if san not in seen:
+                    seen.add(san)
+                    top_moves.append({
+                        'san': san,
+                        'uci': entry['uci'],
+                        'evaluation': entry['evaluation'],
+                    })
+
             return {
                 'evaluation': val,
                 'evaluation_normalized': max(-1.0, min(1.0, val / 2000.0)),
-                'depth': self._engine.get_depth() if hasattr(self._engine, 'get_depth') else self._depth,
+                'depth': self._depth,
                 'top_moves': top_moves,
                 'move_analysis': move_analysis[:10],
                 'num_legal_moves': len(legal_moves),
             }
-        
+
         try:
             return self._safe_call(_inner)
         except Exception:
