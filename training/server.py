@@ -74,24 +74,6 @@ def save_persistent_cache(cache):
 # Initialize persistent cache
 persistent_cache = load_persistent_cache()
 
-# ---- EAGER INIT: trainer + side games live on boot ----
-def _eager_init():
-    """Initialize the trainer and start side games immediately on server boot."""
-    global trainer
-    try:
-        sf = get_stockfish()
-        trainer = Trainer(stockfish=sf)
-        print('[BOOT] Trainer initialized eagerly', flush=True)
-        # Start side game workers — they'll spin continuously
-        start_side_games(trainer)
-        print('[BOOT] Side games started on boot', flush=True)
-    except Exception as e:
-        print(f'[BOOT] Eager init failed: {e}', flush=True)
-        import traceback
-        traceback.print_exc()
-
-_eager_init()
-
 # ---- Default play mode ----
 play_mode = 'critic'
 
@@ -210,7 +192,7 @@ def get_stockfish():
     with _stockfish_lock:
         if _stockfish_instance is None:
             try:
-                _stockfish_instance = StockfishPlayer(depth=11, threads=2, hash_mb=256)
+                _stockfish_instance = StockfishPlayer(depth=10, threads=2, hash_mb=256)
                 print('[SF] Shared Stockfish instance created', flush=True)
             except Exception as e:
                 print(f'[SF] Failed to create Stockfish: {e}', flush=True)
@@ -224,6 +206,43 @@ def get_stockfish():
                 print(f'[SF] Failed to restart Stockfish: {e}', flush=True)
                 return None
         return _stockfish_instance
+
+# ---- EAGER INIT: trainer + side games live on boot ----
+def _eager_init():
+    """Initialize the trainer and start side games immediately on server boot."""
+    global trainer
+    try:
+        sf = get_stockfish()
+        trainer = Trainer(stockfish=sf)
+        print('[BOOT] Trainer initialized eagerly', flush=True)
+        # Start side game workers — they'll spin continuously
+        start_side_games(trainer)
+        print('[BOOT] Side games started on boot', flush=True)
+    except Exception as e:
+        print(f'[BOOT] Eager init failed: {e}', flush=True)
+        import traceback
+        traceback.print_exc()
+
+_eager_init()
+
+# Defer side games until after start_side_games is defined
+# (Called at bottom of file once all functions are in scope)
+
+# Placeholder — will be set at module bottom after start_side_games is defined
+_side_games_started = False
+
+def _start_side_games_on_boot():
+    """Called at module bottom once start_side_games is defined."""
+    global _side_games_started
+    if _side_games_started:
+        return
+    if trainer is not None:
+        try:
+            start_side_games(trainer)
+            print('[BOOT] Side games started on boot', flush=True)
+            _side_games_started = True
+        except Exception as e:
+            print(f'[BOOT] Side game start failed: {e}', flush=True)
 
 def send_sse(data, event=None):
     global sse_clients
@@ -401,13 +420,21 @@ def stream_status_update():
         current_game_moves_snapshot = list(current_game_moves)
         current_game_status_snapshot = current_game_status
 
-    # Include side game statuses
+    # Include side game statuses (non-blocking to avoid deadlock)
     side_statuses = {}
     for gid in range(1, NUM_GAMES):
-        with game_locks[gid]:
+        if game_locks[gid].acquire(timeout=0.5):
+            try:
+                side_statuses[str(gid)] = {
+                    'status': game_statuses[gid],
+                    'moves': list(game_moves[gid])
+                }
+            finally:
+                game_locks[gid].release()
+        else:
             side_statuses[str(gid)] = {
-                'status': game_statuses[gid],
-                'moves': list(game_moves[gid])
+                'status': 'busy',
+                'moves': list(game_moves[gid])  # best-effort snapshot
             }
     
     # Use current_game_status as the authoritative status source
