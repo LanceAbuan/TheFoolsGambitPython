@@ -726,41 +726,57 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
     
 # ---- SIDE GAME WORKERS ----
 # Each side game runs in its own thread with its own SF instance.
+_side_game_threads = [None] * NUM_GAMES
+_side_game_running = [False] * NUM_GAMES
+
 def run_side_game(game_id, trainer):
     """Run a self-play game in a side slot, streaming via SSE with game_id."""
     from .selfplay import SelfPlayGame
     
     # Side games use reduced MCTS (75 sims vs 500 main) to preserve main game speed
     side_mcts = max(75, trainer.selfplay.num_mcts_simulations // 8)
-    sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=_side_game_sfs[game_id])
+    try:
+        sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=_side_game_sfs[game_id])
+        print(f'[SIDE-GAME {game_id}] Initialized', flush=True)
+    except Exception as e:
+        print(f'[SIDE-GAME {game_id}] Initialization failed: {e}', flush=True)
+        return
     
-    with game_locks[game_id]:
-        game_statuses[game_id] = 'self-play'
-        game_moves[game_id] = []
-    
-    send_sse({'type': 'game_start', 'game_id': game_id, 'mode': 'self-play'})
-    
-    game_data = sp.play(on_move=lambda moves: (
-        update_game_state(moves, game_id),
-        stream_game_progress(game_id, time.time())
-    ))
+    try:
+        with game_locks[game_id]:
+            game_statuses[game_id] = 'self-play'
+            game_moves[game_id] = []
+        
+        send_sse({'type': 'game_start', 'game_id': game_id, 'mode': 'self-play'})
+        
+        game_data = sp.play(on_move=lambda moves: (
+            update_game_state(moves, game_id),
+            stream_game_progress(game_id, time.time())
+        ))
+        print(f'[SIDE-GAME {game_id}] Completed game with {len(game_data.get("moves", []))} moves', flush=True)
+        
+        # Feed into shared replay buffer
+        if game_data.get('examples'):
+            trainer.buffer.add(game_data['examples'])
+            trainer.games_played += 1
+        
+        with game_locks[game_id]:
+            game_statuses[game_id] = 'idle'
+        
+        send_sse({'type': 'game_end', 'game_id': game_id, 'result': game_data.get('result', '*')})
+    except Exception as e:
+        print(f'[SIDE-GAME {game_id}] Runtime error: {e}', flush=True)
+        import traceback
+        traceback.print_exc()
+    finally:
+        with game_locks[game_id]:
+            game_statuses[game_id] = 'idle'
 
-    
-    # Feed into shared replay buffer
-    if game_data.get('examples'):
-        trainer.buffer.add(game_data['examples'])
-        trainer.games_played += 1
-    
-    with game_locks[game_id]:
-        game_statuses[game_id] = 'idle'
-    
-    send_sse({'type': 'game_end', 'game_id': game_id, 'result': game_data.get('result', '*')})
-
-
-# Global side game threads
-_side_game_threads = [None] * NUM_GAMES
-_side_game_running = [False] * NUM_GAMES
-
+def side_game_loop(game_id, trainer):
+    """Loop: play side games continuously until stopped."""
+    while _side_game_running[game_id] and trainer.running:
+        run_side_game(game_id, trainer)
+        time.sleep(0.5)
 
 def start_side_games(trainer):
     """Start 2 side game workers (indices 1-2)."""
@@ -773,7 +789,6 @@ def start_side_games(trainer):
         t.start()
         print(f'[SIDE-GAME] Started side game {gid}', flush=True)
 
-
 def stop_side_games():
     """Stop all side game workers."""
     for gid in range(1, NUM_GAMES):
@@ -782,12 +797,6 @@ def stop_side_games():
             _side_game_threads[gid].join(timeout=5)
             _side_game_threads[gid] = None
 
-
-def side_game_loop(game_id, trainer):
-    """Loop: play side games continuously until stopped."""
-    while _side_game_running[game_id] and trainer.running:
-        run_side_game(game_id, trainer)
-        time.sleep(0.5)
 
 
 @training_bp.route('/api/train/stop', methods=['POST'])

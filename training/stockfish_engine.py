@@ -18,6 +18,7 @@ import sys
 import time
 import threading
 import chess
+import signal
 from stockfish import Stockfish as SF
 
 STOCKFISH_PATH = os.environ.get('STOCKFISH_PATH', '/home/lance/.local/bin/stockfish')
@@ -75,7 +76,8 @@ class StockfishPlayer:
         """Kill the dead subprocess and spawn a fresh one."""
         with self._lock:
             try:
-                self._engine.close()
+                # Use a timeout for close() to prevent hanging if the engine is already stuck
+                self._call_with_timeout(self._engine.close, restart_on_timeout=False)
             except Exception:
                 pass
             self._engine = self._create_engine()
