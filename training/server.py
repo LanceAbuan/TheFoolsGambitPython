@@ -210,18 +210,30 @@ def get_stockfish():
                 return None
         return _stockfish_instance
 
+
 # ---- EAGER INIT: trainer + side games live on boot ----
 def _eager_init():
-    """Initialize the trainer immediately on server boot."""
+    """Initialize the trainer and side game Stockfish instances immediately on server boot."""
     global trainer
     try:
-        sf = get_stockfish()
+        # Main game Stockfish
+        sf = StockfishPlayer(depth=10, threads=2, hash_mb=256)
+        _stockfish_instance = sf
+        print('[SF] Main Stockfish instance created', flush=True)
+        
         trainer = Trainer(stockfish=sf)
         print('[BOOT] Trainer initialized eagerly', flush=True)
+        
+        # Side game Stockfish instances
+        for i in range(1, NUM_GAMES):
+            _side_game_sfs[i] = StockfishPlayer(depth=10, threads=2, hash_mb=256)
+            print(f'[SF] Side game {i} Stockfish instance created', flush=True)
+            
     except Exception as e:
         print(f'[BOOT] Eager init failed: {e}', flush=True)
         import traceback
         traceback.print_exc()
+
 
 _eager_init()
 
@@ -294,7 +306,7 @@ def update_game_state(moves, game_id=0):
     if game_id > 0:
         side_game_snapshots[game_id] = {'status': 'playing', 'moves': list(moves)}
 
-def stream_game_progress(game_id=0):
+def stream_game_progress(game_id=0, timestamp=None):
     """Stream game moves + current position eval via SSE for a specific game."""
     global current_game_moves, current_game_status
     
@@ -312,6 +324,8 @@ def stream_game_progress(game_id=0):
     fen = board.fen()
     eval_data = get_cached_eval(fen) or compute_eval_with_stockfish(board)
     
+    ts_str = f" [{timestamp}]" if timestamp else ""
+    
     if game_id == 0:
         send_sse({
             'type': 'game_progress',
@@ -323,7 +337,8 @@ def stream_game_progress(game_id=0):
             'eval_norm': eval_data.get('eval_norm', 0.0),
             'is_check': board.is_check(),
             'is_checkmate': board.is_checkmate(),
-            'is_stalemate': board.is_stalemate()
+            'is_stalemate': board.is_stalemate(),
+            'timestamp': timestamp
         })
     else:
         # Side games: lighter stream (no eval)
@@ -335,8 +350,10 @@ def stream_game_progress(game_id=0):
             'fen': fen,
             'is_check': board.is_check(),
             'is_checkmate': board.is_checkmate(),
-            'is_stalemate': board.is_stalemate()
+            'is_stalemate': board.is_stalemate(),
+            'timestamp': timestamp
         })
+
 
 def stream_game_progress_main():
     """Backward-compatible stream_game_progress for main game (game_id=0)."""
@@ -715,7 +732,7 @@ def run_side_game(game_id, trainer):
     
     # Side games use reduced MCTS (75 sims vs 500 main) to preserve main game speed
     side_mcts = max(75, trainer.selfplay.num_mcts_simulations // 8)
-    sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts)
+    sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=_side_game_sfs[game_id])
     
     with game_locks[game_id]:
         game_statuses[game_id] = 'self-play'
@@ -725,8 +742,9 @@ def run_side_game(game_id, trainer):
     
     game_data = sp.play(on_move=lambda moves: (
         update_game_state(moves, game_id),
-        stream_game_progress(game_id)
+        stream_game_progress(game_id, time.time())
     ))
+
     
     # Feed into shared replay buffer
     if game_data.get('examples'):
