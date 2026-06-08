@@ -68,10 +68,26 @@ class TestTrainingBuffer:
         assert policies.shape[0] == 64
         assert len(values) == 64
 
-    def test_sample_returns_none_when_insufficient(self):
-        self.buffer.add([self._make_example() for _ in range(10)])
+    def test_sample_returns_none_when_empty(self):
         batch = self.buffer.sample(64)
         assert batch is None
+
+    def test_sample_adaptive_returns_partial_batch(self):
+        """When buffer < batch_size, sample returns whatever is available."""
+        examples = [self._make_example() for _ in range(10)]
+        self.buffer.add(examples)
+        batch = self.buffer.sample(64)
+        # Should NOT return None anymore — returns partial batch
+        assert batch is not None
+        tensors, policies, values = batch
+        assert tensors.shape[0] == 10  # returns what's available
+
+    def test_sample_respects_batch_size_when_sufficient(self):
+        examples = [self._make_example() for _ in range(64)]
+        self.buffer.add(examples)
+        batch = self.buffer.sample(64)
+        tensors, policies, values = batch
+        assert tensors.shape[0] == 64
 
     def test_sample_values_correct_for_win(self):
         examples = [self._make_example(value=1.0) for _ in range(64)]

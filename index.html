@@ -305,12 +305,13 @@
             font-size: 12px;
             gap: 4px;
         }
-        .move-label {
+        .match-time {
             font-size: 11px;
             color: var(--text-muted);
             min-width: 80px;
             text-align: center;
             font-weight: 600;
+            font-family: 'Inter', monospace;
         }
 
         /* What's happening */
@@ -831,6 +832,7 @@
                     <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
                     <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous move">&#8592;</button>
                     <span class="move-label" id="move-label">Move 0/0</span>
+                    <span class="match-time" id="match-time">00:00:00</span>
                     <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
                     <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Jump to last move">&#9658;</button>
 
@@ -956,8 +958,9 @@
             <div class="fullscreen-nav">
                 <button class="nav-btn" id="fs-btn-back" onclick="window.fsNavMove(-1)">&#8592;</button>
                 <button class="nav-btn" id="fs-btn-first" onclick="window.fsGoToMove(0)">&#9664;</button>
-                <span class="move-label" id="fs-move-label">Move 0/0</span>
-                <button class="nav-btn" id="fs-btn-fwd" onclick="window.fsNavMove(1)">&#9654;</button>
+                    <span class="move-label" id="fs-move-label">Move 0/0</span>
+                    <span class="match-time" id="fs-match-time">00:00:00</span>
+                    <button class="nav-btn" id="fs-btn-fwd" onclick="window.fsNavMove(1)">&#9654;</button>
                 <button class="nav-btn" id="fs-btn-last" onclick="window.fsGoToMove(9999)">&#9656;</button>
             </div>
         </div>
@@ -1063,6 +1066,8 @@
         var currentFen = '';
         var isAnalyzing = false;
         var currentAnalysisId = 0;
+        var matchStartTime = null;
+        var matchTimerInterval = null;
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -1118,6 +1123,9 @@
             setBoardPosition(currentViewIndex);
             var label = currentViewIndex + '/' + allMoves.length;
             $('#move-label').text('Move ' + label);
+            if (currentViewIndex > 0) {
+                startMatchTimer();
+            }
             $('#btn-back').prop('disabled', currentViewIndex <= 0);
             $('#btn-first').prop('disabled', currentViewIndex <= 0);
             $('#btn-fwd').prop('disabled', currentViewIndex >= allMoves.length);

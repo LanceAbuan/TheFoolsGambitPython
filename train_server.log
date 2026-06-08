@@ -1,7 +1,2842 @@
+[SF] Shared Stockfish instance created
+[TRAINER] Model on CUDA
+[TRAINER] Using shared Stockfish instance
+[Checkpoint] Loaded step=20, games=4
+[BOOT] Trainer initialized eagerly
+[BOOT] Eager init failed: name 'start_side_games' is not defined
 Traceback (most recent call last):
-  File "/home/lance/TheFoolsGambitPython/train_server.py", line 22, in <module>
-    from training.server import training_bp
-  File "/home/lance/TheFoolsGambitPython/training/server.py", line 74
-    def _classify_move_quality(diff_cp):
-    ^
-IndentationError: expected an indented block after function definition on line 71
+  File "/home/lance/TheFoolsGambitPython/training/server.py", line 222, in _eager_init
+    start_side_games(trainer)
+NameError: name 'start_side_games' is not defined
+[SIDE-GAME] Started side game 1
+[SIDE-GAME] Started side game 2
+[BOOT] Side games started on boot
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'train_server'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.217:5001
+Press CTRL+C to quit
+127.0.0.1 - - [05/Jun/2026 23:47:50] "GET /api/train/status HTTP/1.1" 200 -
+[TRAIN] Starting training thread: games=20, steps=50, mcts=500
+127.0.0.1 - - [05/Jun/2026 23:47:50] "POST /api/train/start HTTP/1.1" 200 -
+[GAME] Starting self-play, sims=75
+[GAME] Move 1, turn=W
+[SIDE-GAME] Started side game 1
+[GAME] Starting self-play, sims=75
+[GAME] Move 1, turn=W
+[AUTO] Training started automatically.
+[SIDE-GAME] Started side game 2
+[TRAIN] --- Starting game 1/20 ---
+[TRAIN] Entering Critic mode for game 1
+  [MCTS] Root built in 0.041s, children=20
+  [MCTS] Root built in 0.039s, children=20
+127.0.0.1 - - [05/Jun/2026 23:47:55] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.001s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played d4
+  [MCTS] 75 sims in 8.039s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played Na3
+[GAME] Move 2, turn=B
+  [MCTS] Root built in 0.005s, children=20
+127.0.0.1 - - [05/Jun/2026 23:48:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.557s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Nc6
+[CRITIC] move 1: Na3 (eval=42cp)
+[GAME] Move 2, turn=B
+  [MCTS] Root built in 0.008s, children=20
+127.0.0.1 - - [05/Jun/2026 23:48:05] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:06] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:06] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:06] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:06] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:09] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:10] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.018s, visits=75
+[GAME] Search done in 6.0s, visits=75
+[GAME] Played h5
+127.0.0.1 - - [05/Jun/2026 23:48:11] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:11] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:11] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:11] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:15] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:16] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:16] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:16] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:16] "POST /api/train/evaluate HTTP/1.1" 200 -
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.007s, children=20
+[CRITIC] move 2: d5 (eval=-66cp)
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.009s, children=28
+  [MCTS] 75 sims in 7.549s, visits=75
+[GAME] Search done in 7.6s, visits=75
+[GAME] Played e3
+  [MCTS] 75 sims in 7.625s, visits=75
+[GAME] Search done in 7.6s, visits=75
+[GAME] Played Bh6
+[CRITIC] move 3: e3 (eval=-36cp)
+127.0.0.1 - - [05/Jun/2026 23:48:33] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:33] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.008s, children=22
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.006s, children=22
+127.0.0.1 - - [05/Jun/2026 23:48:33] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:34] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.917s, visits=75
+[GAME] Search done in 7.9s, visits=75
+[GAME] Played d5
+  [MCTS] 75 sims in 7.960s, visits=75
+[GAME] Search done in 8.0s, visits=75
+[GAME] Played h4
+[CRITIC] move 4: Qd7 (eval=-79cp)
+127.0.0.1 - - [05/Jun/2026 23:48:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:53] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.005s, children=30
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.005s, children=29
+127.0.0.1 - - [05/Jun/2026 23:48:54] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:54] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:55] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:48:55] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.043s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played h4
+  [MCTS] 75 sims in 8.120s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played c4
+[CRITIC] move 5: h3 (eval=30cp)
+127.0.0.1 - - [05/Jun/2026 23:49:15] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:15] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:15] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:16] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.006s, children=29
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.009s, children=22
+127.0.0.1 - - [05/Jun/2026 23:49:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:17] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:17] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.080s, visits=75
+[GAME] Search done in 7.1s, visits=75
+[GAME] Played Bh3
+  [MCTS] 75 sims in 7.008s, visits=75
+[GAME] Search done in 7.0s, visits=75
+[GAME] Played Nf6
+127.0.0.1 - - [05/Jun/2026 23:49:32] "POST /api/train/evaluate HTTP/1.1" 200 -
+[CRITIC] move 6: c5 (eval=-41cp)
+127.0.0.1 - - [05/Jun/2026 23:49:32] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:32] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.004s, children=32
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.004s, children=31
+127.0.0.1 - - [05/Jun/2026 23:49:33] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:33] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:34] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:34] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.019s, visits=75
+[GAME] Search done in 7.0s, visits=75
+[GAME] Played gxh3
+  [MCTS] 75 sims in 7.027s, visits=75
+[GAME] Search done in 7.0s, visits=75
+[GAME] Played Nh3
+[CRITIC] move 7: Be2 (eval=-7cp)
+127.0.0.1 - - [05/Jun/2026 23:49:57] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:57] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:57] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 8, turn=B
+  [MCTS] Root built in 0.004s, children=27
+[GAME] Move 8, turn=B
+  [MCTS] Root built in 0.007s, children=24
+127.0.0.1 - - [05/Jun/2026 23:49:57] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:57] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:57] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:57] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:58] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:49:58] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.198s, visits=75
+[GAME] Search done in 8.2s, visits=75
+[GAME] Played c5
+  [MCTS] 75 sims in 8.302s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played f6
+[CRITIC] move 8: a6 (eval=-53cp)
+127.0.0.1 - - [05/Jun/2026 23:50:16] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:16] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:16] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 9, turn=W
+  [MCTS] Root built in 0.004s, children=32
+[GAME] Move 9, turn=W
+  [MCTS] Root built in 0.008s, children=28
+127.0.0.1 - - [05/Jun/2026 23:50:17] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:17] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:18] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:18] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.179s, visits=75
+[GAME] Search done in 8.2s, visits=75
+  [MCTS] 75 sims in 8.284s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played Nf3
+[GAME] Played Ng5
+[CRITIC] move 9: Kf1 (eval=-3cp)
+127.0.0.1 - - [05/Jun/2026 23:50:32] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:32] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:32] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:32] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 10, turn=B
+  [MCTS] Root built in 0.003s, children=26
+[GAME] Move 10, turn=B
+  [MCTS] Root built in 0.005s, children=26
+127.0.0.1 - - [05/Jun/2026 23:50:32] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:33] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:33] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.684s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Rb8
+  [MCTS] 75 sims in 6.657s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Qa5+
+[CRITIC] move 10: f5 (eval=-117cp)
+127.0.0.1 - - [05/Jun/2026 23:50:51] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:51] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:52] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:52] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 11, turn=W
+  [MCTS] Root built in 0.004s, children=27
+[GAME] Move 11, turn=W
+  [MCTS] Root built in 0.012s, children=4
+127.0.0.1 - - [05/Jun/2026 23:50:52] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:52] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:53] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:53] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:50:55] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.468s, visits=75
+[GAME] Search done in 7.5s, visits=75
+[GAME] Played e4
+  [MCTS] 75 sims in 7.420s, visits=75
+[GAME] Search done in 7.4s, visits=75
+[GAME] Played b4
+[CRITIC] move 11: e4 (eval=-71cp)
+127.0.0.1 - - [05/Jun/2026 23:51:05] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:05] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:05] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:05] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 12, turn=B
+  [MCTS] Root built in 0.005s, children=25
+[GAME] Move 12, turn=B
+  [MCTS] Root built in 0.008s, children=33
+127.0.0.1 - - [05/Jun/2026 23:51:06] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:06] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:06] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:06] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.237s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played d4
+  [MCTS] 75 sims in 8.265s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played Kd8
+[CRITIC] move 12: d4 (eval=-201cp)
+127.0.0.1 - - [05/Jun/2026 23:51:18] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:18] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:18] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 13, turn=W
+  [MCTS] Root built in 0.003s, children=26
+[GAME] Move 13, turn=W
+  [MCTS] Root built in 0.013s, children=30
+127.0.0.1 - - [05/Jun/2026 23:51:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:19] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:19] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.260s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played Be2
+  [MCTS] 75 sims in 8.265s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played a3
+127.0.0.1 - - [05/Jun/2026 23:51:34] "POST /api/train/evaluate HTTP/1.1" 200 -
+[CRITIC] move 13: Qe1 (eval=100cp)
+127.0.0.1 - - [05/Jun/2026 23:51:34] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:34] "POST /api/train/analyze HTTP/1.1" 200 -
+[GAME] Move 14, turn=B
+  [MCTS] Root built in 0.006s, children=24
+127.0.0.1 - - [05/Jun/2026 23:51:34] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 14, turn=B
+  [MCTS] Root built in 0.007s, children=33
+127.0.0.1 - - [05/Jun/2026 23:51:34] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:35] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:35] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.285s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played g5
+  [MCTS] 75 sims in 8.370s, visits=75
+[GAME] Search done in 8.4s, visits=75
+[GAME] Played Na6
+[CRITIC] move 14: g5 (eval=-109cp)
+127.0.0.1 - - [05/Jun/2026 23:51:53] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:53] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:53] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 15, turn=W
+  [MCTS] Root built in 0.004s, children=27
+[GAME] Move 15, turn=W
+  [MCTS] Root built in 0.012s, children=29
+127.0.0.1 - - [05/Jun/2026 23:51:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:54] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:54] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:51:54] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 10.198s, visits=75
+[GAME] Search done in 10.2s, visits=75
+[GAME] Played c3
+  [MCTS] 75 sims in 10.261s, visits=75
+[GAME] Search done in 10.3s, visits=75
+[GAME] Played dxc5
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[CRITIC] move 15: Bd3 (eval=198cp)
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+127.0.0.1 - - [05/Jun/2026 23:52:27] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:27] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:27] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:27] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 16, turn=B
+  [MCTS] Root built in 0.015s, children=27
+[GAME] Move 16, turn=B
+  [MCTS] Root built in 0.009s, children=33
+127.0.0.1 - - [05/Jun/2026 23:52:27] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:27] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:28] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:28] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:28] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:28] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:28] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 10.964s, visits=75
+[GAME] Search done in 11.0s, visits=75
+  [MCTS] 75 sims in 11.036s, visits=75
+[GAME] Search done in 11.1s, visits=75
+[GAME] Played Qd5
+[GAME] Played d6
+[CRITIC] move 16: Kd8 (eval=-82cp)
+127.0.0.1 - - [05/Jun/2026 23:52:50] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:50] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:50] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:51] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 17, turn=W
+  [MCTS] Root built in 0.005s, children=32
+[GAME] Move 17, turn=W
+  [MCTS] Root built in 0.011s, children=32
+127.0.0.1 - - [05/Jun/2026 23:52:51] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:52:51] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.778s, visits=75
+[GAME] Search done in 7.8s, visits=75
+[GAME] Played Nxg5
+  [MCTS] 75 sims in 7.782s, visits=75
+[GAME] Search done in 7.8s, visits=75
+[GAME] Played Nh3
+[CRITIC] move 17: Qe2 (eval=191cp)
+127.0.0.1 - - [05/Jun/2026 23:53:05] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:05] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 18, turn=B
+  [MCTS] Root built in 0.005s, children=39
+[GAME] Move 18, turn=B
+  [MCTS] Root built in 0.006s, children=39
+127.0.0.1 - - [05/Jun/2026 23:53:05] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:06] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:06] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:06] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.479s, visits=75
+[GAME] Search done in 7.5s, visits=75
+[GAME] Played Kd8
+  [MCTS] 75 sims in 7.498s, visits=75
+[GAME] Search done in 7.5s, visits=75
+[GAME] Played e6
+[CRITIC] move 18: Bg7 (eval=58cp)
+127.0.0.1 - - [05/Jun/2026 23:53:21] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:21] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:22] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 19, turn=W
+  [MCTS] Root built in 0.009s, children=35
+[GAME] Move 19, turn=W
+  [MCTS] Root built in 0.011s, children=33
+127.0.0.1 - - [05/Jun/2026 23:53:22] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:22] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:23] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:23] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:23] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:23] "POST /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.883s, visits=75
+[GAME] Search done in 7.9s, visits=75
+[GAME] Played cxd4
+  [MCTS] 75 sims in 7.853s, visits=75
+[GAME] Search done in 7.9s, visits=75
+[GAME] Played bxa5
+[CRITIC] move 19: c4 (eval=155cp)
+127.0.0.1 - - [05/Jun/2026 23:53:40] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 20, turn=B
+  [MCTS] Root built in 0.004s, children=37
+[GAME] Move 20, turn=B
+  [MCTS] Root built in 0.016s, children=29
+127.0.0.1 - - [05/Jun/2026 23:53:41] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:41] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:41] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:42] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [05/Jun/2026 23:53:42] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.298s, visits=75
+[GAME] Search done in 7.3s, visits=75
+[GAME] Played Nh6
+  [MCTS] 75 sims in 7.335s, visits=75
+[GAME] Search done in 7.4s, visits=75
+[GAME] Played Rb8
+[SF] Shared Stockfish instance created
+[TRAINER] Model on CUDA
+[TRAINER] Using shared Stockfish instance
+[Checkpoint] Loaded step=20, games=4
+[BOOT] Trainer initialized eagerly
+[BOOT] Eager init failed: name 'start_side_games' is not defined
+Traceback (most recent call last):
+  File "/home/lance/TheFoolsGambitPython/training/server.py", line 222, in _eager_init
+    start_side_games(trainer)
+NameError: name 'start_side_games' is not defined
+[SIDE-GAME] Started side game 1
+[SIDE-GAME] Started side game 2
+[BOOT] Side games started on boot
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'train_server'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.217:5001
+Press CTRL+C to quit
+127.0.0.1 - - [06/Jun/2026 00:13:37] "GET /api/train/status HTTP/1.1" 200 -
+[TRAIN] Starting training thread: games=20, steps=50, mcts=500
+127.0.0.1 - - [06/Jun/2026 00:13:41] "POST /api/train/start HTTP/1.1" 200 -
+[GAME] Starting self-play, sims=75
+[GAME] Move 1, turn=W
+[SIDE-GAME] Started side game 1
+[AUTO] Training started automatically.
+[GAME] Starting self-play, sims=75
+[GAME] Move 1, turn=W
+[SIDE-GAME] Started side game 2
+[TRAIN] --- Starting game 1/20 ---
+  [MCTS] Root built in 0.024s, children=20
+  [MCTS] Root built in 0.026s, children=20
+[TRAIN] Entering Critic mode for game 1
+127.0.0.1 - - [06/Jun/2026 00:13:42] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:13:47] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.567s, visits=75
+[GAME] Search done in 5.6s, visits=75
+[GAME] Played a3
+  [MCTS] 75 sims in 5.653s, visits=75
+[GAME] Search done in 5.7s, visits=75
+[GAME] Played b4
+127.0.0.1 - - [06/Jun/2026 00:13:52] "GET /api/train/status HTTP/1.1" 200 -
+[SF] Shared Stockfish instance created
+[TRAINER] CUDA OOM, falling back to CPU
+[TRAIN] ERROR: cuDNN error: CUDNN_STATUS_INTERNAL_ERROR
+Traceback (most recent call last):
+  File "/home/lance/TheFoolsGambitPython/training/server.py", line 617, in run_training
+    game_data = sg.play(on_move=lambda moves: (
+  File "/home/lance/TheFoolsGambitPython/training/critic_game.py", line 71, in play
+    chosen_move, chosen_san = self._nn_pick_move(board, legal_moves, move_evals)
+  File "/home/lance/TheFoolsGambitPython/training/critic_game.py", line 122, in _nn_pick_move
+    logits, _ = self.model(x)
+  File "/home/lance/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/lance/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/lance/TheFoolsGambitPython/training/model.py", line 76, in forward
+    out = F.relu(self.input_bn(self.input_conv(x)))
+  File "/home/lance/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/lance/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/lance/.local/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 565, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/home/lance/.local/lib/python3.10/site-packages/torch/nn/modules/conv.py", line 560, in _conv_forward
+    return F.conv2d(
+RuntimeError: cuDNN error: CUDNN_STATUS_INTERNAL_ERROR
+[TRAINER] Using shared Stockfish instance
+[Checkpoint] Loaded step=20, games=4
+[BOOT] Trainer initialized eagerly
+[BOOT] Eager init failed: name 'start_side_games' is not defined
+Traceback (most recent call last):
+  File "/home/lance/TheFoolsGambitPython/training/server.py", line 222, in _eager_init
+    start_side_games(trainer)
+NameError: name 'start_side_games' is not defined
+[SIDE-GAME] Started side game 1
+[SIDE-GAME] Started side game 2
+[BOOT] Side games started on boot
+ * Serving Flask app 'train_server'
+ * Debug mode: off
+Address already in use
+Port 5001 is in use by another program. Either identify and stop that program, or start the server with a different port.
+[GAME] Move 2, turn=B
+[GAME] Move 2, turn=B
+  [MCTS] Root built in 0.007s, children=20
+  [MCTS] Root built in 0.008s, children=20
+127.0.0.1 - - [06/Jun/2026 00:13:57] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.350s, visits=75
+[GAME] Search done in 5.4s, visits=75
+[GAME] Played Na6
+  [MCTS] 75 sims in 5.371s, visits=75
+[GAME] Search done in 5.4s, visits=75
+[GAME] Played e5
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.010s, children=21
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.008s, children=19
+127.0.0.1 - - [06/Jun/2026 00:14:02] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.135s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played Na3
+  [MCTS] 75 sims in 6.066s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Ra2
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.003s, children=20
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.004s, children=30
+127.0.0.1 - - [06/Jun/2026 00:14:07] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:14:08] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.885s, visits=75
+[GAME] Search done in 4.9s, visits=75
+[GAME] Played b6
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.006s, children=20
+  [MCTS] 75 sims in 5.100s, visits=75
+[GAME] Search done in 5.1s, visits=75
+[GAME] Played c5
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.006s, children=19
+127.0.0.1 - - [06/Jun/2026 00:14:12] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.102s, visits=75
+[GAME] Search done in 5.1s, visits=75
+[GAME] Played h4
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.003s, children=20
+  [MCTS] 75 sims in 5.244s, visits=75
+[GAME] Search done in 5.3s, visits=75
+[GAME] Played Nf3
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.004s, children=29
+127.0.0.1 - - [06/Jun/2026 00:14:17] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.364s, visits=75
+[GAME] Search done in 4.4s, visits=75
+[GAME] Played d5
+  [MCTS] 75 sims in 4.251s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played Bd6
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.003s, children=21
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.003s, children=21
+127.0.0.1 - - [06/Jun/2026 00:14:22] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.135s, visits=75
+[GAME] Search done in 4.1s, visits=75
+[GAME] Played Nb1
+[GAME] Move 8, turn=B
+  [MCTS] Root built in 0.003s, children=27
+  [MCTS] 75 sims in 4.470s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played c4
+[GAME] Move 8, turn=B
+  [MCTS] Root built in 0.005s, children=28
+127.0.0.1 - - [06/Jun/2026 00:14:27] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.586s, visits=75
+[GAME] Search done in 5.6s, visits=75
+[GAME] Played Qd7
+[GAME] Move 9, turn=W
+  [MCTS] Root built in 0.006s, children=22
+127.0.0.1 - - [06/Jun/2026 00:14:32] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.669s, visits=75
+[GAME] Search done in 5.7s, visits=75
+[GAME] Played Nf6
+[GAME] Move 9, turn=W
+  [MCTS] Root built in 0.005s, children=22
+127.0.0.1 - - [06/Jun/2026 00:14:37] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.078s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Na3
+[GAME] Move 10, turn=B
+  [MCTS] Root built in 0.005s, children=29
+  [MCTS] 75 sims in 6.208s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played b4
+[GAME] Move 10, turn=B
+  [MCTS] Root built in 0.003s, children=29
+127.0.0.1 - - [06/Jun/2026 00:14:42] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.307s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played Nb8
+[GAME] Move 11, turn=W
+  [MCTS] Root built in 0.007s, children=21
+  [MCTS] 75 sims in 6.117s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Qc7
+[GAME] Move 11, turn=W
+  [MCTS] Root built in 0.006s, children=25
+127.0.0.1 - - [06/Jun/2026 00:14:47] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.253s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played d3
+[GAME] Move 12, turn=B
+  [MCTS] Root built in 0.006s, children=30
+  [MCTS] 75 sims in 6.292s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played Qb3
+[GAME] Move 12, turn=B
+  [MCTS] Root built in 0.006s, children=29
+127.0.0.1 - - [06/Jun/2026 00:14:52] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:14:57] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.167s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played Nc6
+[GAME] Move 13, turn=W
+  [MCTS] Root built in 0.007s, children=27
+  [MCTS] 75 sims in 6.083s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played h6
+[GAME] Move 13, turn=W
+  [MCTS] Root built in 0.006s, children=30
+127.0.0.1 - - [06/Jun/2026 00:15:02] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.482s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played e3
+[GAME] Move 14, turn=B
+  [MCTS] Root built in 0.006s, children=30
+  [MCTS] 75 sims in 6.538s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played d3
+[GAME] Move 14, turn=B
+  [MCTS] Root built in 0.006s, children=30
+127.0.0.1 - - [06/Jun/2026 00:15:07] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.373s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played b5
+[GAME] Move 15, turn=W
+  [MCTS] Root built in 0.005s, children=28
+  [MCTS] 75 sims in 6.450s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played a6
+127.0.0.1 - - [06/Jun/2026 00:15:12] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 15, turn=W
+  [MCTS] Root built in 0.007s, children=36
+  [MCTS] 75 sims in 5.915s, visits=75
+[GAME] Search done in 5.9s, visits=75
+[GAME] Played Be2
+127.0.0.1 - - [06/Jun/2026 00:15:17] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 16, turn=B
+  [MCTS] Root built in 0.007s, children=29
+  [MCTS] 75 sims in 6.012s, visits=75
+[GAME] Search done in 6.0s, visits=75
+[GAME] Played e3
+[GAME] Move 16, turn=B
+  [MCTS] Root built in 0.008s, children=29
+127.0.0.1 - - [06/Jun/2026 00:15:22] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.151s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played g6
+[GAME] Move 17, turn=W
+  [MCTS] Root built in 0.006s, children=26
+  [MCTS] 75 sims in 6.142s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played Rf8
+[GAME] Move 17, turn=W
+  [MCTS] Root built in 0.008s, children=34
+127.0.0.1 - - [06/Jun/2026 00:15:27] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.239s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played Bf1
+[GAME] Move 18, turn=B
+  [MCTS] Root built in 0.007s, children=30
+  [MCTS] 75 sims in 6.375s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Nfd2
+[GAME] Move 18, turn=B
+  [MCTS] Root built in 0.005s, children=25
+127.0.0.1 - - [06/Jun/2026 00:15:32] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.116s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Bg7
+[GAME] Move 19, turn=W
+  [MCTS] Root built in 0.005s, children=28
+127.0.0.1 - - [06/Jun/2026 00:15:37] "GET /api/train/stream HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:15:37] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.209s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played a5
+[GAME] Move 19, turn=W
+  [MCTS] Root built in 0.006s, children=28
+127.0.0.1 - - [06/Jun/2026 00:15:42] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.436s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played c4
+[GAME] Move 20, turn=B
+  [MCTS] Root built in 0.009s, children=39
+  [MCTS] 75 sims in 6.512s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played g3
+[GAME] Move 20, turn=B
+  [MCTS] Root built in 0.006s, children=27
+127.0.0.1 - - [06/Jun/2026 00:15:47] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:15:48] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:15:48] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.360s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Bf6
+[GAME] Move 21, turn=W
+  [MCTS] Root built in 0.006s, children=32
+127.0.0.1 - - [06/Jun/2026 00:15:50] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:15:50] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.556s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Rh8
+[GAME] Move 21, turn=W
+  [MCTS] Root built in 0.005s, children=29
+127.0.0.1 - - [06/Jun/2026 00:15:55] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.380s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Nb1
+[GAME] Move 22, turn=B
+  [MCTS] Root built in 0.006s, children=36
+  [MCTS] 75 sims in 6.214s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played Bh3
+[GAME] Move 22, turn=B
+  [MCTS] Root built in 0.007s, children=30
+127.0.0.1 - - [06/Jun/2026 00:16:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.304s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played a6
+[GAME] Move 23, turn=W
+  [MCTS] Root built in 0.004s, children=34
+  [MCTS] 75 sims in 5.846s, visits=75
+[GAME] Search done in 5.9s, visits=75
+[GAME] Played Na6
+[GAME] Move 23, turn=W
+  [MCTS] Root built in 0.004s, children=34
+127.0.0.1 - - [06/Jun/2026 00:16:05] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.539s, visits=75
+[GAME] Search done in 5.6s, visits=75
+[GAME] Played Qg4
+[GAME] Move 24, turn=B
+  [MCTS] Root built in 0.007s, children=35
+127.0.0.1 - - [06/Jun/2026 00:16:10] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.268s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played f3
+[GAME] Move 24, turn=B
+  [MCTS] Root built in 0.007s, children=31
+  [MCTS] 75 sims in 6.572s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played h6
+[GAME] Move 25, turn=W
+  [MCTS] Root built in 0.004s, children=40
+127.0.0.1 - - [06/Jun/2026 00:16:15] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.890s, visits=75
+[GAME] Search done in 6.9s, visits=75
+[GAME] Played a4
+[GAME] Move 25, turn=W
+  [MCTS] Root built in 0.004s, children=31
+127.0.0.1 - - [06/Jun/2026 00:16:20] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.507s, visits=75
+[GAME] Search done in 5.5s, visits=75
+[GAME] Played Qxg6
+[GAME] Move 26, turn=B
+  [MCTS] Root built in 0.007s, children=35
+  [MCTS] 75 sims in 6.276s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played Qb2
+[GAME] Move 26, turn=B
+  [MCTS] Root built in 0.006s, children=30
+127.0.0.1 - - [06/Jun/2026 00:16:25] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.297s, visits=75
+[GAME] Search done in 5.3s, visits=75
+[GAME] Played Bb7
+[GAME] Move 27, turn=W
+  [MCTS] Root built in 0.009s, children=39
+  [MCTS] 75 sims in 3.757s, visits=75
+[GAME] Search done in 3.8s, visits=75
+[GAME] Played d4
+[GAME] Move 28, turn=B
+  [MCTS] Root built in 0.005s, children=35
+127.0.0.1 - - [06/Jun/2026 00:16:30] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.462s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played e4
+[GAME] Move 27, turn=W
+  [MCTS] Root built in 0.006s, children=32
+127.0.0.1 - - [06/Jun/2026 00:16:35] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.422s, visits=75
+[GAME] Search done in 5.4s, visits=75
+[GAME] Played Kd8
+[GAME] Move 29, turn=W
+  [MCTS] Root built in 0.008s, children=41
+  [MCTS] 75 sims in 6.412s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Qc3
+[GAME] Move 28, turn=B
+  [MCTS] Root built in 0.007s, children=33
+127.0.0.1 - - [06/Jun/2026 00:16:40] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.336s, visits=75
+[GAME] Search done in 5.4s, visits=75
+[GAME] Played Qg7
+[GAME] Move 30, turn=B
+  [MCTS] Root built in 0.006s, children=31
+  [MCTS] 75 sims in 6.351s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Ng4
+[GAME] Move 29, turn=W
+  [MCTS] Root built in 0.004s, children=31
+127.0.0.1 - - [06/Jun/2026 00:16:45] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.772s, visits=75
+[GAME] Search done in 4.8s, visits=75
+[GAME] Played a5
+[GAME] Move 31, turn=W
+  [MCTS] Root built in 0.009s, children=39
+  [MCTS] 75 sims in 6.373s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Qb3
+[GAME] Move 30, turn=B
+  [MCTS] Root built in 0.005s, children=36
+127.0.0.1 - - [06/Jun/2026 00:16:50] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.649s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played h5
+[GAME] Move 32, turn=B
+  [MCTS] Root built in 0.006s, children=32
+127.0.0.1 - - [06/Jun/2026 00:16:54] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.395s, visits=75
+[GAME] Search done in 4.4s, visits=75
+[GAME] Played Ra6
+[GAME] Move 33, turn=W
+  [MCTS] Root built in 0.005s, children=39
+127.0.0.1 - - [06/Jun/2026 00:16:55] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.521s, visits=75
+[GAME] Search done in 5.5s, visits=75
+[GAME] Played Rf8
+[GAME] Move 31, turn=W
+  [MCTS] Root built in 0.004s, children=28
+  [MCTS] 75 sims in 2.773s, visits=75
+[GAME] Search done in 2.8s, visits=75
+[GAME] Played Be2
+[GAME] Move 34, turn=B
+  [MCTS] Root built in 0.008s, children=31
+127.0.0.1 - - [06/Jun/2026 00:17:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.462s, visits=75
+[GAME] Search done in 5.5s, visits=75
+[GAME] Played Rb2
+[GAME] Move 32, turn=B
+  [MCTS] Root built in 0.006s, children=33
+  [MCTS] 75 sims in 5.420s, visits=75
+[GAME] Search done in 5.4s, visits=75
+[GAME] Played Ke8
+[GAME] Move 35, turn=W
+  [MCTS] Root built in 0.007s, children=41
+127.0.0.1 - - [06/Jun/2026 00:17:05] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.593s, visits=75
+[GAME] Search done in 8.6s, visits=75
+[GAME] Played Rh8
+[GAME] Move 33, turn=W
+  [MCTS] Root built in 0.010s, children=26
+127.0.0.1 - - [06/Jun/2026 00:17:10] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.229s, visits=75
+[GAME] Search done in 8.2s, visits=75
+[GAME] Played Qg3
+[GAME] Move 36, turn=B
+  [MCTS] Root built in 0.007s, children=32
+127.0.0.1 - - [06/Jun/2026 00:17:15] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.712s, visits=75
+[GAME] Search done in 8.7s, visits=75
+[GAME] Played fxg4
+[GAME] Move 34, turn=B
+  [MCTS] Root built in 0.006s, children=30
+  [MCTS] 75 sims in 8.350s, visits=75
+[GAME] Search done in 8.4s, visits=75
+[GAME] Played Bg7
+[GAME] Move 37, turn=W
+127.0.0.1 - - [06/Jun/2026 00:17:20] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] Root built in 0.014s, children=40
+127.0.0.1 - - [06/Jun/2026 00:17:25] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.923s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played Qd8
+[GAME] Move 35, turn=W
+  [MCTS] Root built in 0.007s, children=25
+  [MCTS] 75 sims in 8.546s, visits=75
+[GAME] Search done in 8.6s, visits=75
+[GAME] Played Rh3
+[GAME] Move 38, turn=B
+  [MCTS] Root built in 0.013s, children=34
+127.0.0.1 - - [06/Jun/2026 00:17:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:17:35] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.839s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played Rf1
+[GAME] Move 36, turn=B
+  [MCTS] Root built in 0.012s, children=34
+  [MCTS] 75 sims in 8.620s, visits=75
+[GAME] Search done in 8.6s, visits=75
+[GAME] Played Qf5
+[GAME] Move 39, turn=W
+  [MCTS] Root built in 0.011s, children=38
+127.0.0.1 - - [06/Jun/2026 00:17:40] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:17:45] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.990s, visits=75
+[GAME] Search done in 9.0s, visits=75
+[GAME] Played g6
+[GAME] Move 37, turn=W
+  [MCTS] Root built in 0.006s, children=27
+  [MCTS] 75 sims in 9.034s, visits=75
+[GAME] Search done in 9.1s, visits=75
+[GAME] Played Qh4
+[GAME] Move 40, turn=B
+  [MCTS] Root built in 0.011s, children=45
+127.0.0.1 - - [06/Jun/2026 00:17:50] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.319s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played Ke2
+[GAME] Move 38, turn=B
+  [MCTS] Root built in 0.007s, children=33
+127.0.0.1 - - [06/Jun/2026 00:17:55] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.539s, visits=75
+[GAME] Search done in 8.6s, visits=75
+[GAME] Played Kd8
+[GAME] Move 41, turn=W
+  [MCTS] Root built in 0.010s, children=37
+127.0.0.1 - - [06/Jun/2026 00:18:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.685s, visits=75
+[GAME] Search done in 9.7s, visits=75
+[GAME] Played Qc7
+[GAME] Move 39, turn=W
+  [MCTS] Root built in 0.007s, children=29
+  [MCTS] 75 sims in 9.422s, visits=75
+[GAME] Search done in 9.4s, visits=75
+[GAME] Played Ba3
+127.0.0.1 - - [06/Jun/2026 00:18:05] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 42, turn=B
+  [MCTS] Root built in 0.012s, children=42
+127.0.0.1 - - [06/Jun/2026 00:18:10] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.691s, visits=75
+[GAME] Search done in 8.7s, visits=75
+[GAME] Played b5
+[GAME] Move 40, turn=B
+  [MCTS] Root built in 0.008s, children=27
+  [MCTS] 75 sims in 8.804s, visits=75
+[GAME] Search done in 8.8s, visits=75
+[GAME] Played Be5
+[GAME] Move 43, turn=W
+  [MCTS] Root built in 0.007s, children=34
+127.0.0.1 - - [06/Jun/2026 00:18:15] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:18:20] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.668s, visits=75
+[GAME] Search done in 8.7s, visits=75
+[GAME] Played Qb8
+[GAME] Move 41, turn=W
+  [MCTS] Root built in 0.014s, children=30
+  [MCTS] 75 sims in 9.044s, visits=75
+[GAME] Search done in 9.1s, visits=75
+[GAME] Played Nc3
+[GAME] Move 44, turn=B
+  [MCTS] Root built in 0.010s, children=43
+127.0.0.1 - - [06/Jun/2026 00:18:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:18:30] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.735s, visits=75
+[GAME] Search done in 8.8s, visits=75
+[GAME] Played Re1
+[GAME] Move 42, turn=B
+  [MCTS] Root built in 0.007s, children=24
+  [MCTS] 75 sims in 8.902s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played Bxd4
+[GAME] Move 45, turn=W
+  [MCTS] Root built in 0.004s, children=43
+127.0.0.1 - - [06/Jun/2026 00:18:35] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:18:40] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.887s, visits=75
+[GAME] Search done in 9.9s, visits=75
+[GAME] Played Qa7
+[GAME] Move 43, turn=W
+  [MCTS] Root built in 0.007s, children=26
+  [MCTS] 75 sims in 9.893s, visits=75
+[GAME] Search done in 9.9s, visits=75
+[GAME] Played Kd1
+[GAME] Move 46, turn=B
+  [MCTS] Root built in 0.005s, children=45
+127.0.0.1 - - [06/Jun/2026 00:18:45] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:18:47] "GET /api/train/stream HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:18:47] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.606s, visits=75
+[GAME] Search done in 8.6s, visits=75
+[GAME] Played g5
+[GAME] Move 44, turn=B
+  [MCTS] Root built in 0.008s, children=26
+127.0.0.1 - - [06/Jun/2026 00:18:50] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.221s, visits=75
+[GAME] Search done in 8.2s, visits=75
+[GAME] Played Be5
+[GAME] Move 47, turn=W
+  [MCTS] Root built in 0.005s, children=38
+127.0.0.1 - - [06/Jun/2026 00:18:55] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.085s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Rf8
+[GAME] Move 45, turn=W
+  [MCTS] Root built in 0.005s, children=31
+  [MCTS] 75 sims in 5.590s, visits=75
+[GAME] Search done in 5.6s, visits=75
+[GAME] Played f3
+[GAME] Move 48, turn=B
+  [MCTS] Root built in 0.004s, children=44
+127.0.0.1 - - [06/Jun/2026 00:19:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.703s, visits=75
+[GAME] Search done in 5.7s, visits=75
+[GAME] Played Qb4
+[GAME] Move 46, turn=B
+  [MCTS] Root built in 0.004s, children=23
+  [MCTS] 75 sims in 5.774s, visits=75
+[GAME] Search done in 5.8s, visits=75
+[GAME] Played Bf4
+[GAME] Move 49, turn=W
+  [MCTS] Root built in 0.007s, children=33
+127.0.0.1 - - [06/Jun/2026 00:19:05] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.128s, visits=75
+[GAME] Search done in 5.1s, visits=75
+[GAME] Played Be5
+[GAME] Move 47, turn=W
+  [MCTS] Root built in 0.004s, children=32
+  [MCTS] 75 sims in 4.989s, visits=75
+[GAME] Search done in 5.0s, visits=75
+[GAME] Played Bb2
+[GAME] Move 50, turn=B
+  [MCTS] Root built in 0.004s, children=42
+127.0.0.1 - - [06/Jun/2026 00:19:10] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.672s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Rf1
+[GAME] Move 48, turn=B
+  [MCTS] Root built in 0.004s, children=30
+  [MCTS] 75 sims in 4.656s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Rb6
+[GAME] Move 51, turn=W
+  [MCTS] Root built in 0.004s, children=35
+127.0.0.1 - - [06/Jun/2026 00:19:15] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.409s, visits=75
+[GAME] Search done in 4.4s, visits=75
+[GAME] Played exd3+
+[GAME] Move 49, turn=W
+  [MCTS] Root built in 0.003s, children=5
+  [MCTS] 75 sims in 4.578s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Qf6
+[GAME] Move 52, turn=B
+  [MCTS] Root built in 0.005s, children=41
+127.0.0.1 - - [06/Jun/2026 00:19:20] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.522s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Kf2
+[GAME] Move 50, turn=B
+  [MCTS] Root built in 0.003s, children=29
+  [MCTS] 75 sims in 4.621s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Qc8
+[GAME] Move 53, turn=W
+  [MCTS] Root built in 0.003s, children=44
+127.0.0.1 - - [06/Jun/2026 00:19:25] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.751s, visits=75
+[GAME] Search done in 4.8s, visits=75
+[GAME] Played Rg8
+[GAME] Move 51, turn=W
+  [MCTS] Root built in 0.005s, children=30
+  [MCTS] 75 sims in 4.531s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Qe6
+[GAME] Move 54, turn=B
+  [MCTS] Root built in 0.004s, children=29
+  [MCTS] 75 sims in 4.396s, visits=75
+[GAME] Search done in 4.4s, visits=75
+[GAME] Played Ra2
+[GAME] Move 52, turn=B
+  [MCTS] Root built in 0.003s, children=32
+127.0.0.1 - - [06/Jun/2026 00:19:30] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.553s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played a4
+[GAME] Move 55, turn=W
+  [MCTS] Root built in 0.004s, children=41
+  [MCTS] 75 sims in 4.574s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Bf4
+[GAME] Move 53, turn=W
+  [MCTS] Root built in 0.004s, children=34
+127.0.0.1 - - [06/Jun/2026 00:19:35] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.607s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Qf6
+[GAME] Move 56, turn=B
+  [MCTS] Root built in 0.005s, children=31
+  [MCTS] 75 sims in 4.656s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Rc2
+[GAME] Move 54, turn=B
+  [MCTS] Root built in 0.004s, children=28
+127.0.0.1 - - [06/Jun/2026 00:19:40] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.471s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Ba6
+[GAME] Move 57, turn=W
+  [MCTS] Root built in 0.005s, children=42
+  [MCTS] 75 sims in 4.512s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Bb8
+[GAME] Move 55, turn=W
+  [MCTS] Root built in 0.004s, children=32
+127.0.0.1 - - [06/Jun/2026 00:19:45] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.683s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Kd2
+[GAME] Move 58, turn=B
+  [MCTS] Root built in 0.004s, children=32
+  [MCTS] 75 sims in 4.635s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Ne4
+[GAME] Move 56, turn=B
+  [MCTS] Root built in 0.007s, children=24
+127.0.0.1 - - [06/Jun/2026 00:19:50] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.646s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played bxc4
+[GAME] Move 59, turn=W
+  [MCTS] Root built in 0.005s, children=45
+  [MCTS] 75 sims in 4.638s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played hxg5
+[GAME] Move 57, turn=W
+  [MCTS] Root built in 0.004s, children=39
+  [MCTS] 75 sims in 4.593s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Rc1
+[GAME] Move 60, turn=B
+  [MCTS] Root built in 0.005s, children=33
+127.0.0.1 - - [06/Jun/2026 00:19:55] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.803s, visits=75
+[GAME] Search done in 5.8s, visits=75
+[GAME] Played Qxc5
+[GAME] Move 58, turn=B
+  [MCTS] Root built in 0.006s, children=22
+127.0.0.1 - - [06/Jun/2026 00:20:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.358s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Qb7
+[GAME] Move 61, turn=W
+  [MCTS] Root built in 0.009s, children=45
+127.0.0.1 - - [06/Jun/2026 00:20:05] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.528s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Nxc5
+[GAME] Move 59, turn=W
+  [MCTS] Root built in 0.006s, children=30
+  [MCTS] 75 sims in 6.519s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Qxf4
+[GAME] Move 62, turn=B
+  [MCTS] Root built in 0.007s, children=24
+127.0.0.1 - - [06/Jun/2026 00:20:10] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.345s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Ke1
+[GAME] Move 60, turn=B
+  [MCTS] Root built in 0.006s, children=26
+  [MCTS] 75 sims in 6.090s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played a3
+[GAME] Move 63, turn=W
+  [MCTS] Root built in 0.008s, children=44
+127.0.0.1 - - [06/Jun/2026 00:20:15] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.127s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played b6
+[GAME] Move 61, turn=W
+  [MCTS] Root built in 0.006s, children=35
+127.0.0.1 - - [06/Jun/2026 00:20:20] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.566s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Bd1
+[GAME] Move 64, turn=B
+  [MCTS] Root built in 0.007s, children=24
+127.0.0.1 - - [06/Jun/2026 00:20:25] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.497s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Rcf2
+[GAME] Move 62, turn=B
+  [MCTS] Root built in 0.006s, children=28
+  [MCTS] 75 sims in 6.416s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Kc8
+[GAME] Move 65, turn=W
+  [MCTS] Root built in 0.006s, children=42
+127.0.0.1 - - [06/Jun/2026 00:20:30] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.444s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Rh8
+[GAME] Move 63, turn=W
+  [MCTS] Root built in 0.006s, children=31
+  [MCTS] 75 sims in 6.272s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played Nce2
+[GAME] Move 66, turn=B
+  [MCTS] Root built in 0.007s, children=25
+127.0.0.1 - - [06/Jun/2026 00:20:35] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.122s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Bxd7+
+[GAME] Move 64, turn=B
+  [MCTS] Root built in 0.007s, children=7
+127.0.0.1 - - [06/Jun/2026 00:20:40] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.473s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Nd4
+[GAME] Move 67, turn=W
+  [MCTS] Root built in 0.007s, children=40
+  [MCTS] 75 sims in 6.329s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Kf8
+[GAME] Move 65, turn=W
+  [MCTS] Root built in 0.005s, children=35
+127.0.0.1 - - [06/Jun/2026 00:20:45] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.519s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Ng3
+[GAME] Move 68, turn=B
+  [MCTS] Root built in 0.007s, children=33
+127.0.0.1 - - [06/Jun/2026 00:20:50] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.109s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Bb2
+[GAME] Move 66, turn=B
+  [MCTS] Root built in 0.010s, children=32
+  [MCTS] 75 sims in 6.508s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played f6
+[GAME] Move 69, turn=W
+  [MCTS] Root built in 0.008s, children=38
+127.0.0.1 - - [06/Jun/2026 00:20:55] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.771s, visits=75
+[GAME] Search done in 5.8s, visits=75
+[GAME] Played Bxd7
+[GAME] Move 67, turn=W
+  [MCTS] Root built in 0.006s, children=32
+127.0.0.1 - - [06/Jun/2026 00:21:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.408s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Nh1
+[GAME] Move 70, turn=B
+  [MCTS] Root built in 0.006s, children=29
+  [MCTS] 75 sims in 5.794s, visits=75
+[GAME] Search done in 5.8s, visits=75
+[GAME] Played Kd1
+[GAME] Move 68, turn=B
+  [MCTS] Root built in 0.006s, children=36
+127.0.0.1 - - [06/Jun/2026 00:21:05] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.251s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played Qc6
+[GAME] Move 71, turn=W
+  [MCTS] Root built in 0.007s, children=39
+  [MCTS] 75 sims in 5.758s, visits=75
+[GAME] Search done in 5.8s, visits=75
+[GAME] Played Ne6
+[GAME] Move 69, turn=W
+  [MCTS] Root built in 0.007s, children=35
+127.0.0.1 - - [06/Jun/2026 00:21:10] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.426s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played g4
+[GAME] Move 72, turn=B
+  [MCTS] Root built in 0.008s, children=32
+  [MCTS] 75 sims in 5.825s, visits=75
+[GAME] Search done in 5.8s, visits=75
+[GAME] Played Rxf7+
+[GAME] Move 70, turn=B
+  [MCTS] Root built in 0.007s, children=2
+127.0.0.1 - - [06/Jun/2026 00:21:15] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:21:20] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.019s, visits=75
+[GAME] Search done in 6.0s, visits=75
+[GAME] Played Ke8
+  [MCTS] 75 sims in 6.407s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Kd7
+[GAME] Move 71, turn=W
+  [MCTS] Root built in 0.008s, children=42
+[GAME] Move 73, turn=W
+  [MCTS] Root built in 0.006s, children=36
+127.0.0.1 - - [06/Jun/2026 00:21:25] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.575s, visits=75
+[GAME] Search done in 5.6s, visits=75
+[GAME] Played R7f2
+[GAME] Move 72, turn=B
+  [MCTS] Root built in 0.007s, children=31
+  [MCTS] 75 sims in 6.228s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played Ba1
+[GAME] Move 74, turn=B
+  [MCTS] Root built in 0.006s, children=30
+127.0.0.1 - - [06/Jun/2026 00:21:30] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.356s, visits=75
+[GAME] Search done in 5.4s, visits=75
+[GAME] Played Nf8
+[GAME] Move 73, turn=W
+  [MCTS] Root built in 0.006s, children=36
+  [MCTS] 75 sims in 6.419s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Rh7
+[GAME] Move 75, turn=W
+  [MCTS] Root built in 0.008s, children=34
+127.0.0.1 - - [06/Jun/2026 00:21:35] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.513s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Ke1
+[GAME] Move 74, turn=B
+  [MCTS] Root built in 0.006s, children=29
+  [MCTS] 75 sims in 6.335s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Rc2
+[GAME] Move 76, turn=B
+  [MCTS] Root built in 0.004s, children=32
+127.0.0.1 - - [06/Jun/2026 00:21:40] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.832s, visits=75
+[GAME] Search done in 4.8s, visits=75
+[GAME] Played Ne6
+[GAME] Move 75, turn=W
+  [MCTS] Root built in 0.004s, children=34
+  [MCTS] 75 sims in 4.347s, visits=75
+[GAME] Search done in 4.4s, visits=75
+[GAME] Played e6
+[GAME] Move 77, turn=W
+  [MCTS] Root built in 0.004s, children=32
+127.0.0.1 - - [06/Jun/2026 00:21:45] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 3.902s, visits=75
+[GAME] Search done in 3.9s, visits=75
+[GAME] Played Rf5
+[GAME] Move 76, turn=B
+  [MCTS] Root built in 0.004s, children=32
+  [MCTS] 75 sims in 4.583s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Qxf6
+[GAME] Move 78, turn=B
+  [MCTS] Root built in 0.004s, children=30
+127.0.0.1 - - [06/Jun/2026 00:21:50] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.269s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played Kd8
+[GAME] Move 77, turn=W
+  [MCTS] Root built in 0.005s, children=39
+  [MCTS] 75 sims in 4.303s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played Kd6
+[GAME] Move 79, turn=W
+  [MCTS] Root built in 0.005s, children=37
+127.0.0.1 - - [06/Jun/2026 00:21:56] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.508s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Rf6
+[GAME] Move 78, turn=B
+  [MCTS] Root built in 0.003s, children=34
+  [MCTS] 75 sims in 4.542s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Rh2
+[GAME] Move 80, turn=B
+  [MCTS] Root built in 0.004s, children=29
+127.0.0.1 - - [06/Jun/2026 00:22:01] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.609s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Rh6
+[GAME] Move 79, turn=W
+  [MCTS] Root built in 0.004s, children=34
+  [MCTS] 75 sims in 4.599s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Rh8
+[GAME] Move 81, turn=W
+  [MCTS] Root built in 0.004s, children=40
+  [MCTS] 75 sims in 4.327s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played g4
+[GAME] Move 80, turn=B
+  [MCTS] Root built in 0.003s, children=31
+127.0.0.1 - - [06/Jun/2026 00:22:06] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.323s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played g5
+[GAME] Move 82, turn=B
+  [MCTS] Root built in 0.004s, children=26
+  [MCTS] 75 sims in 4.585s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Qa5+
+[GAME] Move 81, turn=W
+  [MCTS] Root built in 0.004s, children=7
+127.0.0.1 - - [06/Jun/2026 00:22:11] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.601s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played Nb5
+[GAME] Move 83, turn=W
+  [MCTS] Root built in 0.003s, children=40
+  [MCTS] 75 sims in 4.529s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Kd1
+[GAME] Move 82, turn=B
+  [MCTS] Root built in 0.005s, children=37
+127.0.0.1 - - [06/Jun/2026 00:22:16] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.685s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Be2
+[GAME] Move 84, turn=B
+  [MCTS] Root built in 0.004s, children=19
+  [MCTS] 75 sims in 4.465s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Nf4
+[GAME] Move 83, turn=W
+  [MCTS] Root built in 0.004s, children=34
+127.0.0.1 - - [06/Jun/2026 00:22:21] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.370s, visits=75
+[GAME] Search done in 4.4s, visits=75
+[GAME] Played Qb7
+[GAME] Move 85, turn=W
+  [MCTS] Root built in 0.005s, children=41
+  [MCTS] 75 sims in 4.601s, visits=75
+[GAME] Search done in 4.6s, visits=75
+[GAME] Played h4
+[GAME] Move 84, turn=B
+  [MCTS] Root built in 0.005s, children=36
+127.0.0.1 - - [06/Jun/2026 00:22:26] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.673s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Nh3
+[GAME] Move 86, turn=B
+  [MCTS] Root built in 0.004s, children=19
+  [MCTS] 75 sims in 4.644s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Qa6
+[GAME] Move 85, turn=W
+  [MCTS] Root built in 0.003s, children=37
+  [MCTS] 75 sims in 4.326s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played c6
+127.0.0.1 - - [06/Jun/2026 00:22:31] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 87, turn=W
+  [MCTS] Root built in 0.005s, children=41
+  [MCTS] 75 sims in 4.503s, visits=75
+[GAME] Search done in 4.5s, visits=75
+[GAME] Played Ned2
+[GAME] Move 86, turn=B
+  [MCTS] Root built in 0.005s, children=32
+  [MCTS] 75 sims in 4.803s, visits=75
+[GAME] Search done in 4.8s, visits=75
+[GAME] Played Qf5
+[GAME] Move 88, turn=B
+  [MCTS] Root built in 0.004s, children=26
+127.0.0.1 - - [06/Jun/2026 00:22:36] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.761s, visits=75
+[GAME] Search done in 4.8s, visits=75
+[GAME] Played Ne6
+[GAME] Move 87, turn=W
+  [MCTS] Root built in 0.005s, children=31
+  [MCTS] 75 sims in 4.775s, visits=75
+[GAME] Search done in 4.8s, visits=75
+[GAME] Played c3+
+[GAME] Move 89, turn=W
+  [MCTS] Root built in 0.004s, children=6
+127.0.0.1 - - [06/Jun/2026 00:22:41] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.641s, visits=75
+[GAME] Search done in 4.7s, visits=75
+[GAME] Played Ne4
+[GAME] Move 88, turn=B
+  [MCTS] Root built in 0.005s, children=33
+127.0.0.1 - - [06/Jun/2026 00:22:46] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.686s, visits=75
+[GAME] Search done in 5.7s, visits=75
+[GAME] Played Kd1
+[GAME] Move 90, turn=B
+  [MCTS] Root built in 0.005s, children=24
+  [MCTS] 75 sims in 6.686s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Ra7
+[GAME] Move 89, turn=W
+  [MCTS] Root built in 0.007s, children=36
+127.0.0.1 - - [06/Jun/2026 00:22:51] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.698s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Qc8
+[GAME] Move 91, turn=W
+  [MCTS] Root built in 0.007s, children=35
+127.0.0.1 - - [06/Jun/2026 00:22:56] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.355s, visits=75
+[GAME] Search done in 7.4s, visits=75
+[GAME] Played R6f2
+[GAME] Move 90, turn=B
+  [MCTS] Root built in 0.010s, children=33
+127.0.0.1 - - [06/Jun/2026 00:23:01] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.588s, visits=75
+[GAME] Search done in 8.6s, visits=75
+[GAME] Played Ng3
+[GAME] Move 92, turn=B
+  [MCTS] Root built in 0.009s, children=25
+127.0.0.1 - - [06/Jun/2026 00:23:06] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.928s, visits=75
+[GAME] Search done in 9.0s, visits=75
+[GAME] Played Rh7
+[GAME] Move 91, turn=W
+  [MCTS] Root built in 0.008s, children=38
+127.0.0.1 - - [06/Jun/2026 00:23:11] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.061s, visits=75
+[GAME] Search done in 9.1s, visits=75
+[GAME] Played Qa8
+[GAME] Move 93, turn=W
+  [MCTS] Root built in 0.010s, children=37
+  [MCTS] 75 sims in 9.132s, visits=75
+[GAME] Search done in 9.2s, visits=75
+[GAME] Played Rc2
+[GAME] Move 92, turn=B
+  [MCTS] Root built in 0.011s, children=37
+127.0.0.1 - - [06/Jun/2026 00:23:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:23:21] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.326s, visits=75
+[GAME] Search done in 9.4s, visits=75
+[GAME] Played Qf6
+[GAME] Move 94, turn=B
+  [MCTS] Root built in 0.010s, children=22
+  [MCTS] 75 sims in 9.335s, visits=75
+[GAME] Search done in 9.4s, visits=75
+[GAME] Played Qb7
+[GAME] Move 93, turn=W
+  [MCTS] Root built in 0.009s, children=41
+127.0.0.1 - - [06/Jun/2026 00:23:26] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.189s, visits=75
+[GAME] Search done in 9.2s, visits=75
+[GAME] Played Nd4
+[GAME] Move 95, turn=W
+  [MCTS] Root built in 0.008s, children=42
+127.0.0.1 - - [06/Jun/2026 00:23:31] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.067s, visits=75
+[GAME] Search done in 9.1s, visits=75
+[GAME] Played Rc3
+[GAME] Move 94, turn=B
+  [MCTS] Root built in 0.014s, children=39
+127.0.0.1 - - [06/Jun/2026 00:23:36] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.330s, visits=75
+[GAME] Search done in 9.4s, visits=75
+[GAME] Played Qg7
+[GAME] Move 96, turn=B
+  [MCTS] Root built in 0.008s, children=29
+127.0.0.1 - - [06/Jun/2026 00:23:41] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.212s, visits=75
+[GAME] Search done in 9.2s, visits=75
+[GAME] Played Qa8
+[GAME] Move 95, turn=W
+  [MCTS] Root built in 0.008s, children=30
+127.0.0.1 - - [06/Jun/2026 00:23:46] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.881s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played c5
+[GAME] Move 97, turn=W
+  [MCTS] Root built in 0.013s, children=45
+127.0.0.1 - - [06/Jun/2026 00:23:51] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.151s, visits=75
+[GAME] Search done in 9.2s, visits=75
+[GAME] Played Rc1
+[GAME] Move 96, turn=B
+  [MCTS] Root built in 0.008s, children=37
+127.0.0.1 - - [06/Jun/2026 00:23:56] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.463s, visits=75
+[GAME] Search done in 9.5s, visits=75
+[GAME] Played Bxc3
+[GAME] Move 98, turn=B
+  [MCTS] Root built in 0.010s, children=34
+127.0.0.1 - - [06/Jun/2026 00:24:01] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.478s, visits=75
+[GAME] Search done in 9.5s, visits=75
+[GAME] Played Nf8
+[GAME] Move 97, turn=W
+  [MCTS] Root built in 0.008s, children=34
+127.0.0.1 - - [06/Jun/2026 00:24:06] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.221s, visits=75
+[GAME] Search done in 9.3s, visits=75
+[GAME] Played Qc6
+[GAME] Move 99, turn=W
+  [MCTS] Root built in 0.013s, children=48
+127.0.0.1 - - [06/Jun/2026 00:24:11] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.117s, visits=75
+[GAME] Search done in 9.1s, visits=75
+[GAME] Played Bc3
+[GAME] Move 98, turn=B
+  [MCTS] Root built in 0.011s, children=35
+127.0.0.1 - - [06/Jun/2026 00:24:16] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.382s, visits=75
+[GAME] Search done in 9.4s, visits=75
+[GAME] Played Nf2
+[GAME] Move 100, turn=B
+  [MCTS] Root built in 0.007s, children=31
+  [MCTS] 75 sims in 9.313s, visits=75
+[GAME] Search done in 9.3s, visits=75
+[GAME] Played Bh2
+127.0.0.1 - - [06/Jun/2026 00:24:21] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 99, turn=W
+  [MCTS] Root built in 0.012s, children=35
+127.0.0.1 - - [06/Jun/2026 00:24:26] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.152s, visits=75
+[GAME] Search done in 9.2s, visits=75
+[GAME] Played Qc7
+[GAME] Move 101, turn=W
+  [MCTS] Root built in 0.008s, children=49
+  [MCTS] 75 sims in 9.249s, visits=75
+[GAME] Search done in 9.3s, visits=75
+[GAME] Played c5
+[GAME] Move 100, turn=B
+  [MCTS] Root built in 0.009s, children=39
+127.0.0.1 - - [06/Jun/2026 00:24:31] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.308s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played Rh3
+[GAME] Move 102, turn=B
+  [MCTS] Root built in 0.007s, children=36
+127.0.0.1 - - [06/Jun/2026 00:24:36] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.209s, visits=75
+[GAME] Search done in 7.2s, visits=75
+[GAME] Played Qxe4
+[GAME] Move 101, turn=W
+  [MCTS] Root built in 0.005s, children=29
+127.0.0.1 - - [06/Jun/2026 00:24:41] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.043s, visits=75
+[GAME] Search done in 7.1s, visits=75
+[GAME] Played Nf5
+[GAME] Move 103, turn=W
+  [MCTS] Root built in 0.008s, children=48
+  [MCTS] 75 sims in 6.865s, visits=75
+[GAME] Search done in 6.9s, visits=75
+[GAME] Played Nd2
+[GAME] Move 102, turn=B
+  [MCTS] Root built in 0.007s, children=51
+127.0.0.1 - - [06/Jun/2026 00:24:46] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.117s, visits=75
+[GAME] Search done in 7.1s, visits=75
+[GAME] Played Ba1
+[GAME] Move 104, turn=B
+  [MCTS] Root built in 0.007s, children=36
+127.0.0.1 - - [06/Jun/2026 00:24:51] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.980s, visits=75
+[GAME] Search done in 7.0s, visits=75
+[GAME] Played Ra5
+[GAME] Move 103, turn=W
+  [MCTS] Root built in 0.006s, children=32
+127.0.0.1 - - [06/Jun/2026 00:24:56] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.057s, visits=75
+[GAME] Search done in 7.1s, visits=75
+[GAME] Played Nf6
+[GAME] Move 105, turn=W
+  [MCTS] Root built in 0.008s, children=48
+  [MCTS] 75 sims in 6.910s, visits=75
+[GAME] Search done in 6.9s, visits=75
+[GAME] Played Rf6
+[GAME] Move 104, turn=B
+  [MCTS] Root built in 0.005s, children=50
+127.0.0.1 - - [06/Jun/2026 00:25:01] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.634s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Bc4
+[GAME] Move 106, turn=B
+  [MCTS] Root built in 0.004s, children=46
+  [MCTS] 75 sims in 5.911s, visits=75
+[GAME] Search done in 5.9s, visits=75
+[GAME] Played Be5
+[GAME] Move 105, turn=W
+  [MCTS] Root built in 0.009s, children=32
+127.0.0.1 - - [06/Jun/2026 00:25:06] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.080s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Rb5
+[GAME] Move 107, turn=W
+  [MCTS] Root built in 0.006s, children=49
+127.0.0.1 - - [06/Jun/2026 00:25:11] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.396s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Rc2
+[GAME] Move 106, turn=B
+  [MCTS] Root built in 0.005s, children=49
+  [MCTS] 75 sims in 6.379s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Rd2
+[GAME] Move 108, turn=B
+  [MCTS] Root built in 0.005s, children=45
+127.0.0.1 - - [06/Jun/2026 00:25:16] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.489s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Kc7
+[GAME] Move 107, turn=W
+  [MCTS] Root built in 0.008s, children=33
+127.0.0.1 - - [06/Jun/2026 00:25:21] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.368s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Kc6
+[GAME] Move 109, turn=W
+  [MCTS] Root built in 0.005s, children=50
+  [MCTS] 75 sims in 6.562s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Nb3
+[GAME] Move 108, turn=B
+  [MCTS] Root built in 0.008s, children=49
+127.0.0.1 - - [06/Jun/2026 00:25:26] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.520s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Qh7
+[GAME] Move 110, turn=B
+  [MCTS] Root built in 0.005s, children=53
+127.0.0.1 - - [06/Jun/2026 00:25:31] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.461s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Rxh4
+[GAME] Move 109, turn=W
+  [MCTS] Root built in 0.004s, children=38
+  [MCTS] 75 sims in 6.610s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Qa7
+[GAME] Move 111, turn=W
+  [MCTS] Root built in 0.004s, children=51
+127.0.0.1 - - [06/Jun/2026 00:25:36] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.536s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played c6
+[GAME] Move 110, turn=B
+  [MCTS] Root built in 0.007s, children=45
+127.0.0.1 - - [06/Jun/2026 00:25:41] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.362s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Bxd5+
+[GAME] Move 112, turn=B
+  [MCTS] Root built in 0.005s, children=4
+  [MCTS] 75 sims in 6.330s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Qg2
+[GAME] Move 111, turn=W
+  [MCTS] Root built in 0.005s, children=35
+127.0.0.1 - - [06/Jun/2026 00:25:47] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.209s, visits=75
+[GAME] Search done in 6.2s, visits=75
+[GAME] Played exd5
+[GAME] Move 113, turn=W
+  [MCTS] Root built in 0.004s, children=45
+  [MCTS] 75 sims in 6.376s, visits=75
+[GAME] Search done in 6.4s, visits=75
+[GAME] Played Ke1
+[GAME] Move 112, turn=B
+  [MCTS] Root built in 0.008s, children=48
+127.0.0.1 - - [06/Jun/2026 00:25:52] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:25:54] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.104s, visits=75
+[GAME] Search done in 6.1s, visits=75
+[GAME] Played Bc3
+[GAME] Move 114, turn=B
+  [MCTS] Root built in 0.004s, children=45
+127.0.0.1 - - [06/Jun/2026 00:25:57] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 5.546s, visits=75
+[GAME] Search done in 5.6s, visits=75
+[GAME] Played Bd6
+[GAME] Move 113, turn=W
+  [MCTS] Root built in 0.003s, children=33
+  [MCTS] 75 sims in 4.303s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played Rxh7
+[GAME] Move 115, turn=W
+  [MCTS] Root built in 0.003s, children=33
+  [MCTS] 75 sims in 4.200s, visits=75
+[GAME] Search done in 4.2s, visits=75
+[GAME] Played Bd4
+[GAME] Move 114, turn=B
+  [MCTS] Root built in 0.003s, children=49
+127.0.0.1 - - [06/Jun/2026 00:26:02] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 4.298s, visits=75
+[GAME] Search done in 4.3s, visits=75
+[GAME] Played Kc1
+[GAME] Move 116, turn=B
+  [MCTS] Root built in 0.007s, children=45
+  [MCTS] 75 sims in 5.347s, visits=75
+[GAME] Search done in 5.4s, visits=75
+[GAME] Played Rxg4
+[GAME] Move 115, turn=W
+  [MCTS] Root built in 0.006s, children=34
+127.0.0.1 - - [06/Jun/2026 00:26:07] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.499s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Rhb7
+[GAME] Move 117, turn=W
+  [MCTS] Root built in 0.007s, children=34
+127.0.0.1 - - [06/Jun/2026 00:26:12] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.675s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Rc3
+[GAME] Move 116, turn=B
+  [MCTS] Root built in 0.007s, children=45
+127.0.0.1 - - [06/Jun/2026 00:26:17] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.561s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Nfe4
+[GAME] Move 118, turn=B
+  [MCTS] Root built in 0.005s, children=36
+  [MCTS] 75 sims in 6.555s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Qf2+
+[GAME] Move 117, turn=W
+  [MCTS] Root built in 0.004s, children=3
+127.0.0.1 - - [06/Jun/2026 00:26:22] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.494s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played Rb8
+[GAME] Move 119, turn=W
+  [MCTS] Root built in 0.007s, children=34
+  [MCTS] 75 sims in 6.566s, visits=75
+[GAME] Search done in 6.6s, visits=75
+[GAME] Played Kxf2
+[GAME] Move 118, turn=B
+127.0.0.1 - - [06/Jun/2026 00:26:27] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] Root built in 0.009s, children=31
+  [MCTS] 75 sims in 6.659s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Rdh2
+[GAME] Move 120, turn=B
+  [MCTS] Root built in 0.005s, children=47
+127.0.0.1 - - [06/Jun/2026 00:26:32] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.258s, visits=75
+[GAME] Search done in 6.3s, visits=75
+[GAME] Played Bf4
+[GAME] Move 119, turn=W
+  [MCTS] Root built in 0.009s, children=26
+127.0.0.1 - - [06/Jun/2026 00:26:37] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.079s, visits=75
+[GAME] Search done in 7.1s, visits=75
+[GAME] Played Bb7
+[GAME] Move 121, turn=W
+  [MCTS] Root built in 0.007s, children=33
+  [MCTS] 75 sims in 8.682s, visits=75
+[GAME] Search done in 8.7s, visits=75
+127.0.0.1 - - [06/Jun/2026 00:26:42] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Played Nc1
+[GAME] Move 120, turn=B
+  [MCTS] Root built in 0.009s, children=24
+127.0.0.1 - - [06/Jun/2026 00:26:47] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 9.293s, visits=75
+[GAME] Search done in 9.3s, visits=75
+[GAME] Played gxh6
+[GAME] Move 122, turn=B
+  [MCTS] Root built in 0.007s, children=40
+  [MCTS] 75 sims in 8.909s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played Rxb5
+[GAME] Move 121, turn=W
+  [MCTS] Root built in 0.008s, children=25
+127.0.0.1 - - [06/Jun/2026 00:26:52] "GET /api/train/status HTTP/1.1" 200 -
+[SF] Shared Stockfish instance created
+[TRAINER] CUDA OOM, falling back to CPU
+[TRAINER] Using shared Stockfish instance
+[Checkpoint] Loaded step=20, games=4
+[BOOT] Trainer initialized eagerly
+[BOOT] Eager init failed: name 'start_side_games' is not defined
+Traceback (most recent call last):
+  File "/home/lance/TheFoolsGambitPython/training/server.py", line 222, in _eager_init
+    start_side_games(trainer)
+NameError: name 'start_side_games' is not defined
+[SIDE-GAME] Started side game 1
+[SIDE-GAME] Started side game 2
+[BOOT] Side games started on boot
+ * Serving Flask app 'train_server'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.217:5001
+Press CTRL+C to quit
+127.0.0.1 - - [06/Jun/2026 00:27:37] "GET /api/train/status HTTP/1.1" 200 -
+[TRAIN] Starting training thread: games=20, steps=50, mcts=500
+127.0.0.1 - - [06/Jun/2026 00:27:40] "POST /api/train/start HTTP/1.1" 200 -
+[GAME] Starting self-play, sims=75
+[SIDE-GAME] Started side game 1
+[GAME] Move 1, turn=W
+[AUTO] Training started automatically.
+[GAME] Starting self-play, sims=75
+[SIDE-GAME] Started side game 2
+[GAME] Move 1, turn=W
+[TRAIN] --- Starting game 1/20 ---
+[TRAIN] Entering Critic mode for game 1
+  [MCTS] Root built in 0.025s, children=20
+  [MCTS] Root built in 0.031s, children=20
+  [MCTS] 75 sims in 15.795s, visits=75
+[GAME] Search done in 15.8s, visits=75
+[GAME] Played Nc3
+  [MCTS] 75 sims in 15.928s, visits=75
+[GAME] Search done in 16.0s, visits=75
+[GAME] Played Nh3
+[CRITIC] move 1: h4 (eval=38cp)
+127.0.0.1 - - [06/Jun/2026 00:27:59] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:27:59] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:27:59] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:27:59] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 2, turn=B
+  [MCTS] Root built in 0.008s, children=20
+[GAME] Move 2, turn=B
+  [MCTS] Root built in 0.014s, children=20
+127.0.0.1 - - [06/Jun/2026 00:28:00] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 14.399s, visits=75
+[GAME] Search done in 14.4s, visits=75
+[GAME] Played e5
+  [MCTS] 75 sims in 15.604s, visits=75
+[GAME] Search done in 15.6s, visits=75
+[GAME] Played b5
+[CRITIC] move 2: f5 (eval=-48cp)
+127.0.0.1 - - [06/Jun/2026 00:28:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:19] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.010s, children=20
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.017s, children=22
+127.0.0.1 - - [06/Jun/2026 00:28:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:20] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:20] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 15.086s, visits=75
+[GAME] Search done in 15.1s, visits=75
+[GAME] Played d3
+  [MCTS] 75 sims in 14.893s, visits=75
+[GAME] Search done in 14.9s, visits=75
+[GAME] Played g3
+[CRITIC] move 3: e3 (eval=40cp)
+127.0.0.1 - - [06/Jun/2026 00:28:38] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:38] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:38] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:38] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:38] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.005s, children=30
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.012s, children=21
+127.0.0.1 - - [06/Jun/2026 00:28:39] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:39] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:39] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.374s, visits=75
+[GAME] Search done in 8.4s, visits=75
+[GAME] Played b5
+  [MCTS] 75 sims in 8.298s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played Nf6
+[CRITIC] move 4: a6 (eval=17cp)
+127.0.0.1 - - [06/Jun/2026 00:28:51] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:51] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:51] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.006s, children=27
+127.0.0.1 - - [06/Jun/2026 00:28:52] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.011s, children=23
+127.0.0.1 - - [06/Jun/2026 00:28:52] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:28:52] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.165s, visits=75
+[GAME] Search done in 8.2s, visits=75
+[GAME] Played a3
+  [MCTS] 75 sims in 8.442s, visits=75
+[GAME] Search done in 8.5s, visits=75
+[GAME] Played b4
+[CRITIC] move 5: Ke2 (eval=46cp)
+127.0.0.1 - - [06/Jun/2026 00:29:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:18] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:19] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:19] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.005s, children=31
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.008s, children=22
+127.0.0.1 - - [06/Jun/2026 00:29:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:20] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:20] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:20] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:20] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:20] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.784s, visits=75
+[GAME] Search done in 7.8s, visits=75
+[GAME] Played Ba6
+  [MCTS] 75 sims in 8.857s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played d6
+[CRITIC] move 6: b6 (eval=-71cp)
+127.0.0.1 - - [06/Jun/2026 00:29:30] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:30] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:30] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.004s, children=23
+127.0.0.1 - - [06/Jun/2026 00:29:30] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.009s, children=26
+127.0.0.1 - - [06/Jun/2026 00:29:31] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:31] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.058s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played d3
+  [MCTS] 75 sims in 10.916s, visits=75
+[GAME] Search done in 10.9s, visits=75
+[GAME] Played Ra2
+[CRITIC] move 7: Qe1 (eval=-44cp)
+127.0.0.1 - - [06/Jun/2026 00:29:45] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:45] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:45] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:46] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 8, turn=B
+  [MCTS] Root built in 0.008s, children=20
+[GAME] Move 8, turn=B
+  [MCTS] Root built in 0.013s, children=34
+127.0.0.1 - - [06/Jun/2026 00:29:47] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:47] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:47] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+[CRITIC] move 8: c5 (eval=-129cp)
+127.0.0.1 - - [06/Jun/2026 00:29:59] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:59] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:59] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:59] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:29:59] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.523s, visits=75
+[GAME] Search done in 13.5s, visits=75
+[GAME] Played d6
+127.0.0.1 - - [06/Jun/2026 00:30:00] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:00] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.889s, visits=75
+[GAME] Search done in 13.9s, visits=75
+[GAME] Played Na6
+[CRITIC] move 9: a3 (eval=-131cp)
+[GAME] Move 9, turn=W
+  [MCTS] Root built in 0.010s, children=29
+127.0.0.1 - - [06/Jun/2026 00:30:13] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:13] "POST /api/train/evaluate HTTP/1.1" 200 -
+[GAME] Move 9, turn=W
+  [MCTS] Root built in 0.012s, children=26
+127.0.0.1 - - [06/Jun/2026 00:30:13] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:13] "GET /api/train/status HTTP/1.1" 200 -
+[CRITIC] move 10: e5 (eval=-194cp)
+127.0.0.1 - - [06/Jun/2026 00:30:23] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:23] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:23] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:24] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:24] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 14.073s, visits=75
+[GAME] Search done in 14.1s, visits=75
+[GAME] Played a3
+  [MCTS] 75 sims in 13.938s, visits=75
+[GAME] Search done in 14.0s, visits=75
+[GAME] Played e4
+[CRITIC] move 11: Ra2 (eval=-117cp)
+127.0.0.1 - - [06/Jun/2026 00:30:35] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:35] "POST /api/train/evaluate HTTP/1.1" 200 -
+[GAME] Move 10, turn=B
+  [MCTS] Root built in 0.009s, children=23
+[GAME] Move 10, turn=B
+  [MCTS] Root built in 0.010s, children=31
+127.0.0.1 - - [06/Jun/2026 00:30:36] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:36] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:36] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:36] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.399s, visits=75
+[GAME] Search done in 13.4s, visits=75
+[GAME] Played d5
+  [MCTS] 75 sims in 13.477s, visits=75
+[GAME] Search done in 13.5s, visits=75
+[GAME] Played Ke7
+[CRITIC] move 12: Ne7 (eval=-260cp)
+127.0.0.1 - - [06/Jun/2026 00:30:52] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:53] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:30:53] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 11, turn=W
+  [MCTS] Root built in 0.018s, children=29
+[GAME] Move 11, turn=W
+  [MCTS] Root built in 0.010s, children=30
+  [MCTS] 75 sims in 12.574s, visits=75
+[GAME] Search done in 12.6s, visits=75
+[GAME] Played Qe2
+  [MCTS] 75 sims in 13.776s, visits=75
+[GAME] Search done in 13.8s, visits=75
+[GAME] Played e4
+127.0.0.1 - - [06/Jun/2026 00:31:09] "GET /api/train/status HTTP/1.1" 200 -
+[CRITIC] move 13: Rh2 (eval=-153cp)
+127.0.0.1 - - [06/Jun/2026 00:31:09] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:10] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 12, turn=B
+  [MCTS] Root built in 0.010s, children=28
+[GAME] Move 12, turn=B
+  [MCTS] Root built in 0.010s, children=24
+127.0.0.1 - - [06/Jun/2026 00:31:10] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:11] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:11] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+[CRITIC] move 14: c4 (eval=-251cp)
+127.0.0.1 - - [06/Jun/2026 00:31:22] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:22] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:22] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:22] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:22] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:22] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.514s, visits=75
+[GAME] Search done in 13.5s, visits=75
+[GAME] Played g6
+  [MCTS] 75 sims in 13.879s, visits=75
+[GAME] Search done in 13.9s, visits=75
+[GAME] Played c6
+[CRITIC] move 15: Nh3 (eval=-164cp)
+127.0.0.1 - - [06/Jun/2026 00:31:33] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:34] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:34] "POST /api/train/analyze HTTP/1.1" 200 -
+[GAME] Move 13, turn=W
+  [MCTS] Root built in 0.012s, children=36
+[GAME] Move 13, turn=W
+  [MCTS] Root built in 0.008s, children=30
+127.0.0.1 - - [06/Jun/2026 00:31:34] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:34] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:35] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:35] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 10.398s, visits=75
+[GAME] Search done in 10.4s, visits=75
+[GAME] Played a4
+  [MCTS] 75 sims in 10.929s, visits=75
+[GAME] Search done in 10.9s, visits=75
+[GAME] Played g4
+[CRITIC] move 16: Ra7 (eval=-196cp)
+127.0.0.1 - - [06/Jun/2026 00:31:49] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:49] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:49] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:49] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 14, turn=B
+  [MCTS] Root built in 0.005s, children=26
+[GAME] Move 14, turn=B
+  [MCTS] Root built in 0.009s, children=30
+127.0.0.1 - - [06/Jun/2026 00:31:50] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:51] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:31:51] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.596s, visits=75
+[GAME] Search done in 8.6s, visits=75
+[GAME] Played Ng4
+  [MCTS] 75 sims in 8.747s, visits=75
+[GAME] Search done in 8.8s, visits=75
+[GAME] Played f6
+127.0.0.1 - - [06/Jun/2026 00:32:01] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:01] "POST /api/train/analyze HTTP/1.1" 200 -
+[CRITIC] move 17: Ra1 (eval=-164cp)
+127.0.0.1 - - [06/Jun/2026 00:32:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:01] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 15, turn=W
+  [MCTS] Root built in 0.004s, children=36
+127.0.0.1 - - [06/Jun/2026 00:32:02] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:02] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+[GAME] Move 15, turn=W
+  [MCTS] Root built in 0.007s, children=28
+  [MCTS] 75 sims in 8.217s, visits=75
+[GAME] Search done in 8.2s, visits=75
+[GAME] Played Bf4
+  [MCTS] 75 sims in 8.892s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played Bh6
+127.0.0.1 - - [06/Jun/2026 00:32:16] "POST /api/train/analyze HTTP/1.1" 200 -
+[CRITIC] move 18: Nd5 (eval=-214cp)
+127.0.0.1 - - [06/Jun/2026 00:32:16] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:16] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 16, turn=B
+  [MCTS] Root built in 0.009s, children=29
+[GAME] Move 16, turn=B
+  [MCTS] Root built in 0.009s, children=27
+127.0.0.1 - - [06/Jun/2026 00:32:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:17] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:17] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.895s, visits=75
+[GAME] Search done in 7.9s, visits=75
+[GAME] Played b4
+  [MCTS] 75 sims in 8.828s, visits=75
+[GAME] Search done in 8.8s, visits=75
+[GAME] Played Nxh2
+[CRITIC] move 19: Ra2 (eval=-166cp)
+127.0.0.1 - - [06/Jun/2026 00:32:28] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:28] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:28] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:28] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 17, turn=W
+  [MCTS] Root built in 0.006s, children=29
+[GAME] Move 17, turn=W
+  [MCTS] Root built in 0.014s, children=40
+  [MCTS] 75 sims in 8.993s, visits=75
+[GAME] Search done in 9.0s, visits=75
+[GAME] Played Bg2
+  [MCTS] 75 sims in 8.839s, visits=75
+[GAME] Search done in 8.9s, visits=75
+[GAME] Played Rxh2
+[CRITIC] move 20: Qe7 (eval=-279cp)
+127.0.0.1 - - [06/Jun/2026 00:32:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:53] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 18, turn=B
+  [MCTS] Root built in 0.010s, children=27
+[GAME] Move 18, turn=B
+  [MCTS] Root built in 0.010s, children=23
+127.0.0.1 - - [06/Jun/2026 00:32:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:54] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:32:54] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 12.239s, visits=75
+[GAME] Search done in 12.3s, visits=75
+[GAME] Played Bb7
+127.0.0.1 - - [06/Jun/2026 00:33:06] "GET /api/train/status HTTP/1.1" 200 -
+[CRITIC] move 21: Qd1 (eval=-159cp)
+127.0.0.1 - - [06/Jun/2026 00:33:06] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:06] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 19, turn=W
+  [MCTS] Root built in 0.015s, children=34
+127.0.0.1 - - [06/Jun/2026 00:33:07] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:07] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.759s, visits=75
+[GAME] Search done in 13.8s, visits=75
+[GAME] Played g5
+  [MCTS] 75 sims in 11.507s, visits=75
+[GAME] Search done in 11.5s, visits=75
+[GAME] Played Bf1
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+[CRITIC] move 22: Rg8 (eval=-177cp)
+127.0.0.1 - - [06/Jun/2026 00:33:41] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:41] "POST /api/train/evaluate HTTP/1.1" 200 -
+[GAME] Move 19, turn=W
+  [MCTS] Root built in 0.015s, children=45
+127.0.0.1 - - [06/Jun/2026 00:33:41] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:41] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 20, turn=B
+  [MCTS] Root built in 0.013s, children=26
+127.0.0.1 - - [06/Jun/2026 00:33:41] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:41] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:41] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:42] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:42] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:42] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:42] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.062s, visits=75
+[GAME] Search done in 13.1s, visits=75
+[GAME] Played Ke6
+  [MCTS] 75 sims in 13.602s, visits=75
+[GAME] Search done in 13.6s, visits=75
+[GAME] Played d4
+[CRITIC] move 23: a4 (eval=-83cp)
+127.0.0.1 - - [06/Jun/2026 00:33:58] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:58] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:58] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:58] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:58] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 21, turn=W
+  [MCTS] Root built in 0.010s, children=29
+[GAME] Move 20, turn=B
+  [MCTS] Root built in 0.011s, children=23
+127.0.0.1 - - [06/Jun/2026 00:33:59] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:59] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:33:59] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.159s, visits=75
+[GAME] Search done in 13.2s, visits=75
+[GAME] Played Bg5
+  [MCTS] 75 sims in 13.438s, visits=75
+[GAME] Search done in 13.5s, visits=75
+[GAME] Played f5
+127.0.0.1 - - [06/Jun/2026 00:34:29] "POST /api/train/evaluate HTTP/1.1" 200 -
+[CRITIC] move 24: e4 (eval=-247cp)
+127.0.0.1 - - [06/Jun/2026 00:34:29] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:29] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:29] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 22, turn=B
+  [MCTS] Root built in 0.010s, children=29
+[GAME] Move 21, turn=W
+  [MCTS] Root built in 0.012s, children=49
+127.0.0.1 - - [06/Jun/2026 00:34:29] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:30] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:30] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:30] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:30] "POST /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 12.953s, visits=75
+[GAME] Search done in 13.0s, visits=75
+[GAME] Played Qd7
+[CRITIC] move 25: Qe1 (eval=-160cp)
+127.0.0.1 - - [06/Jun/2026 00:34:43] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:43] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 23, turn=W
+  [MCTS] Root built in 0.010s, children=28
+127.0.0.1 - - [06/Jun/2026 00:34:43] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:34:43] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.877s, visits=75
+[GAME] Search done in 13.9s, visits=75
+[GAME] Played Rb1
+  [MCTS] 75 sims in 6.625s, visits=75
+[GAME] Search done in 6.7s, visits=75
+[GAME] Played Qf3
+[CRITIC] move 26: Bb7 (eval=-288cp)
+[GAME] Move 22, turn=B
+  [MCTS] Root built in 0.004s, children=23
+127.0.0.1 - - [06/Jun/2026 00:35:11] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:11] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:11] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:11] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 24, turn=B
+  [MCTS] Root built in 0.009s, children=28
+127.0.0.1 - - [06/Jun/2026 00:35:12] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:12] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:13] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:13] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:13] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:13] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.870s, visits=75
+[GAME] Search done in 7.9s, visits=75
+[GAME] Played Bc8
+  [MCTS] 75 sims in 8.183s, visits=75
+[GAME] Search done in 8.2s, visits=75
+[GAME] Played Qc7
+[CRITIC] move 27: d3 (eval=-184cp)
+127.0.0.1 - - [06/Jun/2026 00:35:25] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:25] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:25] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 23, turn=W
+  [MCTS] Root built in 0.014s, children=47
+[GAME] Move 25, turn=W
+  [MCTS] Root built in 0.010s, children=32
+127.0.0.1 - - [06/Jun/2026 00:35:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:26] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:26] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.984s, visits=75
+[GAME] Search done in 9.0s, visits=75
+[GAME] Played exf5
+  [MCTS] 75 sims in 8.814s, visits=75
+[GAME] Search done in 8.8s, visits=75
+[GAME] Played c4
+[CRITIC] move 28: Kd8 (eval=-442cp)
+127.0.0.1 - - [06/Jun/2026 00:35:51] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:51] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:51] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:51] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 24, turn=B
+  [MCTS] Root built in 0.009s, children=26
+[GAME] Move 26, turn=B
+  [MCTS] Root built in 0.010s, children=31
+127.0.0.1 - - [06/Jun/2026 00:35:52] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:52] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:52] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:53] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:35:53] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.151s, visits=75
+[GAME] Search done in 13.2s, visits=75
+[GAME] Played h5
+  [MCTS] 75 sims in 13.229s, visits=75
+[GAME] Search done in 13.3s, visits=75
+[GAME] Played Qf7
+[CRITIC] move 29: Kd1 (eval=-199cp)
+127.0.0.1 - - [06/Jun/2026 00:36:10] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:11] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:11] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:11] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 25, turn=W
+  [MCTS] Root built in 0.009s, children=44
+127.0.0.1 - - [06/Jun/2026 00:36:11] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 27, turn=W
+  [MCTS] Root built in 0.014s, children=31
+127.0.0.1 - - [06/Jun/2026 00:36:11] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:12] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:12] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 12.827s, visits=75
+[GAME] Search done in 12.9s, visits=75
+[GAME] Played b3
+  [MCTS] 75 sims in 13.902s, visits=75
+[GAME] Search done in 13.9s, visits=75
+[GAME] Played axb5
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+[CRITIC] move 30: h6 (eval=-232cp)
+127.0.0.1 - - [06/Jun/2026 00:36:55] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:55] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:55] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:55] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 28, turn=B
+  [MCTS] Root built in 0.011s, children=27
+127.0.0.1 - - [06/Jun/2026 00:36:56] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 26, turn=B
+  [MCTS] Root built in 0.012s, children=26
+127.0.0.1 - - [06/Jun/2026 00:36:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:57] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:36:57] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.203s, visits=75
+[GAME] Search done in 13.2s, visits=75
+[GAME] Played Bc8
+  [MCTS] 75 sims in 14.233s, visits=75
+[GAME] Search done in 14.3s, visits=75
+[GAME] Played c6
+[CRITIC] move 31: Qe2 (eval=-118cp)
+127.0.0.1 - - [06/Jun/2026 00:37:16] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:16] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:16] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 29, turn=W
+  [MCTS] Root built in 0.013s, children=34
+127.0.0.1 - - [06/Jun/2026 00:37:17] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 27, turn=W
+  [MCTS] Root built in 0.023s, children=44
+127.0.0.1 - - [06/Jun/2026 00:37:17] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:17] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:17] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.039s, visits=75
+[GAME] Search done in 13.1s, visits=75
+[GAME] Played Nc3
+  [MCTS] 75 sims in 13.487s, visits=75
+[GAME] Search done in 13.5s, visits=75
+[GAME] Played Rb2
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+127.0.0.1 - - [06/Jun/2026 00:37:53] "POST /api/train/evaluate HTTP/1.1" 200 -
+[CRITIC] move 32: h5 (eval=-318cp)
+127.0.0.1 - - [06/Jun/2026 00:37:53] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:53] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 30, turn=B
+  [MCTS] Root built in 0.004s, children=27
+127.0.0.1 - - [06/Jun/2026 00:37:53] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 28, turn=B
+  [MCTS] Root built in 0.012s, children=28
+127.0.0.1 - - [06/Jun/2026 00:37:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:53] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:54] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:37:54] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.372s, visits=75
+[GAME] Search done in 8.4s, visits=75
+[GAME] Played Qh5
+  [MCTS] 75 sims in 9.179s, visits=75
+[GAME] Search done in 9.2s, visits=75
+[GAME] Played a5
+[CRITIC] move 33: Kd2 (eval=21cp)
+127.0.0.1 - - [06/Jun/2026 00:38:09] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:09] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:09] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:09] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 31, turn=W
+  [MCTS] Root built in 0.012s, children=39
+[GAME] Move 29, turn=W
+  [MCTS] Root built in 0.021s, children=48
+127.0.0.1 - - [06/Jun/2026 00:38:10] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:10] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:10] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.571s, visits=75
+[GAME] Search done in 7.6s, visits=75
+[GAME] Played Bc1
+  [MCTS] 75 sims in 9.321s, visits=75
+[GAME] Search done in 9.4s, visits=75
+[GAME] Played Qd2
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+[CRITIC] move 34: Ke8 (eval=-296cp)
+127.0.0.1 - - [06/Jun/2026 00:38:55] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:55] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:55] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:55] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 32, turn=B
+  [MCTS] Root built in 0.011s, children=29
+[GAME] Move 30, turn=B
+  [MCTS] Root built in 0.018s, children=29
+127.0.0.1 - - [06/Jun/2026 00:38:55] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:55] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:56] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:38:56] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.138s, visits=75
+[GAME] Search done in 13.2s, visits=75
+[GAME] Played a4
+  [MCTS] 75 sims in 13.767s, visits=75
+[GAME] Search done in 13.8s, visits=75
+[GAME] Played Bb7
+127.0.0.1 - - [06/Jun/2026 00:39:12] "GET /api/train/status HTTP/1.1" 200 -
+[CRITIC] move 35: Na3 (eval=-58cp)
+127.0.0.1 - - [06/Jun/2026 00:39:12] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:39:12] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 31, turn=W
+  [MCTS] Root built in 0.010s, children=41
+[GAME] Move 33, turn=W
+  [MCTS] Root built in 0.011s, children=40
+127.0.0.1 - - [06/Jun/2026 00:39:13] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:39:13] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:39:13] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 14.125s, visits=75
+[GAME] Search done in 14.1s, visits=75
+[GAME] Played Nxa4
+  [MCTS] 75 sims in 14.225s, visits=75
+[GAME] Search done in 14.3s, visits=75
+[GAME] Played Qf4
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[CRITIC] move 36: Kd8 (eval=-374cp)
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+127.0.0.1 - - [06/Jun/2026 00:40:00] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:00] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:00] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:00] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:00] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 32, turn=B
+  [MCTS] Root built in 0.013s, children=30
+[GAME] Move 34, turn=B
+  [MCTS] Root built in 0.011s, children=32
+127.0.0.1 - - [06/Jun/2026 00:40:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:02] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:02] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 13.411s, visits=75
+[GAME] Search done in 13.4s, visits=75
+[GAME] Played Nc7
+  [MCTS] 75 sims in 13.896s, visits=75
+[GAME] Search done in 13.9s, visits=75
+[GAME] Played Na6
+[CRITIC] move 37: Ra1 (eval=-70cp)
+127.0.0.1 - - [06/Jun/2026 00:40:16] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:17] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:17] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:17] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:17] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 35, turn=W
+  [MCTS] Root built in 0.015s, children=38
+[GAME] Move 33, turn=W
+  [MCTS] Root built in 0.013s, children=41
+127.0.0.1 - - [06/Jun/2026 00:40:27] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 12.936s, visits=75
+[GAME] Search done in 13.0s, visits=75
+[GAME] Played bxa6
+  [MCTS] 75 sims in 13.351s, visits=75
+[GAME] Search done in 13.4s, visits=75
+[GAME] Played c5
+127.0.0.1 - - [06/Jun/2026 00:40:34] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:40:34] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+127.0.0.1 - - [06/Jun/2026 00:40:48] "GET /api/train/status HTTP/1.1" 200 -
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+[CRITIC] move 38: g5 (eval=-224cp)
+127.0.0.1 - - [06/Jun/2026 00:41:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:18] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 34, turn=B
+  [MCTS] Root built in 0.007s, children=26
+[GAME] Move 36, turn=B
+  [MCTS] Root built in 0.009s, children=36
+127.0.0.1 - - [06/Jun/2026 00:41:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:18] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:18] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:20] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:20] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.085s, visits=75
+[GAME] Search done in 7.1s, visits=75
+[GAME] Played Rxa6
+  [MCTS] 75 sims in 7.199s, visits=75
+[GAME] Search done in 7.2s, visits=75
+[GAME] Played Nd5
+[CRITIC] move 39: Ra2 (eval=17cp)
+127.0.0.1 - - [06/Jun/2026 00:41:37] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:37] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:37] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 35, turn=W
+  [MCTS] Root built in 0.005s, children=41
+[GAME] Move 37, turn=W
+  [MCTS] Root built in 0.014s, children=39
+127.0.0.1 - - [06/Jun/2026 00:41:38] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:41:38] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.839s, visits=75
+[GAME] Search done in 6.9s, visits=75
+[GAME] Played Be2
+  [MCTS] 75 sims in 7.246s, visits=75
+[GAME] Search done in 7.3s, visits=75
+[GAME] Played Qe3
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[CRITIC] move 40: Ke8 (eval=-406cp)
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 36, turn=B
+  [MCTS] Root built in 0.005s, children=27
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 38, turn=B
+  [MCTS] Root built in 0.012s, children=36
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:26] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:27] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:27] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.115s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played h4
+  [MCTS] 75 sims in 8.447s, visits=75
+[GAME] Search done in 8.5s, visits=75
+[GAME] Played dxc5
+[CRITIC] move 41: g4 (eval=-50cp)
+127.0.0.1 - - [06/Jun/2026 00:42:47] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:47] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:47] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:47] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 37, turn=W
+  [MCTS] Root built in 0.009s, children=41
+[GAME] Move 39, turn=W
+  [MCTS] Root built in 0.016s, children=39
+127.0.0.1 - - [06/Jun/2026 00:42:47] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:48] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:49] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:49] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:54] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:54] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:55] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:42:55] "POST /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.150s, visits=75
+[GAME] Search done in 8.2s, visits=75
+[GAME] Played gxh4
+  [MCTS] 75 sims in 8.222s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played Nxd5
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[CRITIC] move 42: Bg7 (eval=-442cp)
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+127.0.0.1 - - [06/Jun/2026 00:43:24] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:25] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:25] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 38, turn=B
+  [MCTS] Root built in 0.004s, children=29
+[GAME] Move 40, turn=B
+  [MCTS] Root built in 0.006s, children=31
+127.0.0.1 - - [06/Jun/2026 00:43:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:25] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:25] "GET /api/train/status HTTP/1.1" 200 -
+[SF] Shared Stockfish instance created
+[TRAINER] CUDA OOM, falling back to CPU
+[TRAINER] Using shared Stockfish instance
+[Checkpoint] Loaded step=20, games=4
+[BOOT] Trainer initialized eagerly
+[BOOT] Eager init failed: name 'start_side_games' is not defined
+Traceback (most recent call last):
+  File "/home/lance/TheFoolsGambitPython/training/server.py", line 222, in _eager_init
+    start_side_games(trainer)
+NameError: name 'start_side_games' is not defined
+[SIDE-GAME] Started side game 1
+[SIDE-GAME] Started side game 2
+[BOOT] Side games started on boot
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'train_server'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.217:5001
+Press CTRL+C to quit
+127.0.0.1 - - [06/Jun/2026 00:43:49] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:49] "GET /api/train/stream HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:49] "GET /api/train/status HTTP/1.1" 200 -
+[TRAIN] Starting training thread: games=20, steps=50, mcts=500
+127.0.0.1 - - [06/Jun/2026 00:43:52] "POST /api/train/start HTTP/1.1" 200 -
+[SIDE-GAME] Started side game 1
+[GAME] Starting self-play, sims=75
+[AUTO] Training started automatically.
+[GAME] Move 1, turn=W
+[GAME] Starting self-play, sims=75
+[SIDE-GAME] Started side game 2
+[GAME] Move 1, turn=W
+[TRAIN] --- Starting game 1/20 ---
+[TRAIN] Entering Critic mode for game 1
+  [MCTS] Root built in 0.018s, children=20
+  [MCTS] Root built in 0.019s, children=20
+127.0.0.1 - - [06/Jun/2026 00:43:54] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:43:59] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 8.054s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played g4
+[GAME] Move 2, turn=B
+  [MCTS] Root built in 0.005s, children=20
+  [MCTS] 75 sims in 8.244s, visits=75
+[GAME] Search done in 8.3s, visits=75
+[GAME] Played h4
+[GAME] Move 2, turn=B
+  [MCTS] Root built in 0.006s, children=20
+127.0.0.1 - - [06/Jun/2026 00:44:01] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:01] "GET /api/train/stream HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:05] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:05] "GET /api/train/stream HTTP/1.1" 200 -
+  [MCTS] 75 sims in 7.641s, visits=75
+[GAME] Search done in 7.7s, visits=75
+[GAME] Played a6
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.006s, children=21
+[CRITIC] move 1: e3 (eval=43cp)
+  [MCTS] 75 sims in 8.047s, visits=75
+[GAME] Search done in 8.1s, visits=75
+[GAME] Played Na6
+127.0.0.1 - - [06/Jun/2026 00:44:09] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:10] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:10] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:10] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:10] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:10] "POST /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.439s, visits=75
+[GAME] Search done in 6.5s, visits=75
+[GAME] Played c4
+127.0.0.1 - - [06/Jun/2026 00:44:15] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:15] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:15] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:16] "GET /api/train/stream HTTP/1.1" 200 -
+[CRITIC] move 2: f6 (eval=15cp)
+[GAME] Move 3, turn=W
+  [MCTS] Root built in 0.006s, children=21
+127.0.0.1 - - [06/Jun/2026 00:44:20] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:20] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:20] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:20] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:20] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:25] "GET /api/train/status HTTP/1.1" 200 -
+  [MCTS] 75 sims in 6.803s, visits=75
+[GAME] Search done in 6.8s, visits=75
+[GAME] Played e3
+127.0.0.1 - - [06/Jun/2026 00:44:25] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:25] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:30] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:30] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:30] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:30] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:35] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:35] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:35] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:40] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:40] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:40] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:40] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:40] "POST /api/train/analyze HTTP/1.1" 200 -
+[CRITIC] move 3: c3 (eval=89cp)
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.004s, children=19
+[GAME] Move 4, turn=B
+  [MCTS] Root built in 0.016s, children=20
+[CRITIC] move 4: b6 (eval=57cp)
+127.0.0.1 - - [06/Jun/2026 00:44:54] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:54] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:55] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:44:55] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 14.361s, visits=75
+[GAME] Search done in 14.4s, visits=75
+[GAME] Played f5
+  [MCTS] 75 sims in 14.798s, visits=75
+[GAME] Search done in 14.8s, visits=75
+[GAME] Played h5
+[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds
+[SF] Engine restarted after crash
+[SF] Shared Stockfish restarted (was dead)
+[CRITIC] move 5: e4 (eval=65cp)
+127.0.0.1 - - [06/Jun/2026 00:45:29] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.015s, children=31
+[GAME] Move 5, turn=W
+  [MCTS] Root built in 0.021s, children=24
+127.0.0.1 - - [06/Jun/2026 00:45:30] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:30] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:31] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:31] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:31] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:31] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:31] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:32] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:32] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 15.817s, visits=75
+[GAME] Search done in 15.8s, visits=75
+[GAME] Played Bc4
+  [MCTS] 75 sims in 16.273s, visits=75
+[GAME] Search done in 16.3s, visits=75
+[GAME] Played Nf3
+[CRITIC] move 6: g5 (eval=49cp)
+127.0.0.1 - - [06/Jun/2026 00:45:46] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:47] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:47] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:47] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.011s, children=19
+127.0.0.1 - - [06/Jun/2026 00:45:47] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 6, turn=B
+  [MCTS] Root built in 0.022s, children=21
+127.0.0.1 - - [06/Jun/2026 00:45:48] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:48] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:48] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:45:48] "POST /api/train/evaluate HTTP/1.1" 200 -
+  [MCTS] 75 sims in 15.609s, visits=75
+[GAME] Search done in 15.6s, visits=75
+[GAME] Played g5
+  [MCTS] 75 sims in 16.026s, visits=75
+[GAME] Search done in 16.1s, visits=75
+[GAME] Played e5
+127.0.0.1 - - [06/Jun/2026 00:46:19] "GET /api/train/status HTTP/1.1" 200 -
+[CRITIC] move 7: Nh3 (eval=10000cp)
+127.0.0.1 - - [06/Jun/2026 00:46:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:46:19] "GET /api/train/status HTTP/1.1" 200 -
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.018s, children=25
+[GAME] Move 7, turn=W
+  [MCTS] Root built in 0.018s, children=36
+127.0.0.1 - - [06/Jun/2026 00:46:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:46:19] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:46:28] "GET /api/train/status HTTP/1.1" 200 -
+[CRITIC] move 8: Nc6 (eval=149cp)
+127.0.0.1 - - [06/Jun/2026 00:46:28] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:46:28] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:46:29] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [06/Jun/2026 00:46:29] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+  [MCTS] 75 sims in 15.616s, visits=75
+[GAME] Search done in 15.6s, visits=75
+[GAME] Played b4
+  [MCTS] 75 sims in 16.461s, visits=75
+[GAME] Search done in 16.5s, visits=75
+[GAME] Played Kf1

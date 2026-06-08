@@ -26,6 +26,7 @@ HF_PUSH_INTERVAL = 50
 LOCAL_MODEL_DIR = os.environ.get('MODEL_DIR', '/tmp/chess-models')
 MAX_BUFFER_SIZE = 100000
 BATCH_SIZE = 64
+MIN_BATCH_SIZE = 16
 LEARNING_RATE = 0.001
 POLICY_WEIGHT = 1.0
 VALUE_WEIGHT = 1.0
@@ -94,9 +95,11 @@ class TrainingBuffer:
         self.buffer.extend(examples)
 
     def sample(self, batch_size):
-        if len(self.buffer) < batch_size:
+        if len(self.buffer) == 0:
             return None
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        # Adaptive: use whatever is available, up to batch_size
+        actual_size = min(len(self.buffer), batch_size)
+        indices = np.random.choice(len(self.buffer), actual_size, replace=False)
         batch = [self.buffer[i] for i in indices]
         tensors = torch.stack([torch.FloatTensor(ex['board_tensor']) for ex in batch])
         policies = torch.stack([torch.FloatTensor(ex['policy']) for ex in batch])
@@ -232,6 +235,13 @@ class Trainer:
         batch = self.buffer.sample(BATCH_SIZE)
         if batch is None:
             self.status = "idle"
+            return None
+        
+        # Adaptive batch: if buffer is small, use minimum batch threshold
+        actual_batch_size = len(batch[0])
+        if actual_batch_size < MIN_BATCH_SIZE:
+            self.status = "idle"
+            log.info(f'[TRAINER] Buffer too small ({actual_batch_size} < {MIN_BATCH_SIZE}), skipping step')
             return None
         tensors, policies, values = batch
         tensors = tensors.to(self.device)
