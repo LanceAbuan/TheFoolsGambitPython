@@ -16,6 +16,10 @@ import torch
 import time
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 SF_LEAF_BLEND = 0.6
 SF_LEAF_DEPTH = 10
@@ -47,7 +51,7 @@ class MCTS:
 
         root = self._build_root(board, legal_moves)
         t1 = time.time()
-        print(f'  [MCTS] Root built in {t1-t0:.3f}s, children={len(root["children"])}', flush=True)
+        log.info(f'  [MCTS] Root built in {t1-t0:.3f}s, children={len(root["children"])}')
         for _ in range(num_simulations):
             board_copy = chess.Board(board.fen())
             self._simulate(root, board_copy)
@@ -58,7 +62,7 @@ class MCTS:
                 visit_counts[move_to_idx(child['move'])] = child['visit_count']
 
         t2 = time.time()
-        print(f'  [MCTS] {num_simulations} sims in {t2-t1:.3f}s, visits={visit_counts.sum():.0f}', flush=True)
+        log.info(f'  [MCTS] {num_simulations} sims in {t2-t1:.3f}s, visits={visit_counts.sum():.0f}')
         return visit_counts
 
     def _build_root(self, board, legal_moves):
@@ -262,20 +266,20 @@ class SelfPlayGame:
         board = chess.Board()
         examples = []
         move_sans = []
-        print(f'[GAME] Starting self-play, sims={self.num_mcts_simulations}', flush=True)
+        log.info(f'[GAME] Starting self-play, sims={self.num_mcts_simulations}')
         try:
             for i in range(self.max_moves):
-                print(f'[GAME] Move {i+1}, turn={"W" if board.turn else "B"}', flush=True)
+                log.info(f'[GAME] Move {i+1}, turn={"W" if board.turn else "B"}')
 
                 # Check for game-over conditions (checkmate, stalemate, draw, insufficient material)
                 if board.is_game_over():
-                    print(f'[GAME] Game over at move {i}: {board.result()}', flush=True)
+                    log.info(f'[GAME] Game over at move {i}: {board.result()}')
                     break
 
                 t_move = time.time()
                 board_tensor = board_to_tensor(board)
                 visit_counts = self.mcts.search(board, self.num_mcts_simulations)
-                print(f'[GAME] Search done in {time.time()-t_move:.1f}s, visits={visit_counts.sum():.0f}', flush=True)
+                log.info(f'[GAME] Search done in {time.time()-t_move:.1f}s, visits={visit_counts.sum():.0f}')
 
                 total_visits = visit_counts.sum()
                 policy = visit_counts / total_visits if total_visits > 0 else visit_counts
@@ -289,7 +293,7 @@ class SelfPlayGame:
                     nn_value = float(nn_value.squeeze().cpu())
                 
                 if nn_value < RESIGN_THRESHOLD:
-                    print(f'[GAME] Resigning at move {i+1} (value={nn_value:.3f} < {RESIGN_THRESHOLD})', flush=True)
+                    log.info(f'[GAME] Resigning at move {i+1} (value={nn_value:.3f} < {RESIGN_THRESHOLD})')
                     break
 
                 legal_moves = list(board.legal_moves)
@@ -309,13 +313,13 @@ class SelfPlayGame:
                     'turn': board.turn,
                     'san': san_move,
                 })
-                print(f'[GAME] Played {san_move}', flush=True)
+                log.info(f'[GAME] Played {san_move}')
                 board.push(move)
                 move_sans.append(san_move)
                 if on_move:
                     on_move(list(move_sans))
         except Exception as e:
-            print(f'[GAME] ERROR: {e}', flush=True)
+            log.error(f'[GAME] ERROR: {e}')
             import traceback
             traceback.print_exc()
 

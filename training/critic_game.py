@@ -13,6 +13,10 @@ import time
 import torch
 
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 
 class CriticGame:
@@ -91,18 +95,18 @@ class CriticGame:
 
             board.push(chosen_move)
             move_sans.append(chosen_san)
-            print(f'[CRITIC] move {i+1}: {chosen_san} (eval={current_eval}cp)', flush=True)
+            log.info(f'[CRITIC] move {i+1}: {chosen_san} (eval={current_eval}cp)')
             if on_move:
                 try:
                     on_move(list(move_sans))
                 except Exception as e:
-                    print(f'[CRITIC] Error in on_move callback: {e}', flush=True)
+                    log.error(f'[CRITIC] Error in on_move callback: {e}')
                     import traceback
                     traceback.print_exc()
 
         result = self._game_result(board)
         elapsed = time.time() - t0
-        print(f'[CRITIC] {elapsed:.1f}s | {len(move_sans)} moves | result={result}', flush=True)
+        log.info(f'[CRITIC] {elapsed:.1f}s | {len(move_sans)} moves | result={result}')
 
         return {
             'examples': examples,

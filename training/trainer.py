@@ -15,6 +15,10 @@ from datetime import datetime
 from .model import ChessNet
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .selfplay import SelfPlayGame
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 HF_REPO = os.environ.get('HF_REPO', 'LanceAbuan/chess-alpha-zero')
 HF_TOKEN = os.environ.get('HF_TOKEN', '')
@@ -30,7 +34,7 @@ L2_REG = 1e-4
 
 def push_to_hf(model_path, metadata=None):
     if not HF_TOKEN:
-        print("[HF] No token set - skipping push")
+        log.info("[HF] No token set - skipping push")
         return False
     try:
         from huggingface_hub import HfApi, upload_file
@@ -56,10 +60,10 @@ def push_to_hf(model_path, metadata=None):
                 token=HF_TOKEN
             )
             os.remove(meta_path)
-        print(f"[HF] Pushed to {HF_REPO}")
+        log.info(f"[HF] Pushed to {HF_REPO}")
         return True
     except Exception as e:
-        print(f"[HF] Push failed: {e}")
+        log.error(f"[HF] Push failed: {e}")
         return False
 
 
@@ -75,10 +79,10 @@ def download_from_hf():
             token=HF_TOKEN
         )
         shutil.copy2(local_path, os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt'))
-        print(f"[HF] Downloaded from {HF_REPO}")
+        log.info(f"[HF] Downloaded from {HF_REPO}")
         return True
     except Exception as e:
-        print(f"[HF] Download failed: {e}")
+        log.error(f"[HF] Download failed: {e}")
         return False
 
 
@@ -121,11 +125,11 @@ class Trainer:
             with torch.no_grad():
                 test_input = torch.randn(1, 8, 8, 16).to(self.device)
                 self.model(test_input)
-            print(f'[TRAINER] Model on CUDA', flush=True)
+            log.info(f'[TRAINER] Model on CUDA')
         except RuntimeError:
             self.device = torch.device('cpu')
             self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
-            print(f'[TRAINER] CUDA OOM, falling back to CPU', flush=True)
+            log.info(f'[TRAINER] CUDA OOM, falling back to CPU')
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
 
@@ -135,12 +139,12 @@ class Trainer:
             try:
                 from .stockfish_engine import StockfishPlayer
                 self.stockfish = StockfishPlayer(depth=11)
-                print(f'[TRAINER] Stockfish initialized (depth=10, own instance)', flush=True)
+                log.info(f'[TRAINER] Stockfish initialized (depth=10, own instance)')
             except Exception as e:
-                print(f'[TRAINER] Stockfish unavailable: {e}', flush=True)
+                log.info(f'[TRAINER] Stockfish unavailable: {e}')
                 self.stockfish = None
         else:
-            print(f'[TRAINER] Using shared Stockfish instance', flush=True)
+            log.info(f'[TRAINER] Using shared Stockfish instance')
 
         self.selfplay = SelfPlayGame(self.model, stockfish=self.stockfish)
         self.step = 0
@@ -161,11 +165,11 @@ class Trainer:
         self._load_checkpoint()
         checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
         if not os.path.exists(checkpoint_path) and HF_TOKEN:
-            print("[HF] No local checkpoint - downloading from HF...")
+            log.info("[HF] No local checkpoint - downloading from HF...")
             download_from_hf()
             self._load_checkpoint()
         if HF_TOKEN:
-            print(f"[HF] Connected to repo: {HF_REPO}")
+            log.info(f"[HF] Connected to repo: {HF_REPO}")
 
     def _load_checkpoint(self):
         checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
@@ -174,7 +178,7 @@ class Trainer:
             self.model.load_state_dict(data['model_state'])
             self.step = data.get('step', 0)
             self.games_played = data.get('games_played', 0)
-            print(f"[Checkpoint] Loaded step={self.step}, games={self.games_played}")
+            log.info(f"[Checkpoint] Loaded step={self.step}, games={self.games_played}")
 
     def save_checkpoint(self):
         checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')

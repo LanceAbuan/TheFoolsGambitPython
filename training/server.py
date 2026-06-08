@@ -64,7 +64,7 @@ def load_persistent_cache():
             with open(CACHE_FILE, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            print(f'[CACHE] Error loading cache: {e}', flush=True)
+            log.error(f'[CACHE] Error loading cache: {e}')
     return {}
 
 def save_persistent_cache(cache):
@@ -72,7 +72,7 @@ def save_persistent_cache(cache):
         with open(CACHE_FILE, 'w') as f:
             json.dump(cache, f)
     except Exception as e:
-        print(f'[CACHE] Error saving cache: {e}', flush=True)
+        log.error(f'[CACHE] Error saving cache: {e}')
 
 # Initialize persistent cache
 persistent_cache = load_persistent_cache()
@@ -131,7 +131,7 @@ def compute_eval_with_stockfish(board):
             'depth': sf.engine.get_depth() if hasattr(sf.engine, 'get_depth') else 12,
         }
     except Exception as e:
-        print(f'[EVAL] Stockfish eval error: {e}', flush=True)
+        log.error(f'[EVAL] Stockfish eval error: {e}')
         return {
             'eval_cp': 0,
             'eval_norm': 0.0,
@@ -196,17 +196,17 @@ def get_stockfish():
         if _stockfish_instance is None:
             try:
                 _stockfish_instance = StockfishPlayer(depth=10, threads=2, hash_mb=256)
-                print('[SF] Shared Stockfish instance created', flush=True)
+                log.info('[SF] Shared Stockfish instance created')
             except Exception as e:
-                print(f'[SF] Failed to create Stockfish: {e}', flush=True)
+                log.error(f'[SF] Failed to create Stockfish: {e}')
                 return None
         # Health-check: if the engine died, restart it in-place
         if not _stockfish_instance._is_alive():
             try:
                 _stockfish_instance._restart()
-                print('[SF] Shared Stockfish restarted (was dead)', flush=True)
+                log.info('[SF] Shared Stockfish restarted (was dead)')
             except Exception as e:
-                print(f'[SF] Failed to restart Stockfish: {e}', flush=True)
+                log.error(f'[SF] Failed to restart Stockfish: {e}')
                 return None
         return _stockfish_instance
 
@@ -219,18 +219,18 @@ def _eager_init():
         # Main game Stockfish
         sf = StockfishPlayer(depth=10, threads=2, hash_mb=256)
         _stockfish_instance = sf
-        print('[SF] Main Stockfish instance created', flush=True)
+        log.info('[SF] Main Stockfish instance created')
         
         trainer = Trainer(stockfish=sf)
-        print('[BOOT] Trainer initialized eagerly', flush=True)
+        log.info('[BOOT] Trainer initialized eagerly')
         
         # Side game Stockfish instances
         for i in range(1, NUM_GAMES):
             _side_game_sfs[i] = StockfishPlayer(depth=10, threads=2, hash_mb=256)
-            print(f'[SF] Side game {i} Stockfish instance created', flush=True)
+            log.info(f'[SF] Side game {i} Stockfish instance created')
             
     except Exception as e:
-        print(f'[BOOT] Eager init failed: {e}', flush=True)
+        log.error(f'[BOOT] Eager init failed: {e}')
         import traceback
         traceback.print_exc()
 
@@ -251,10 +251,10 @@ def _start_side_games_on_boot():
     if trainer is not None:
         try:
             start_side_games(trainer)
-            print('[BOOT] Side games started on boot', flush=True)
+            log.info('[BOOT] Side games started on boot')
             _side_games_started = True
         except Exception as e:
-            print(f'[BOOT] Side game start failed: {e}', flush=True)
+            log.error(f'[BOOT] Side game start failed: {e}')
 
 def send_sse(data, event=None):
     # Auto-use data["type"] as event name if not explicitly provided
@@ -270,6 +270,10 @@ def send_sse(data, event=None):
         pass  # Drop if queue full
 
 import queue
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 mcts_progress_queue = queue.Queue(maxsize=100)
 
 def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
@@ -586,7 +590,7 @@ def train_start():
 
 def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
     try:
-        print(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}', flush=True)
+        log.info(f'[TRAIN] Starting training thread: games={games_per_cycle}, steps={steps_per_cycle}, mcts={t.selfplay.num_mcts_simulations}')
         # Start 2 side game workers
         start_side_games(t)
         while t.running:
@@ -594,7 +598,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                 if not t.running:
                     break
                 
-                print(f'[TRAIN] --- Starting game {i+1}/{games_per_cycle} ---', flush=True)
+                log.info(f'[TRAIN] --- Starting game {i+1}/{games_per_cycle} ---')
                 with _lock:
                     current_game_moves = []
                     current_game_status = "self-play"
@@ -609,7 +613,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                     if sf:
                         with _lock:
                             current_game_status = "supervised"
-                        print(f'[TRAIN] Entering Critic mode for game {i+1}', flush=True)
+                        log.info(f'[TRAIN] Entering Critic mode for game {i+1}')
                         send_sse({'type': 'game_start', 'mode': 'critic'})
                         sg = CriticGame(t.model, sf, temperature=0.15)
                         game_data = sg.play(on_move=lambda moves: (
@@ -622,19 +626,19 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                         t.last_game_result = game_data.get('result', '*')
                         t.last_game_moves = game_data.get('moves', [])
                     else:
-                        print(f'[TRAIN] Warning: Stockfish unavailable, falling back to self-play', flush=True)
+                        log.warning(f'[TRAIN] Warning: Stockfish unavailable, falling back to self-play')
                         game_data = t.play_game(on_move=lambda moves: (
                             update_game_state(moves),
                             stream_game_progress()
                         ))
                 else:
-                    print(f'[TRAIN] Entering self-play mode (no critic) for game {i+1}', flush=True)
+                    log.info(f'[TRAIN] Entering self-play mode (no critic) for game {i+1}')
                     game_data = t.play_game(on_move=lambda moves: (
                         update_game_state(moves),
                         stream_game_progress()
                     ))
                 
-                print(f'[TRAIN] Game {i+1} finished. Moves: {len(game_data.get("moves", []))}', flush=True)
+                log.info(f'[TRAIN] Game {i+1} finished. Moves: {len(game_data.get("moves", []))}')
                 
                 with _lock:
                     current_game_moves = game_data.get('moves', [])
@@ -654,7 +658,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                 if use_stockfish and (i + 1) % 2 == 0:
                     sf = get_stockfish()
                     if sf:
-                        print(f'[TRAIN] Entering Stockfish mode for game {i+1}', flush=True)
+                        log.info(f'[TRAIN] Entering Stockfish mode for game {i+1}')
                         with _lock:
                             current_game_status = "stockfish"
                         send_sse({'type': 'game_start', 'mode': 'stockfish'})
@@ -679,7 +683,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                     with _lock:
                         current_game_status = "training"
                     steps_between = max(10, steps_per_cycle // max(games_per_cycle // 2, 1))
-                    print(f'[TRAIN] Running {steps_between} training steps...', flush=True)
+                    log.info(f'[TRAIN] Running {steps_between} training steps...')
                     for _ in range(steps_between):
                         if not t.running:
                             break
@@ -696,7 +700,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                     break
                 with _lock:
                     current_game_status = "training"
-                print(f'[TRAIN] Running final training steps ({_+1}/{steps_per_cycle})...', flush=True)
+                log.info(f'[TRAIN] Running final training steps ({_+1}/{steps_per_cycle})...')
                 result = t.train_step()
                 if result:
                     send_sse({'type': 'train_step', 'data': result})
@@ -713,10 +717,10 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
         t.save_checkpoint()
         with _lock:
             current_game_status = "checkpoint"
-        print('[TRAIN] Checkpoint saved.', flush=True)
+        log.info('[TRAIN] Checkpoint saved.')
         time.sleep(0.1)
     except Exception as e:
-        print(f'[TRAIN] ERROR: {e}', flush=True)
+        log.error(f'[TRAIN] ERROR: {e}')
         import traceback
         traceback.print_exc()
         with _lock:
@@ -737,9 +741,9 @@ def run_side_game(game_id, trainer):
     side_mcts = max(75, trainer.selfplay.num_mcts_simulations // 8)
     try:
         sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=_side_game_sfs[game_id])
-        print(f'[SIDE-GAME {game_id}] Initialized', flush=True)
+        log.info(f'[SIDE-GAME {game_id}] Initialized')
     except Exception as e:
-        print(f'[SIDE-GAME {game_id}] Initialization failed: {e}', flush=True)
+        log.error(f'[SIDE-GAME {game_id}] Initialization failed: {e}')
         return
     
     try:
@@ -753,7 +757,7 @@ def run_side_game(game_id, trainer):
             update_game_state(moves, game_id),
             stream_game_progress(game_id, time.time())
         ))
-        print(f'[SIDE-GAME {game_id}] Completed game with {len(game_data.get("moves", []))} moves', flush=True)
+        log.info(f'[SIDE-GAME {game_id}] Completed game with {len(game_data.get("moves", []))} moves')
         
         # Feed into shared replay buffer
         if game_data.get('examples'):
@@ -765,7 +769,7 @@ def run_side_game(game_id, trainer):
         
         send_sse({'type': 'game_end', 'game_id': game_id, 'result': game_data.get('result', '*')})
     except Exception as e:
-        print(f'[SIDE-GAME {game_id}] Runtime error: {e}', flush=True)
+        log.error(f'[SIDE-GAME {game_id}] Runtime error: {e}')
         import traceback
         traceback.print_exc()
     finally:
@@ -787,7 +791,7 @@ def start_side_games(trainer):
         t = threading.Thread(target=side_game_loop, args=(gid, trainer), daemon=True)
         _side_game_threads[gid] = t
         t.start()
-        print(f'[SIDE-GAME] Started side game {gid}', flush=True)
+        log.info(f'[SIDE-GAME] Started side game {gid}')
 
 def stop_side_games():
     """Stop all side game workers."""
