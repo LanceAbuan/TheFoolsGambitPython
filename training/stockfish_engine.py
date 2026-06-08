@@ -13,6 +13,7 @@ threads all share a single Stockfish subprocess.
 CRASH RECOVERY: If the engine dies, methods auto-restart the subprocess
 and retry once before returning a safe fallback.
 """
+import logging
 import os
 import sys
 import time
@@ -20,6 +21,10 @@ import threading
 import chess
 import signal
 from stockfish import Stockfish as SF
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 STOCKFISH_PATH = os.environ.get('STOCKFISH_PATH', '/home/lance/.local/bin/stockfish')
 SF_DEPTH = 10
@@ -84,7 +89,7 @@ class StockfishPlayer:
             self._alive = True
             self._cached_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
             self._cached_board = chess.Board(self._cached_fen)
-            print('[SF] Engine restarted after crash', flush=True)
+            log.info('[SF] Engine restarted after crash')
 
     def _sync_engine_to_fen(self, fen):
         """Sync the engine to the target FEN, reusing its TT when possible.
@@ -165,13 +170,13 @@ class StockfishPlayer:
         for attempt in range(_MAX_RESTART + 1):
             acquired = self._lock.acquire(timeout=30.0)
             if not acquired:
-                print(f'[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds', flush=True)
+                log.error(f'[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds')
                 raise TimeoutError("Failed to acquire Stockfish lock within 30 seconds")
             try:
                 res = fn(*args, **kwargs)
                 return res
             except Exception as e:
-                print(f'[SF] ERROR in _safe_call: {e}', flush=True)
+                log.error(f'[SF] ERROR in _safe_call: {e}')
                 if attempt < _MAX_RESTART:
                     self._restart()
                 else:
