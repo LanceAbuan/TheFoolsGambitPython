@@ -239,7 +239,6 @@ def _eager_init():
         traceback.print_exc()
 
 
-_eager_init()
 
 # Defer side games until after start_side_games is defined
 # (Called at bottom of file once all functions are in scope)
@@ -479,7 +478,7 @@ def mcts_select_move(board):
     import numpy as np
     from .tensorize import move_to_idx
     t = get_trainer()
-    visit_counts = t.selfplay.mcts.search(board)
+    visit_counts, _ = t.selfplay.mcts.search(board)
     legal_moves = list(board.legal_moves)
     if not legal_moves:
         return None
@@ -741,10 +740,12 @@ def run_side_game(game_id, trainer):
     """Run a self-play game in a side slot, streaming via SSE with game_id."""
     from .selfplay import SelfPlayGame
     
-    # Side games use reduced MCTS (75 sims vs 500 main) to preserve main game speed
-    side_mcts = max(75, trainer.selfplay.num_mcts_simulations // 8)
+    # Side games use their own dedicated Stockfish instance to avoid
+    # contending with the main game's shared SF lock
+    side_mcts = 25
+    side_sf = _side_game_sfs[game_id]
     try:
-        sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=_side_game_sfs[game_id])
+        sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=side_sf)
         log.info(f'[SIDE-GAME {game_id}] Initialized')
     except Exception as e:
         log.error(f'[SIDE-GAME {game_id}] Initialization failed: {e}')
@@ -1036,5 +1037,6 @@ def train_reset():
         eval_cache.clear()
     return jsonify({"status": "reset"})
 
-# Defer side game start until after all functions are defined
+# Initialize trainer first, then start side games
+_eager_init()
 _start_side_games_on_boot()

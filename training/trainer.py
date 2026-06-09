@@ -8,6 +8,8 @@ import time
 import shutil
 import torch
 import torch.optim as optim
+torch.backends.cudnn.benchmark = False
+
 import numpy as np
 from collections import deque
 from datetime import datetime
@@ -27,10 +29,12 @@ LOCAL_MODEL_DIR = os.environ.get('MODEL_DIR', '/tmp/chess-models')
 MAX_BUFFER_SIZE = 100000
 BATCH_SIZE = 64
 MIN_BATCH_SIZE = 16
-LEARNING_RATE = 0.001
+CALIBRATION_GAMES = 10
+CALIBRATION_INTERVAL = 50
 POLICY_WEIGHT = 1.0
 VALUE_WEIGHT = 1.0
 L2_REG = 1e-4
+LEARNING_RATE = 1e-3
 
 
 def push_to_hf(model_path, metadata=None):
@@ -268,9 +272,10 @@ class Trainer:
         self.policy_loss = p_loss.item()
         self.value_loss = v_loss.item()
 
-        # Run ELO calibration games against Stockfish after each training step
-        self.status = "stockfish"
-        self._calibrate_elo()
+        # Run ELO calibration games against Stockfish every N training steps
+        if self.step % CALIBRATION_INTERVAL == 0:
+            self.status = "stockfish"
+            self._calibrate_elo()
 
         if self.step % 100 == 0:
             self.save_checkpoint()
@@ -289,8 +294,8 @@ class Trainer:
     def _calibrate_elo(self):
         """Play calibration games vs Stockfish and record results."""
         import chess
-        import torch
         from .tensorize import board_to_tensor, move_to_idx
+
 
         if self.stockfish is None:
             return
