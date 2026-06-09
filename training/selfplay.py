@@ -16,10 +16,15 @@ import torch
 import time
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 SF_LEAF_BLEND = 0.6
 SF_LEAF_DEPTH = 10
 SF_EVAL_NOISE_SIGMA = 0.1
+MCTS_EVAL_CACHE_MAX = 500  # LRU cap on eval cache
 
 RESIGN_THRESHOLD = -0.8  # NN value below this → resign
 
@@ -31,25 +36,31 @@ class MCTS:
         self.cpuct = cpuct
         self.noise_epsilon = noise_epsilon
         self.noise_alpha = noise_alpha
-        self._eval_cache = {}  # FEN -> value cache
+        self._eval_cache = {}  # FEN -> value cache (LRU capped)
         self._device = next(model.parameters()).device
 
     def search(self, board, num_simulations=800):
+        """Run MCTS search. Returns (visit_counts, nn_value) tuple.
+
+        nn_value is the NN's value estimate for the current position from
+        the root node, reused by the caller for resignation checks.
+        """
         t0 = time.time()
         legal_moves = list(board.legal_moves)
         if not legal_moves:
-            return np.zeros(NUM_POSSIBLE_MOVES)
+            return np.zeros(NUM_POSSIBLE_MOVES), 0.0
 
         if len(legal_moves) == 1:
             vc = np.zeros(NUM_POSSIBLE_MOVES)
             vc[move_to_idx(legal_moves[0])] = 1.0
-            return vc
+            return vc, 0.0
 
         root = self._build_root(board, legal_moves)
+        nn_value = root.get('nn_value', 0.0)
         t1 = time.time()
-        print(f'  [MCTS] Root built in {t1-t0:.3f}s, children={len(root["children"])}', flush=True)
+        log.info(f'  [MCTS] Root built in {t1-t0:.3f}s, children={len(root["children"])}')
         for _ in range(num_simulations):
-            board_copy = chess.Board(board.fen())
+            board_copy = board.copy()
             self._simulate(root, board_copy)
 
         visit_counts = np.zeros(NUM_POSSIBLE_MOVES)
@@ -58,8 +69,8 @@ class MCTS:
                 visit_counts[move_to_idx(child['move'])] = child['visit_count']
 
         t2 = time.time()
-        print(f'  [MCTS] {num_simulations} sims in {t2-t1:.3f}s, visits={visit_counts.sum():.0f}', flush=True)
-        return visit_counts
+        log.info(f'  [MCTS] {num_simulations} sims in {t2-t1:.3f}s, visits={visit_counts.sum():.0f}')
+        return visit_counts, nn_value
 
     def _build_root(self, board, legal_moves):
         board_tensor = board_to_tensor(board)
@@ -72,8 +83,9 @@ class MCTS:
             x = torch.FloatTensor(board_tensor).unsqueeze(0)
             device = next(self.model.parameters()).device
             x = x.to(device)
-            policy_logits, _ = self.model(x)
+            policy_logits, value = self.model(x)
             policy_logits = policy_logits.squeeze(0).cpu().numpy()
+            nn_value = float(value.squeeze().cpu())
 
         mask = legal_mask
         policy_logits = policy_logits + (1 - mask) * -1e10
@@ -103,7 +115,8 @@ class MCTS:
             'visit_count': 0,
             'prior': 0.0,
             'children': children,
-            'expanded': True
+            'expanded': True,
+            'nn_value': nn_value,
         }
 
     def _simulate(self, root, board, max_depth=15):
@@ -236,6 +249,9 @@ class MCTS:
             x = torch.FloatTensor(board_tensor).unsqueeze(0).to(self._device)
             _, value = self.model(x)
             v = float(value.squeeze().cpu())
+        # LRU cap: evict oldest entry when cache is full
+        if len(self._eval_cache) >= MCTS_EVAL_CACHE_MAX:
+            self._eval_cache.pop(next(iter(self._eval_cache)))
         self._eval_cache[fen] = v
         return v
 
@@ -262,34 +278,28 @@ class SelfPlayGame:
         board = chess.Board()
         examples = []
         move_sans = []
-        print(f'[GAME] Starting self-play, sims={self.num_mcts_simulations}', flush=True)
+        log.info(f'[GAME] Starting self-play, sims={self.num_mcts_simulations}')
         try:
             for i in range(self.max_moves):
-                print(f'[GAME] Move {i+1}, turn={"W" if board.turn else "B"}', flush=True)
+                log.info(f'[GAME] Move {i+1}, turn={"W" if board.turn else "B"}')
 
                 # Check for game-over conditions (checkmate, stalemate, draw, insufficient material)
                 if board.is_game_over():
-                    print(f'[GAME] Game over at move {i}: {board.result()}', flush=True)
+                    log.info(f'[GAME] Game over at move {i}: {board.result()}')
                     break
 
                 t_move = time.time()
-                board_tensor = board_to_tensor(board)
-                visit_counts = self.mcts.search(board, self.num_mcts_simulations)
-                print(f'[GAME] Search done in {time.time()-t_move:.1f}s, visits={visit_counts.sum():.0f}', flush=True)
+                visit_counts, nn_value = self.mcts.search(board, self.num_mcts_simulations)
+                log.info(f'[GAME] Search done in {time.time()-t_move:.1f}s, visits={visit_counts.sum():.0f}')
 
                 total_visits = visit_counts.sum()
                 policy = visit_counts / total_visits if total_visits > 0 else visit_counts
 
                 # Resignation: if the NN thinks the position is clearly lost, end the game
-                with torch.no_grad():
-                    x = torch.FloatTensor(board_tensor).unsqueeze(0)
-                    device = next(self.model.parameters()).device
-                    x = x.to(device)
-                    _, nn_value = self.model(x)
-                    nn_value = float(nn_value.squeeze().cpu())
+                # nn_value is already computed by _build_root() and returned by search()
                 
                 if nn_value < RESIGN_THRESHOLD:
-                    print(f'[GAME] Resigning at move {i+1} (value={nn_value:.3f} < {RESIGN_THRESHOLD})', flush=True)
+                    log.info(f'[GAME] Resigning at move {i+1} (value={nn_value:.3f} < {RESIGN_THRESHOLD})')
                     break
 
                 legal_moves = list(board.legal_moves)
@@ -304,18 +314,18 @@ class SelfPlayGame:
 
                 san_move = board.san(move)
                 examples.append({
-                    'board_tensor': board_tensor,
+                    'board_tensor': board_to_tensor(board),
                     'policy': policy,
                     'turn': board.turn,
                     'san': san_move,
                 })
-                print(f'[GAME] Played {san_move}', flush=True)
+                log.info(f'[GAME] Played {san_move}')
                 board.push(move)
                 move_sans.append(san_move)
                 if on_move:
                     on_move(list(move_sans))
         except Exception as e:
-            print(f'[GAME] ERROR: {e}', flush=True)
+            log.error(f'[GAME] ERROR: {e}')
             import traceback
             traceback.print_exc()
 
