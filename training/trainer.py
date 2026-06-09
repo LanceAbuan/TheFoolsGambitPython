@@ -8,6 +8,8 @@ import time
 import shutil
 import torch
 import torch.optim as optim
+torch.backends.cudnn.benchmark = False
+
 import numpy as np
 from collections import deque
 from datetime import datetime
@@ -15,6 +17,10 @@ from datetime import datetime
 from .model import ChessNet
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .selfplay import SelfPlayGame
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 HF_REPO = os.environ.get('HF_REPO', 'LanceAbuan/chess-alpha-zero')
 HF_TOKEN = os.environ.get('HF_TOKEN', '')
@@ -22,15 +28,18 @@ HF_PUSH_INTERVAL = 50
 LOCAL_MODEL_DIR = os.environ.get('MODEL_DIR', '/tmp/chess-models')
 MAX_BUFFER_SIZE = 100000
 BATCH_SIZE = 64
-LEARNING_RATE = 0.001
+MIN_BATCH_SIZE = 16
+CALIBRATION_GAMES = 10
+CALIBRATION_INTERVAL = 50
 POLICY_WEIGHT = 1.0
 VALUE_WEIGHT = 1.0
 L2_REG = 1e-4
+LEARNING_RATE = 1e-3
 
 
 def push_to_hf(model_path, metadata=None):
     if not HF_TOKEN:
-        print("[HF] No token set - skipping push")
+        log.info("[HF] No token set - skipping push")
         return False
     try:
         from huggingface_hub import HfApi, upload_file
@@ -56,10 +65,10 @@ def push_to_hf(model_path, metadata=None):
                 token=HF_TOKEN
             )
             os.remove(meta_path)
-        print(f"[HF] Pushed to {HF_REPO}")
+        log.info(f"[HF] Pushed to {HF_REPO}")
         return True
     except Exception as e:
-        print(f"[HF] Push failed: {e}")
+        log.error(f"[HF] Push failed: {e}")
         return False
 
 
@@ -75,10 +84,10 @@ def download_from_hf():
             token=HF_TOKEN
         )
         shutil.copy2(local_path, os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt'))
-        print(f"[HF] Downloaded from {HF_REPO}")
+        log.info(f"[HF] Downloaded from {HF_REPO}")
         return True
     except Exception as e:
-        print(f"[HF] Download failed: {e}")
+        log.error(f"[HF] Download failed: {e}")
         return False
 
 
@@ -90,9 +99,11 @@ class TrainingBuffer:
         self.buffer.extend(examples)
 
     def sample(self, batch_size):
-        if len(self.buffer) < batch_size:
+        if len(self.buffer) == 0:
             return None
-        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        # Adaptive: use whatever is available, up to batch_size
+        actual_size = min(len(self.buffer), batch_size)
+        indices = np.random.choice(len(self.buffer), actual_size, replace=False)
         batch = [self.buffer[i] for i in indices]
         tensors = torch.stack([torch.FloatTensor(ex['board_tensor']) for ex in batch])
         policies = torch.stack([torch.FloatTensor(ex['policy']) for ex in batch])
@@ -115,17 +126,24 @@ class Trainer:
                        creates its own (not recommended — prefer shared instance).
         """
         os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
-        try:
-            self.device = torch.device('cuda')
-            self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
-            with torch.no_grad():
-                test_input = torch.randn(1, 8, 8, 16).to(self.device)
-                self.model(test_input)
-            print(f'[TRAINER] Model on CUDA', flush=True)
-        except RuntimeError:
+        # Force CPU if CUDA_VISIBLE_DEVICES is empty or CUDA unavailable
+        cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', 'default')
+        if cuda_visible == '' or not torch.cuda.is_available():
             self.device = torch.device('cpu')
             self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
-            print(f'[TRAINER] CUDA OOM, falling back to CPU', flush=True)
+            log.info(f'[TRAINER] Running on CPU (CUDA disabled or unavailable)')
+        else:
+            try:
+                self.device = torch.device('cuda')
+                self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
+                with torch.no_grad():
+                    test_input = torch.randn(1, 8, 8, 16).to(self.device)
+                    self.model(test_input)
+                log.info(f'[TRAINER] Model on CUDA')
+            except RuntimeError:
+                self.device = torch.device('cpu')
+                self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
+                log.info(f'[TRAINER] CUDA OOM, falling back to CPU')
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
 
@@ -135,12 +153,12 @@ class Trainer:
             try:
                 from .stockfish_engine import StockfishPlayer
                 self.stockfish = StockfishPlayer(depth=11)
-                print(f'[TRAINER] Stockfish initialized (depth=10, own instance)', flush=True)
+                log.info(f'[TRAINER] Stockfish initialized (depth=10, own instance)')
             except Exception as e:
-                print(f'[TRAINER] Stockfish unavailable: {e}', flush=True)
+                log.info(f'[TRAINER] Stockfish unavailable: {e}')
                 self.stockfish = None
         else:
-            print(f'[TRAINER] Using shared Stockfish instance', flush=True)
+            log.info(f'[TRAINER] Using shared Stockfish instance')
 
         self.selfplay = SelfPlayGame(self.model, stockfish=self.stockfish)
         self.step = 0
@@ -161,11 +179,11 @@ class Trainer:
         self._load_checkpoint()
         checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
         if not os.path.exists(checkpoint_path) and HF_TOKEN:
-            print("[HF] No local checkpoint - downloading from HF...")
+            log.info("[HF] No local checkpoint - downloading from HF...")
             download_from_hf()
             self._load_checkpoint()
         if HF_TOKEN:
-            print(f"[HF] Connected to repo: {HF_REPO}")
+            log.info(f"[HF] Connected to repo: {HF_REPO}")
 
     def _load_checkpoint(self):
         checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
@@ -174,7 +192,7 @@ class Trainer:
             self.model.load_state_dict(data['model_state'])
             self.step = data.get('step', 0)
             self.games_played = data.get('games_played', 0)
-            print(f"[Checkpoint] Loaded step={self.step}, games={self.games_played}")
+            log.info(f"[Checkpoint] Loaded step={self.step}, games={self.games_played}")
 
     def save_checkpoint(self):
         checkpoint_path = os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt')
@@ -229,6 +247,13 @@ class Trainer:
         if batch is None:
             self.status = "idle"
             return None
+        
+        # Adaptive batch: if buffer is small, use minimum batch threshold
+        actual_batch_size = len(batch[0])
+        if actual_batch_size < MIN_BATCH_SIZE:
+            self.status = "idle"
+            log.info(f'[TRAINER] Buffer too small ({actual_batch_size} < {MIN_BATCH_SIZE}), skipping step')
+            return None
         tensors, policies, values = batch
         tensors = tensors.to(self.device)
         policies = policies.to(self.device)
@@ -247,9 +272,10 @@ class Trainer:
         self.policy_loss = p_loss.item()
         self.value_loss = v_loss.item()
 
-        # Run ELO calibration games against Stockfish after each training step
-        self.status = "stockfish"
-        self._calibrate_elo()
+        # Run ELO calibration games against Stockfish every N training steps
+        if self.step % CALIBRATION_INTERVAL == 0:
+            self.status = "stockfish"
+            self._calibrate_elo()
 
         if self.step % 100 == 0:
             self.save_checkpoint()
@@ -268,8 +294,8 @@ class Trainer:
     def _calibrate_elo(self):
         """Play calibration games vs Stockfish and record results."""
         import chess
-        import torch
         from .tensorize import board_to_tensor, move_to_idx
+
 
         if self.stockfish is None:
             return
