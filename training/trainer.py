@@ -122,17 +122,24 @@ class Trainer:
                        creates its own (not recommended — prefer shared instance).
         """
         os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
-        try:
-            self.device = torch.device('cuda')
-            self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
-            with torch.no_grad():
-                test_input = torch.randn(1, 8, 8, 16).to(self.device)
-                self.model(test_input)
-            log.info(f'[TRAINER] Model on CUDA')
-        except RuntimeError:
+        # Force CPU if CUDA_VISIBLE_DEVICES is empty or CUDA unavailable
+        cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', 'default')
+        if cuda_visible == '' or not torch.cuda.is_available():
             self.device = torch.device('cpu')
             self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
-            log.info(f'[TRAINER] CUDA OOM, falling back to CPU')
+            log.info(f'[TRAINER] Running on CPU (CUDA disabled or unavailable)')
+        else:
+            try:
+                self.device = torch.device('cuda')
+                self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
+                with torch.no_grad():
+                    test_input = torch.randn(1, 8, 8, 16).to(self.device)
+                    self.model(test_input)
+                log.info(f'[TRAINER] Model on CUDA')
+            except RuntimeError:
+                self.device = torch.device('cpu')
+                self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
+                log.info(f'[TRAINER] CUDA OOM, falling back to CPU')
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
 

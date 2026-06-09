@@ -21,7 +21,6 @@ import threading
 import chess
 import signal
 from stockfish import Stockfish as SF
-import logging
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)

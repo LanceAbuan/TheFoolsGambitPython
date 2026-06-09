@@ -1,4 +1,5 @@
 """Flask API for training management, live SSE streaming, and Stockfish integration."""
+import logging
 import os
 import sys
 import json
@@ -10,6 +11,9 @@ from datetime import datetime
 from collections import OrderedDict
 from huggingface_hub import HfApi, login
 from flask import Blueprint, jsonify, request, Response
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 import torch
 torch.backends.cudnn.benchmark = False
