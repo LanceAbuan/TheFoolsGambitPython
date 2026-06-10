@@ -12,11 +12,11 @@ Endpoints:
     POST /api/train/evaluate   - Evaluate a position
     POST /api/train/reset      - Reset training state
 """
+import logging
+logging.basicConfig(level=logging.INFO)
 import sys
 import os
 import threading
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from flask import Flask, jsonify, after_this_request, request, send_from_directory
 from training.server import training_bp

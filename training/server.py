@@ -35,7 +35,7 @@ sse_event_queue = queue.Queue(maxsize=200)
 current_game_moves = []  # legacy: still used for main game status endpoint
 current_game_status = "idle"
 
-NUM_GAMES = 3  # 1 main + 2 side games
+NUM_GAMES = 5  # 1 main + 4 side games
 # Per-game state
 game_moves = [[] for _ in range(NUM_GAMES)]
 game_fens = ['' for _ in range(NUM_GAMES)]
@@ -228,10 +228,18 @@ def _eager_init():
         trainer = Trainer(stockfish=sf)
         log.info('[BOOT] Trainer initialized eagerly')
         
-        # Side game Stockfish instances
+        # Main game Stockfish
+        sf = StockfishPlayer(depth=10, threads=2, hash_mb=256)
+        _stockfish_instance = sf
+        log.info('[SF] Main Stockfish instance created')
+        
+        trainer = Trainer(stockfish=sf)
+        log.info('[BOOT] Trainer initialized eagerly')
+        
+        # Side game Stockfish instances (None for NN-only)
         for i in range(1, NUM_GAMES):
-            _side_game_sfs[i] = StockfishPlayer(depth=10, threads=2, hash_mb=256)
-            log.info(f'[SF] Side game {i} Stockfish instance created')
+            _side_game_sfs[i] = None
+            log.info(f'[SF] Side game {i} configured for NN-only')
             
     except Exception as e:
         log.error(f'[BOOT] Eager init failed: {e}')
@@ -806,11 +814,12 @@ def side_game_loop(game_id, trainer):
         time.sleep(0.5)
 
 def start_side_games(trainer):
-    """Start 2 side game workers (indices 1-2)."""
+    """Start 4 side game workers (indices 1-4)."""
     for gid in range(1, NUM_GAMES):
         if _side_game_threads[gid] and _side_game_threads[gid].is_alive():
             continue
         _side_game_running[gid] = True
+        # Pass use_stockfish=False for side games
         t = threading.Thread(target=side_game_loop, args=(gid, trainer), daemon=True)
         _side_game_threads[gid] = t
         t.start()

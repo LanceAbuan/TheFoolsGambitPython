@@ -124,19 +124,19 @@
 
         /* ====== LEFT: EVAL + BOARD ====== */
         .board-area {
-            display: flex;
-            flex: 1;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
             justify-content: center;
             align-items: stretch;
             padding: 20px;
-            gap: 16px;
+            gap: 24px;
         }
 
 
         /* Eval bar (Chess.com style, vertical) */
         .eval-bar-container {
             width: 16px;
-            height: auto;
+            height: 100%;
             display: flex;
             flex-direction: column;
             position: relative;
@@ -198,11 +198,11 @@
 
         /* Side game boards */
         .side-boards {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+            display: grid;
+            grid-template-columns: repeat(2, 200px);
+            gap: 12px;
             flex-shrink: 0;
-            align-self: center;
+            min-width: 412px;
         }
         .side-board {
             width: 200px;
@@ -210,6 +210,8 @@
             border: 1px solid var(--border-color);
             border-radius: 6px;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
         .side-board-header {
             font-size: 11px;
@@ -223,12 +225,14 @@
             width: 200px;
             height: 200px;
         }
-        .side-board-footer {
+        .side-board-move-count {
             font-size: 10px;
             color: var(--text-muted);
-            padding: 4px 8px;
+            padding: 2px 8px;
             text-align: center;
+            background: var(--bg-primary);
             border-top: 1px solid var(--border-color);
+            font-weight: 600;
         }
 
         /* Board wrapper */
@@ -804,21 +808,7 @@
     <div class="main">
         <!-- BOARD AREA -->
         <div class="board-area">
-            <!-- Side Game Boards -->
-            <div class="side-boards">
-                <div class="side-board" id="side-board-1">
-                    <div class="side-board-header">Game 2</div>
-                    <div class="side-board-inner" id="side-board-inner-1"></div>
-                    <div class="side-board-footer" id="side-board-status-1">Waiting...</div>
-                </div>
-                <div class="side-board" id="side-board-2">
-                    <div class="side-board-header">Game 3</div>
-                    <div class="side-board-inner" id="side-board-inner-2"></div>
-                    <div class="side-board-footer" id="side-board-status-2">Waiting...</div>
-                </div>
-            </div>
-
-           <!-- Eval Bar -->
+            <!-- Eval Bar -->
             <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
                 <div class="eval-bar-top" id="eval-black-label"></div>
                 <div class="eval-bar-track">
@@ -827,7 +817,7 @@
                 <div class="eval-bar-bottom" id="eval-white-label"></div>
                 <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
             </div>
-
+        
             <!-- Board -->
             <div class="board-wrapper">
                 <div class="player-info-bar top" id="black-bar">
@@ -845,19 +835,43 @@
                     </div>
                     <div class="player-clock" id="white-clock">0:00</div>
                 </div>
-
+        
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
-
+        
                 <div class="board-nav">
                     <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
                     <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous move">&#8592;</button>
                     <span class="move-label" id="move-label">Move 0/0</span>
                     <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
                     <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Jump to last move">&#9658;</button>
-
+                </div>
+            </div>
+        
+            <!-- Side Game Boards -->
+            <div class="side-boards">
+                <div class="side-board" id="side-board-1">
+                    <div class="side-board-header">Game 2</div>
+                    <div class="side-board-inner" id="side-board-inner-1"></div>
+                    <div class="side-board-move-count" id="side-board-status-1">Waiting...</div>
+                </div>
+                <div class="side-board" id="side-board-2">
+                    <div class="side-board-header">Game 3</div>
+                    <div class="side-board-inner" id="side-board-inner-2"></div>
+                    <div class="side-board-move-count" id="side-board-status-2">Waiting...</div>
+                </div>
+                <div class="side-board" id="side-board-3">
+                    <div class="side-board-header">Game 4</div>
+                    <div class="side-board-inner" id="side-board-inner-3"></div>
+                    <div class="side-board-move-count" id="side-board-status-3">Waiting...</div>
+                </div>
+                <div class="side-board" id="side-board-4">
+                    <div class="side-board-header">Game 5</div>
+                    <div class="side-board-inner" id="side-board-inner-4"></div>
+                    <div class="side-board-move-count" id="side-board-status-4">Waiting...</div>
                 </div>
             </div>
         </div>
+
 
         <!-- SIDEBAR -->
         <div class="sidebar">
@@ -1074,7 +1088,7 @@
         var liveBoard = null;
         var allMoves = [];
         var currentViewIndex = 0;
-        var sideBoards = [null, null, null]; // index 0 unused; 1-2 = side game boards
+        var sideBoards = [null, null, null, null, null]; // index 0 unused; 1-4 = side game boards
         var autoFollow = true;
         var isPlaying = false;
         var playInterval = null;
@@ -1110,8 +1124,8 @@
                 draggable: false,
                 showNotation: true
             });
-            // Side boards (game_id 1 = side board 1, game_id 2 = side board 2)
-            for (var i = 1; i <= 2; i++) {
+            // Side boards (game_id 1 = side board 1, game_id 2 = side board 2, game_id 3 = side board 3, game_id 4 = side board 4)
+            for (var i = 1; i <= 4; i++) {
                 sideBoards[i] = Chessboard('side-board-inner-' + i, {
                     position: 'start',
                     orientation: 'white',
@@ -1803,27 +1817,28 @@
             return c.fen();
         }
 
-        function renderSideBoard(data) {
-            var gid = data.game_id;
-            if (!sideBoards[gid]) return;
-            // Compute FEN from moves
-            var fen = '';
-            if (data.fen) {
-                fen = data.fen;
-            } else if (data.moves) {
-                fen = fenFromMoves(data.moves);
-            }
-            if (fen) {
-                sideBoards[gid].position(fen);
-            }
-            // Update status
-            var moveCount = data.moves ? data.moves.length : 0;
-            var statusText = moveCount + ' moves';
-            if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
-                statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
-            }
-            $('#side-board-status-' + gid).text(statusText);
-        }
+function renderSideBoard(data) {
+    console.log('SSE Side Game Update:', data);
+    var gid = data.game_id;
+    if (!sideBoards[gid]) return;
+    // Compute FEN from moves
+    var fen = '';
+    if (data.fen) {
+        fen = data.fen;
+    } else if (data.moves) {
+        fen = fenFromMoves(data.moves);
+    }
+    if (fen) {
+        sideBoards[gid].position(fen);
+    }
+    // Update status
+    var moveCount = data.moves ? data.moves.length : 0;
+    var statusText = moveCount + ' moves';
+    if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
+        statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
+    }
+    $('#side-board-status-' + gid).text(statusText);
+}
 
         /* ---------- SSE ---------- */
 
@@ -1847,8 +1862,8 @@
                 });
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
-                    // Side games (game_id 1 or 2) → render on mini boards
-                    if (data.game_id && (data.game_id === 1 || data.game_id === 2)) {
+                    // Side games (game_id 1, 2, 3, or 4) → render on mini boards
+                    if (data.game_id && parseInt(data.game_id) > 0 && parseInt(data.game_id) <= 4) {
                         renderSideBoard(data);
                         return;
                     }
