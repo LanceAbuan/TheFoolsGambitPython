@@ -1858,16 +1858,18 @@
                         scheduleEval();
 
                         // Accumulate thinking time from SSE timestamps
-                        var ts = data.timestamp;
-                        if (ts) {
+                        var ts = parseFloat(data.timestamp);
+                        if (!isNaN(ts)) {
                             if (gameStartTimestamp === null) {
                                 gameStartTimestamp = ts;
                             }
                             if (prevCount > 0 && lastMoveTimestamp !== null) {
-                                var elapsed = (ts - lastMoveTimestamp) / 1000.0;
-                                var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
-                                thinkTime[lastPlayer] += elapsed;
-                                updateTimers();
+                                var elapsed = ts - lastMoveTimestamp;
+                                if (elapsed > 0) {
+                                    var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
+                                    thinkTime[lastPlayer] += elapsed;
+                                    updateTimers();
+                                }
                             }
                             lastMoveTimestamp = ts;
                         }
