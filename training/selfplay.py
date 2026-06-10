@@ -12,8 +12,11 @@ in the loop and prevent overfitting to engine scores. Gaussian noise
 import chess
 import chess.pgn
 import numpy as np
-import torch
+import threading
+import queue
 import time
+import torch
+import numpy as np
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 import logging
@@ -29,15 +32,71 @@ MCTS_EVAL_CACHE_MAX = 500  # LRU cap on eval cache
 RESIGN_THRESHOLD = -0.8  # NN value below this → resign
 
 
-class MCTS:
-    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03):
+class BatchEvaluator:
+    \"\"\"Handles batching of neural network forward passes to maximize GPU throughput.\"\"\"
+    def __init__(self, model, batch_size=128, max_wait_time=0.02):
+        self.model = model
+        self.batch_size = batch_size
+        self.max_wait_time = max_wait_time
+        self.device = next(model.parameters()).device
+        self.queue = queue.Queue()
+        self.running = True
+        self.is_batching = False
+        self.worker = threading.Thread(target=self._worker, daemon=True)
+        self.worker.start()
+
+    def _worker(self):
+        while self.running:
+            batch = []
+            results = []
+            
+            start_time = time.time()
+            while len(batch) < self.batch_size and (time.time() - start_time) < self.max_wait_time:
+                try:
+                    req = self.queue.get(timeout=0.001)
+                    batch.append(req[0])
+                    results.append(req[1])
+                except queue.Empty:
+                    continue
+            
+            if not batch:
+                time.sleep(0.001)
+                continue
+            
+            self.is_batching = True
+            try:
+                # batch is a list of numpy arrays of shape (NUM_POSSIBLE_MOVES,)
+                input_tensor = torch.stack([torch.as_tensor(b, device=self.device) for b in batch])
+                policy_logits, values = self.model(input_tensor)
+                
+                # values is [batch_size, 1] or [batch_size]
+                for i, res_container in enumerate(results):
+                    res_container['policy'] = policy_logits[i].cpu().numpy()
+                    if values.dim() == 2:
+                        res_container['value'] = values[i].item()
+                    else:
+                        res_container['value'] = values[i].item()
+                    res_container['done'] = True
+            finally:
+                self.is_batching = False
+
+    def get_eval(self, board_tensor):
+        res_container = {'policy': None, 'value': None, 'done': False}
+        self.queue.put((board_tensor, res_container))
+        
+        while not res_container['done']:
+            time.sleep(0.0001)
+            
+        return res_container['policy'], res_container['value']
+
+    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=128):
         self.model = model
         self.stockfish = stockfish
         self.cpuct = cpuct
         self.noise_epsilon = noise_epsilon
         self.noise_alpha = noise_alpha
         self._eval_cache = {}  # FEN -> value cache (LRU capped)
-        self._device = next(model.parameters()).device
+        self.evaluator = BatchEvaluator(model, batch_size=batch_size)
 
     def search(self, board, num_simulations=800):
         """Run MCTS search. Returns (visit_counts, nn_value) tuple.
@@ -77,27 +136,20 @@ class MCTS:
         legal_mask = np.zeros(NUM_POSSIBLE_MOVES, dtype=np.float32)
         for m in legal_moves:
             legal_mask[move_to_idx(m)] = 1.0
-
-        self.model.eval()
-        with torch.no_grad():
-            x = torch.FloatTensor(board_tensor).unsqueeze(0)
-            device = next(self.model.parameters()).device
-            x = x.to(device)
-            policy_logits, value = self.model(x)
-            policy_logits = policy_logits.squeeze(0).cpu().numpy()
-            nn_value = float(value.squeeze().cpu())
-
+        
+        policy_logits, nn_value = self.evaluator.get_eval(board_tensor)
+        
         mask = legal_mask
         policy_logits = policy_logits + (1 - mask) * -1e10
         policy_probs = np.exp(policy_logits - np.max(policy_logits))
         policy_probs = policy_probs / policy_probs.sum()
-
+        
         noise = np.random.dirichlet([self.noise_alpha] * len(legal_moves))
         legal_indices = [move_to_idx(m) for m in legal_moves]
         noisy_prior = np.zeros(NUM_POSSIBLE_MOVES)
         for i, idx in enumerate(legal_indices):
             noisy_prior[idx] = self.noise_epsilon * noise[i] + (1 - self.noise_epsilon) * policy_probs[idx]
-
+        
         children = []
         for move in legal_moves:
             children.append({
@@ -108,7 +160,7 @@ class MCTS:
                 'children': [],
                 'expanded': False
             })
-
+        
         return {
             'move': None,
             'value': 0.0,
@@ -118,6 +170,7 @@ class MCTS:
             'expanded': True,
             'nn_value': nn_value,
         }
+
 
     def _simulate(self, root, board, max_depth=15):
         node = root
@@ -167,28 +220,24 @@ class MCTS:
         if board.is_game_over():
             node['expanded'] = True
             return
-
+        
         legal = list(board.legal_moves)
         if not legal:
             node['expanded'] = True
             return
-
+        
         board_tensor = board_to_tensor(board)
         legal_mask = np.zeros(NUM_POSSIBLE_MOVES, dtype=np.float32)
         for m in legal:
             legal_mask[move_to_idx(m)] = 1.0
-
-        self.model.eval()
-        with torch.inference_mode():
-            x = torch.FloatTensor(board_tensor).unsqueeze(0).to(self._device)
-            policy_logits, _ = self.model(x)
-            policy_logits = policy_logits.squeeze(0).cpu().numpy()
-
+        
+        policy_logits, _ = self.evaluator.get_eval(board_tensor)
+        
         mask = legal_mask
         policy_logits = policy_logits + (1 - mask) * -1e10
         policy_probs = np.exp(policy_logits - np.max(policy_logits))
         policy_probs = policy_probs / policy_probs.sum()
-
+        
         for move in legal:
             node['children'].append({
                 'move': move,
@@ -198,8 +247,9 @@ class MCTS:
                 'children': [],
                 'expanded': False
             })
-
+        
         node['expanded'] = True
+
 
     def _evaluate(self, board):
         if board.is_game_over():
@@ -244,24 +294,21 @@ class MCTS:
         if fen in self._eval_cache:
             return self._eval_cache[fen]
         board_tensor = board_to_tensor(board)
-        self.model.eval()
-        with torch.inference_mode():
-            x = torch.FloatTensor(board_tensor).unsqueeze(0).to(self._device)
-            _, value = self.model(x)
-            v = float(value.squeeze().cpu())
+        _, value = self.evaluator.get_eval(board_tensor)
+        
         # LRU cap: evict oldest entry when cache is full
         if len(self._eval_cache) >= MCTS_EVAL_CACHE_MAX:
             self._eval_cache.pop(next(iter(self._eval_cache)))
-        self._eval_cache[fen] = v
-        return v
+        self._eval_cache[fen] = value
+        return value
 
 
 class SelfPlayGame:
-    def __init__(self, model, num_mcts_simulations=800, max_moves=200, stockfish=None):
+    def __init__(self, model, num_mcts_simulations=800, max_moves=200, stockfish=None, batch_size=128):
         self.model = model
         self.num_mcts_simulations = num_mcts_simulations
         self.max_moves = max_moves
-        self.mcts = MCTS(model, stockfish=stockfish)
+        self.mcts = MCTS(model, stockfish=stockfish, batch_size=batch_size)
 
     def play(self, on_move=None):
         """Play a complete self-play game.
