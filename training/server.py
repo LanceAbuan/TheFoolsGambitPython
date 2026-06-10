@@ -653,6 +653,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                             'pgn': game_data.get('pgn', ''),
                             'result': game_data.get('result', '*'),
                             'mode': game_data.get('mode', 'self-play'),
+                            'moves_count': len(game_data.get('moves', [])),
                             'timestamp': time.time()
                         })
                     stream_game_progress_main()
@@ -677,6 +678,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                                     'pgn': sf_game.get('pgn', ''),
                                     'result': sf_game.get('result', '*'),
                                     'mode': 'stockfish',
+                                    'moves_count': len(sf_game.get('moves', [])),
                                     'timestamp': time.time()
                                 })
                             stream_game_progress_main()
@@ -846,6 +848,7 @@ def train_play():
                 'pgn': game_data.get('pgn', ''),
                 'result': game_data.get('result', '*'),
                 'mode': 'self-play',
+                'moves_count': len(game_data.get('moves', [])),
                 'timestamp': time.time()
             })
     
@@ -884,6 +887,7 @@ def train_play_supervised():
             'pgn': game_data.get('pgn', ''),
             'result': game_data.get('result', '*'),
             'mode': 'critic',
+            'moves_count': len(game_data.get('moves', [])),
             'timestamp': time.time()
         })
     
@@ -924,6 +928,7 @@ def train_play_stockfish():
                 'pgn': sf_game.get('pgn', ''),
                 'result': sf_game.get('result', '*'),
                 'mode': 'stockfish',
+                'moves_count': len(sf_game.get('moves', [])),
                 'timestamp': time.time()
             })
     
