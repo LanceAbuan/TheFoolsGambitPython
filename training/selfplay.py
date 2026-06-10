@@ -16,10 +16,10 @@ import threading
 import queue
 import time
 import torch
-import numpy as np
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 import logging
+
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -33,7 +33,7 @@ RESIGN_THRESHOLD = -0.8  # NN value below this → resign
 
 
 class BatchEvaluator:
-    \"\"\"Handles batching of neural network forward passes to maximize GPU throughput.\"\"\"
+    """Handles batching of neural network forward passes to maximize GPU throughput."""
     def __init__(self, model, batch_size=128, max_wait_time=0.02):
         self.model = model
         self.batch_size = batch_size
@@ -71,11 +71,12 @@ class BatchEvaluator:
                 
                 # values is [batch_size, 1] or [batch_size]
                 for i, res_container in enumerate(results):
-                    res_container['policy'] = policy_logits[i].cpu().numpy()
+                    res_container['policy'] = policy_logits[i].detach().cpu().numpy()
                     if values.dim() == 2:
-                        res_container['value'] = values[i].item()
+                        res_container['value'] = values[i].detach().item()
                     else:
-                        res_container['value'] = values[i].item()
+                        res_container['value'] = values[i].detach().item()
+
                     res_container['done'] = True
             finally:
                 self.is_batching = False
@@ -89,6 +90,8 @@ class BatchEvaluator:
             
         return res_container['policy'], res_container['value']
 
+
+class MCTS:
     def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=128):
         self.model = model
         self.stockfish = stockfish
@@ -96,6 +99,7 @@ class BatchEvaluator:
         self.noise_epsilon = noise_epsilon
         self.noise_alpha = noise_alpha
         self._eval_cache = {}  # FEN -> value cache (LRU capped)
+        self._device = next(model.parameters()).device
         self.evaluator = BatchEvaluator(model, batch_size=batch_size)
 
     def search(self, board, num_simulations=800):
@@ -170,7 +174,6 @@ class BatchEvaluator:
             'expanded': True,
             'nn_value': nn_value,
         }
-
 
     def _simulate(self, root, board, max_depth=15):
         node = root
@@ -249,7 +252,6 @@ class BatchEvaluator:
             })
         
         node['expanded'] = True
-
 
     def _evaluate(self, board):
         if board.is_game_over():
