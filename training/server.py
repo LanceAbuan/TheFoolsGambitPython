@@ -29,7 +29,8 @@ trainer = None
 training_thread = None
 _lock = threading.Lock()
 recent_games = []
-sse_event_queue = queue.Queue(maxsize=200)
+sse_event_queue = queue.Queue(maxsize=1000)
+# ---- GAME STATE ----
 # ---- GAME STATE ----
 # Game 0 = main game. Games 1-2 = side games (self-play only, reduced MCTS).
 current_game_moves = []  # legacy: still used for main game status endpoint
@@ -363,6 +364,8 @@ def stream_game_progress(game_id=0, timestamp=None):
             'moves': move_sans,
             'status': status,
             'fen': fen,
+            'eval': eval_data.get('eval_cp', 0),
+            'eval_norm': eval_data.get('eval_norm', 0.0),
             'is_check': board.is_check(),
             'is_checkmate': board.is_checkmate(),
             'is_stalemate': board.is_stalemate(),
@@ -768,7 +771,7 @@ def run_side_game(game_id, trainer):
     
     # Side games use their own dedicated Stockfish instance to avoid
     # contending with the main game's shared SF lock
-    side_mcts = 25
+    side_mcts = 250
     side_sf = _side_game_sfs[game_id]
     try:
         sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=side_sf)
