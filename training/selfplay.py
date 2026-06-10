@@ -34,7 +34,7 @@ RESIGN_THRESHOLD = -0.8  # NN value below this → resign
 
 class BatchEvaluator:
     """Handles batching of neural network forward passes to maximize GPU throughput."""
-    def __init__(self, model, batch_size=128, max_wait_time=0.02):
+    def __init__(self, model, batch_size=256, max_wait_time=0.05):
         self.model = model
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
@@ -92,7 +92,7 @@ class BatchEvaluator:
 
 
 class MCTS:
-    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=128):
+    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=256, use_stockfish=True):
         self.model = model
         self.stockfish = stockfish
         self.cpuct = cpuct
@@ -101,6 +101,7 @@ class MCTS:
         self._eval_cache = {}  # FEN -> value cache (LRU capped)
         self._device = next(model.parameters()).device
         self.evaluator = BatchEvaluator(model, batch_size=batch_size)
+        self.use_stockfish = use_stockfish
 
     def search(self, board, num_simulations=800):
         """Run MCTS search. Returns (visit_counts, nn_value) tuple.
@@ -124,7 +125,7 @@ class MCTS:
         log.info(f'  [MCTS] Root built in {t1-t0:.3f}s, children={len(root["children"])}')
         for _ in range(num_simulations):
             board_copy = board.copy()
-            self._simulate(root, board_copy)
+            self._simulate(root, board_copy, max_depth=15)
 
         visit_counts = np.zeros(NUM_POSSIBLE_MOVES)
         for child in root['children']:
@@ -261,8 +262,8 @@ class MCTS:
 
         nn_value = self._nn_evaluate(board)
 
-        if self.stockfish:
-            # Use a timeout lock — if Stockfish is busy (e.g., during
+        if self.use_stockfish and self.stockfish:
+            # Use a timeout lock — if the engine is busy (e.g., during
             # sf.play_game()), fall back to NN-only to prevent deadlock.
             import threading
             acquired = self.stockfish._lock.acquire(timeout=0.2)
@@ -305,12 +306,14 @@ class MCTS:
         return value
 
 
+
 class SelfPlayGame:
-    def __init__(self, model, num_mcts_simulations=800, max_moves=200, stockfish=None, batch_size=128):
+    def __init__(self, model, num_mcts_simulations=800, max_moves=200, stockfish=None, batch_size=256, use_stockfish=True):
         self.model = model
         self.num_mcts_simulations = num_mcts_simulations
         self.max_moves = max_moves
-        self.mcts = MCTS(model, stockfish=stockfish, batch_size=batch_size)
+        self.mcts = MCTS(model, stockfish=stockfish, batch_size=batch_size, use_stockfish=use_stockfish)
+        self.use_stockfish = use_stockfish
 
     def play(self, on_move=None):
         """Play a complete self-play game.

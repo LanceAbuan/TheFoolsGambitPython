@@ -816,6 +816,16 @@
                     <div class="side-board-inner" id="side-board-inner-2"></div>
                     <div class="side-board-footer" id="side-board-status-2">Waiting...</div>
                 </div>
+                <div class="side-board" id="side-board-3">
+                    <div class="side-board-header">Game 4</div>
+                    <div class="side-board-inner" id="side-board-inner-3"></div>
+                    <div class="side-board-footer" id="side-board-status-3">Waiting...</div>
+                </div>
+                <div class="side-board" id="side-board-4">
+                    <div class="side-board-header">Game 5</div>
+                    <div class="side-board-inner" id="side-board-inner-4"></div>
+                    <div class="side-board-footer" id="side-board-status-4">Waiting...</div>
+                </div>
             </div>
 
            <!-- Eval Bar -->
@@ -1074,7 +1084,7 @@
         var liveBoard = null;
         var allMoves = [];
         var currentViewIndex = 0;
-        var sideBoards = [null, null, null]; // index 0 unused; 1-2 = side game boards
+        var sideBoards = [null, null, null, null, null]; // index 0 unused; 1-4 = side game boards
         var autoFollow = true;
         var isPlaying = false;
         var playInterval = null;
@@ -1110,8 +1120,8 @@
                 draggable: false,
                 showNotation: true
             });
-            // Side boards (game_id 1 = side board 1, game_id 2 = side board 2)
-            for (var i = 1; i <= 2; i++) {
+            // Side boards (game_id 1 = side board 1, game_id 2 = side board 2, game_id 3 = side board 3, game_id 4 = side board 4)
+            for (var i = 1; i <= 4; i++) {
                 sideBoards[i] = Chessboard('side-board-inner-' + i, {
                     position: 'start',
                     orientation: 'white',
@@ -1803,27 +1813,28 @@
             return c.fen();
         }
 
-        function renderSideBoard(data) {
-            var gid = data.game_id;
-            if (!sideBoards[gid]) return;
-            // Compute FEN from moves
-            var fen = '';
-            if (data.fen) {
-                fen = data.fen;
-            } else if (data.moves) {
-                fen = fenFromMoves(data.moves);
-            }
-            if (fen) {
-                sideBoards[gid].position(fen);
-            }
-            // Update status
-            var moveCount = data.moves ? data.moves.length : 0;
-            var statusText = moveCount + ' moves';
-            if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
-                statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
-            }
-            $('#side-board-status-' + gid).text(statusText);
-        }
+function renderSideBoard(data) {
+    console.log('SSE Side Game Update:', data);
+    var gid = data.game_id;
+    if (!sideBoards[gid]) return;
+    // Compute FEN from moves
+    var fen = '';
+    if (data.fen) {
+        fen = data.fen;
+    } else if (data.moves) {
+        fen = fenFromMoves(data.moves);
+    }
+    if (fen) {
+        sideBoards[gid].position(fen);
+    }
+    // Update status
+    var moveCount = data.moves ? data.moves.length : 0;
+    var statusText = moveCount + ' moves';
+    if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
+        statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
+    }
+    $('#side-board-status-' + gid).text(statusText);
+}
 
         /* ---------- SSE ---------- */
 
@@ -1847,8 +1858,8 @@
                 });
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
-                    // Side games (game_id 1 or 2) → render on mini boards
-                    if (data.game_id && (data.game_id === 1 || data.game_id === 2)) {
+                    // Side games (game_id 1, 2, 3, or 4) → render on mini boards
+                    if (data.game_id && parseInt(data.game_id) > 0 && parseInt(data.game_id) <= 4) {
                         renderSideBoard(data);
                         return;
                     }
