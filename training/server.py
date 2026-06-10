@@ -36,7 +36,7 @@ sse_event_queue = queue.Queue(maxsize=1000)
 current_game_moves = []  # legacy: still used for main game status endpoint
 current_game_status = "idle"
 
-NUM_GAMES = 5  # 1 main + 4 side games
+NUM_GAMES = 10  # 1 main + 9 side games
 # Per-game state
 game_moves = [[] for _ in range(NUM_GAMES)]
 game_fens = ['' for _ in range(NUM_GAMES)]
@@ -771,7 +771,7 @@ def run_side_game(game_id, trainer):
     
     # Side games use their own dedicated Stockfish instance to avoid
     # contending with the main game's shared SF lock
-    side_mcts = 250
+    side_mcts = 800
     side_sf = _side_game_sfs[game_id]
     try:
         sp = SelfPlayGame(trainer.model, num_mcts_simulations=side_mcts, stockfish=side_sf)

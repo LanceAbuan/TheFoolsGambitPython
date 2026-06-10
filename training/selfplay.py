@@ -34,7 +34,7 @@ RESIGN_THRESHOLD = -0.8  # NN value below this → resign
 
 class BatchEvaluator:
     """Handles batching of neural network forward passes to maximize GPU throughput."""
-    def __init__(self, model, batch_size=2048, max_wait_time=0.1):
+    def __init__(self, model, batch_size=2048, max_wait_time=0.01):
         self.model = model
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
@@ -92,7 +92,7 @@ class BatchEvaluator:
 
 
 class MCTS:
-    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=256, use_stockfish=True):
+    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=2048, use_stockfish=True):
         self.model = model
         self.stockfish = stockfish
         self.cpuct = cpuct
