@@ -1473,19 +1473,25 @@
             if (['playing', 'self-play', 'supervised', 'critic', 'stockfish', 'starting', 'Active'].indexOf(rawStatus) !== -1) {
                 badgeClass = 'playing';
                 displayStatus = 'Playing';
-            } else if (rawStatus === 'training') {
-                badgeClass = 'training';
-                displayStatus = 'Training';
-            } else if (rawStatus === 'error') {
-                badgeClass = 'error';
-                displayStatus = 'Error';
-            } else if (['idle', 'stopped', 'checkpoint'].indexOf(rawStatus) !== -1) {
-                displayStatus = 'Idle';
-            } else {
-                // Unknown status -- pass through as-is rather than showing "Idle"
-                displayStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
-                badgeClass = 'playing';
-            }
+                        badgeClass = 'playing';
+                        displayStatus = 'Playing';
+                    } else if (rawStatus === 'training') {
+                        badgeClass = 'training';
+                        displayStatus = 'Training';
+                    } else if (rawStatus === 'batching') {
+                        badgeClass = 'training';
+                        displayStatus = 'Batching';
+                    } else if (rawStatus === 'error') {
+                        badgeClass = 'error';
+                        displayStatus = 'Error';
+                    } else if (['idle', 'stopped', 'checkpoint'].indexOf(rawStatus) !== -1) {
+                        displayStatus = 'Idle';
+                    } else {
+                        // Unknown status -- pass through as-is rather than showing "Idle"
+                        displayStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+                        badgeClass = 'playing';
+                    }
+
 
             var badge = $('#status-badge');
             badge.removeClass('playing training idle error').addClass(badgeClass);
@@ -1857,13 +1863,14 @@
                         updateView();
                         scheduleEval();
 
-                        // Accumulate thinking time from SSE timestamps
+                         // Accumulate thinking time from SSE timestamps
                         var ts = parseFloat(data.timestamp);
                         if (!isNaN(ts)) {
                             if (gameStartTimestamp === null) {
                                 gameStartTimestamp = ts;
                             }
-                            if (prevCount > 0 && lastMoveTimestamp !== null) {
+                            
+                            if (lastMoveTimestamp !== null) {
                                 var elapsed = ts - lastMoveTimestamp;
                                 if (elapsed > 0) {
                                     var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
@@ -1873,6 +1880,7 @@
                             }
                             lastMoveTimestamp = ts;
                         }
+
                         updateTurnIndicator();
                     }
                 });

@@ -435,6 +435,11 @@ def stream_status_update():
         recent_games_snapshot = list(recent_games[:5])
         current_game_moves_snapshot = list(current_game_moves)
         current_game_status_snapshot = current_game_status
+        
+        # Check if we are currently batching
+        is_batching = False
+        if t.selfplay and t.selfplay.mcts and hasattr(t.selfplay.mcts, 'evaluator'):
+            is_batching = t.selfplay.mcts.evaluator.is_batching
 
     # Use lock-free snapshots for side games (no deadlock)
     side_statuses = {}
@@ -447,6 +452,17 @@ def stream_status_update():
     
     # Use current_game_status as the authoritative status source
     status['status'] = current_game_status_snapshot
+    
+    # Override status to 'batching' if the evaluator is currently busy
+    if t.selfplay and t.selfplay.mcts and hasattr(t.selfplay.mcts, 'evaluator'):
+        if t.selfplay.mcts.evaluator.is_batching:
+            status['status'] = 'batching'
+            
+    status['is_batching'] = True if (t.selfplay and t.selfplay.mcts and hasattr(t.selfplay.mcts, 'evaluator') and t.selfplay.mcts.evaluator.is_batching) else False
+
+
+    status['is_batching'] = is_batching
+
 
     status['recent_games'] = recent_games_snapshot
     status['current_game'] = {
