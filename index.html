@@ -199,9 +199,10 @@
         /* Side game boards */
         .side-boards {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, 200px);
             gap: 12px;
             flex-shrink: 0;
+            min-width: 412px;
         }
         .side-board {
             width: 200px;
@@ -212,6 +213,14 @@
             display: flex;
             flex-direction: column;
         }
+        .side-board-header {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border-color);
+        }
         .side-board-inner {
             width: 200px;
             height: 200px;
@@ -219,7 +228,7 @@
         .side-board-move-count {
             font-size: 10px;
             color: var(--text-muted);
-            padding: 4px 8px;
+            padding: 2px 8px;
             text-align: center;
             background: var(--bg-primary);
             border-top: 1px solid var(--border-color);
@@ -841,18 +850,22 @@
             <!-- Side Game Boards -->
             <div class="side-boards">
                 <div class="side-board" id="side-board-1">
+                    <div class="side-board-header">Game 2</div>
                     <div class="side-board-inner" id="side-board-inner-1"></div>
                     <div class="side-board-move-count" id="side-board-status-1">Waiting...</div>
                 </div>
                 <div class="side-board" id="side-board-2">
+                    <div class="side-board-header">Game 3</div>
                     <div class="side-board-inner" id="side-board-inner-2"></div>
                     <div class="side-board-move-count" id="side-board-status-2">Waiting...</div>
                 </div>
                 <div class="side-board" id="side-board-3">
+                    <div class="side-board-header">Game 4</div>
                     <div class="side-board-inner" id="side-board-inner-3"></div>
                     <div class="side-board-move-count" id="side-board-status-3">Waiting...</div>
                 </div>
                 <div class="side-board" id="side-board-4">
+                    <div class="side-board-header">Game 5</div>
                     <div class="side-board-inner" id="side-board-inner-4"></div>
                     <div class="side-board-move-count" id="side-board-status-4">Waiting...</div>
                 </div>
