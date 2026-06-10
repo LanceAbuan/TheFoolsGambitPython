@@ -1,0 +1,103 @@
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'app'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.217:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+127.0.0.1 - - [09/Jun/2026 15:30:59] "GET /api/status HTTP/1.1" 404 -
+127.0.0.1 - - [09/Jun/2026 15:31:02] "GET / HTTP/1.1" 200 -
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'app'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.217:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+127.0.0.1 - - [09/Jun/2026 17:59:45] "GET / HTTP/1.1" 200 -
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'app'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.1.217:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+127.0.0.1 - - [09/Jun/2026 18:33:56] "GET / HTTP/1.1" 200 -
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/trainer.py', reloading
+ * Restarting with stat
+[SF] Main Stockfish instance created
+[TRAINER] Model on CUDA
+[TRAINER] Using shared Stockfish instance
+[Checkpoint] Loaded step=20, games=4
+[BOOT] Trainer initialized eagerly
+[SF] Side game 1 Stockfish instance created
+[SF] Side game 2 Stockfish instance created
+[SIDE-GAME] Started side game 1
+[SIDE-GAME] Started side game 2
+[BOOT] Side games started on boot
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/server.py', reloading
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/server.py', reloading
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/server.py', reloading
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/server.py', reloading
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/server.py', reloading
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/server.py', reloading
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/selfplay.py', reloading
+ * Restarting with stat
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Debugger is active!
+ * Debugger PIN: 758-577-230
+ * Detected change in '/home/lance/TheFoolsGambitPython/training/selfplay.py', reloading
+ * Restarting with stat
+Traceback (most recent call last):
+  File "/home/lance/TheFoolsGambitPython/TheFoolsGambitPython/backend/app.py", line 13, in <module>
+    from training.server import training_bp  # noqa: E402
+  File "/home/lance/TheFoolsGambitPython/TheFoolsGambitPython/backend/../../training/server.py", line 21, in <module>
+    from .trainer import Trainer, LOCAL_MODEL_DIR
+  File "/home/lance/TheFoolsGambitPython/TheFoolsGambitPython/backend/../../training/trainer.py", line 19, in <module>
+    from .selfplay import SelfPlayGame
+  File "/home/lance/TheFoolsGambitPython/TheFoolsGambitPython/backend/../../training/selfplay.py", line 36
+    \"\"\"Handles batching of neural network forward passes to maximize GPU throughput.\"\"\"
+     ^
+SyntaxError: unexpected character after line continuation character

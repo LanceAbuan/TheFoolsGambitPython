@@ -1,7 +1,45 @@
-Traceback (most recent call last):
-  File "/home/lance/TheFoolsGambitPython/train_server.py", line 22, in <module>
-    from training.server import training_bp
-  File "/home/lance/TheFoolsGambitPython/training/server.py", line 74
-    def _classify_move_quality(diff_cp):
-    ^
-IndentationError: expected an indented block after function definition on line 71
+ * Tip: There are .env files present. Install python-dotenv to use them.
+ * Serving Flask app 'train_server'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.217:5001
+Press CTRL+C to quit
+127.0.0.1 - - [09/Jun/2026 23:47:08] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:09] "POST /api/train/start HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:13] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:18] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:18] "HEAD /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:23] "GET /api/train/status HTTP/1.1" 200 -
+[AUTO] Training started automatically.
+[CRITIC] move 1: h4 (eval=42cp)
+127.0.0.1 - - [09/Jun/2026 23:47:28] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:28] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:28] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:28] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:28] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:33] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:33] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:33] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:38] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:38] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:38] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:38] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:38] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:43] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:43] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:47:43] "POST /api/train/analyze HTTP/1.1" 200 -
+[CRITIC] move 2: c6 (eval=-60cp)
+[CRITIC] move 3: Nc3 (eval=7cp)
+127.0.0.1 - - [09/Jun/2026 23:48:05] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:05] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:06] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:06] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:06] "OPTIONS /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:06] "OPTIONS /api/train/analyze HTTP/1.1" 200 -
+[CRITIC] move 4: g5 (eval=7cp)
+127.0.0.1 - - [09/Jun/2026 23:48:30] "GET /api/train/status HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:30] "POST /api/train/evaluate HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:30] "POST /api/train/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 23:48:30] "GET /api/train/status HTTP/1.1" 200 -

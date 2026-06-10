@@ -124,19 +124,19 @@
 
         /* ====== LEFT: EVAL + BOARD ====== */
         .board-area {
-            display: flex;
-            flex: 1;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
             justify-content: center;
             align-items: stretch;
             padding: 20px;
-            gap: 16px;
+            gap: 24px;
         }
 
 
         /* Eval bar (Chess.com style, vertical) */
         .eval-bar-container {
             width: 16px;
-            height: auto;
+            height: 100%;
             display: flex;
             flex-direction: column;
             position: relative;
@@ -198,11 +198,10 @@
 
         /* Side game boards */
         .side-boards {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
             gap: 8px;
             flex-shrink: 0;
-            align-self: center;
         }
         .side-board {
             width: 200px;
@@ -804,6 +803,45 @@
     <div class="main">
         <!-- BOARD AREA -->
         <div class="board-area">
+            <!-- Eval Bar -->
+            <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
+                <div class="eval-bar-top" id="eval-black-label"></div>
+                <div class="eval-bar-track">
+                    <div class="eval-bar-fill" id="eval-bar-fill" style="height: 50%;"></div>
+                </div>
+                <div class="eval-bar-bottom" id="eval-white-label"></div>
+                <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
+            </div>
+        
+            <!-- Board -->
+            <div class="board-wrapper">
+                <div class="player-info-bar top" id="black-bar">
+                    <div>
+                        <div class="player-name"><span class="turn-dot"></span>Stockfish (depth 10)</div>
+                        <div class="player-detail" id="black-detail">Critic opponent</div>
+                    </div>
+                    <div class="player-clock" id="black-clock">0:00</div>
+                </div>
+                <div id="live-board"></div>
+                <div class="player-info-bar bottom" id="white-bar">
+                    <div>
+                        <div class="player-name"><span class="turn-dot"></span>Fool's Gambit AI</div>
+                        <div class="player-detail" id="white-detail">ELO ~200</div>
+                    </div>
+                    <div class="player-clock" id="white-clock">0:00</div>
+                </div>
+        
+                <div class="what-happening" id="what-happening">Waiting for data...</div>
+        
+                <div class="board-nav">
+                    <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
+                    <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous move">&#8592;</button>
+                    <span class="move-label" id="move-label">Move 0/0</span>
+                    <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
+                    <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Jump to last move">&#9658;</button>
+                </div>
+            </div>
+        
             <!-- Side Game Boards -->
             <div class="side-boards">
                 <div class="side-board" id="side-board-1">
@@ -827,47 +865,8 @@
                     <div class="side-board-footer" id="side-board-status-4">Waiting...</div>
                 </div>
             </div>
-
-           <!-- Eval Bar -->
-            <div class="eval-bar-container" data-tooltip-bottom="Position evaluation. White fill = white advantage, dark fill = black advantage.">
-                <div class="eval-bar-top" id="eval-black-label"></div>
-                <div class="eval-bar-track">
-                    <div class="eval-bar-fill" id="eval-bar-fill" style="height: 50%;"></div>
-                </div>
-                <div class="eval-bar-bottom" id="eval-white-label"></div>
-                <div class="eval-bar-value" id="eval-bar-cp">0 cp</div>
-            </div>
-
-            <!-- Board -->
-            <div class="board-wrapper">
-                <div class="player-info-bar top" id="black-bar">
-                    <div>
-                        <div class="player-name"><span class="turn-dot"></span>Stockfish (depth 10)</div>
-                        <div class="player-detail" id="black-detail">Critic opponent</div>
-                    </div>
-                    <div class="player-clock" id="black-clock">0:00</div>
-                </div>
-                <div id="live-board"></div>
-                <div class="player-info-bar bottom" id="white-bar">
-                    <div>
-                        <div class="player-name"><span class="turn-dot"></span>Fool's Gambit AI</div>
-                        <div class="player-detail" id="white-detail">ELO ~200</div>
-                    </div>
-                    <div class="player-clock" id="white-clock">0:00</div>
-                </div>
-
-                <div class="what-happening" id="what-happening">Waiting for data...</div>
-
-                <div class="board-nav">
-                    <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
-                    <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous move">&#8592;</button>
-                    <span class="move-label" id="move-label">Move 0/0</span>
-                    <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
-                    <button class="nav-btn" id="btn-last" onclick="window.goToMove(9999)" title="Jump to last move">&#9658;</button>
-
-                </div>
-            </div>
         </div>
+
 
         <!-- SIDEBAR -->
         <div class="sidebar">
