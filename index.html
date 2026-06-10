@@ -163,6 +163,11 @@
             bottom: auto;
             top: 0;
         }
+        .eval-bar-fill.negative {
+            background: #000;
+            bottom: auto;
+            top: 0;
+        }
         
         .eval-bar-top, .eval-bar-bottom {
             font-size: 10px;
@@ -249,6 +254,21 @@
             font-size: 13px;
             font-weight: 700;
             color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .turn-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            opacity: 0;
+            transition: opacity 0.2s;
+            flex-shrink: 0;
+        }
+        .player-info-bar.on-turn .turn-dot {
+            opacity: 1;
         }
         .player-detail {
             font-size: 11px;
@@ -266,6 +286,7 @@
         .player-clock.active {
             background: var(--text-primary);
             color: var(--bg-tertiary);
+            box-shadow: 0 0 8px rgba(129,182,76,0.4);
         }
 
         #live-board {
@@ -809,20 +830,20 @@
 
             <!-- Board -->
             <div class="board-wrapper">
-                <div class="player-info-bar top">
+                <div class="player-info-bar top" id="black-bar">
                     <div>
-                        <div class="player-name">Stockfish (depth 10)</div>
+                        <div class="player-name"><span class="turn-dot"></span>Stockfish (depth 10)</div>
                         <div class="player-detail" id="black-detail">Critic opponent</div>
                     </div>
-                    <div class="player-clock" id="black-clock">--:--</div>
+                    <div class="player-clock" id="black-clock">0:00</div>
                 </div>
                 <div id="live-board"></div>
-                <div class="player-info-bar bottom">
+                <div class="player-info-bar bottom" id="white-bar">
                     <div>
-                        <div class="player-name">Fool's Gambit AI</div>
+                        <div class="player-name"><span class="turn-dot"></span>Fool's Gambit AI</div>
                         <div class="player-detail" id="white-detail">ELO ~200</div>
                     </div>
-                    <div class="player-clock" id="white-clock">--:--</div>
+                    <div class="player-clock" id="white-clock">0:00</div>
                 </div>
 
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
@@ -936,20 +957,20 @@
                     <div class="eval-bar-value" id="fs-eval-bar-cp">0 cp</div>
                 </div>
                 <div class="fullscreen-board-wrapper">
-                    <div class="player-info-bar top">
+                    <div class="player-info-bar top" id="fs-black-bar">
                         <div>
-                            <div class="player-name" id="fs-opponent-name">Stockfish (depth 10)</div>
+                            <div class="player-name"><span class="turn-dot"></span><span id="fs-opponent-name">Stockfish (depth 10)</span></div>
                             <div class="player-detail" id="fs-opponent-detail"></div>
                         </div>
-                        <div class="player-clock" id="fs-black-clock">--:--</div>
+                        <div class="player-clock" id="fs-black-clock">0:00</div>
                     </div>
                     <div id="fullscreen-board"></div>
-                    <div class="player-info-bar bottom">
+                    <div class="player-info-bar bottom" id="fs-white-bar">
                         <div>
-                            <div class="player-name">Fool's Gambit AI</div>
+                            <div class="player-name"><span class="turn-dot"></span>Fool's Gambit AI</div>
                             <div class="player-detail" id="fs-ai-detail"></div>
                         </div>
-                        <div class="player-clock" id="fs-white-clock">--:--</div>
+                        <div class="player-clock" id="fs-white-clock">0:00</div>
                     </div>
                 </div>
             </div>
@@ -1063,6 +1084,11 @@
         var currentFen = '';
         var isAnalyzing = false;
         var currentAnalysisId = 0;
+
+        /* ---------- Thinking timers ---------- */
+        var thinkTime = { white: 0, black: 0 }; // accumulated seconds
+        var lastMoveTimestamp = null;           // SSE timestamp of last move
+        var gameStartTimestamp = null;          // SSE timestamp of game start
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -1339,13 +1365,14 @@
             $('#fs-opponent-name').text(oppName);
             $('#fs-opponent-detail').text(oppDetail);
             $('#fs-ai-detail').text(aiDetail);
-            $('#fs-black-clock').text($('#black-clock').text());
-            $('#fs-white-clock').text($('#white-clock').text());
-            // Mode label
+            // Sync timers from the timer variables
+            updateTimers();
+            updateTurnIndicator();
+            // Mode label + dynamic title
             var statusText = $('#status-text').text();
             var whatHappening = $('#what-happening').text();
             var gameMode = 'Unknown';
-            
+
             if (whatHappening.includes('playing against itself')) {
                 gameMode = 'Self-play';
             } else if (whatHappening.includes('playing against Stockfish')) {
@@ -1355,8 +1382,16 @@
             } else if (whatHappening.includes('Stockfish')) {
                 gameMode = 'Stockfish';
             }
-            
+
             $('#fs-mode-label').text(statusText + (statusText !== 'Idle' ? ' — ' + gameMode : ''));
+            // Dynamic title
+            var moveCount = allMoves.length;
+            var turnStr = moveCount % 2 === 0 ? 'White' : 'Black';
+            var title = 'The Fool\'s Gambit — ' + gameMode;
+            if (moveCount > 0 && statusText !== 'Idle') {
+                title += ' · Move ' + moveCount + ' · ' + turnStr + ' to move';
+            }
+            $('.fullscreen-title').text(title);
         }
 
         /* ---------- Eval Bar (Chess.com style) ---------- */
@@ -1364,6 +1399,35 @@
         function formatEval(cp) {
             if (Math.abs(cp) >= 10000) return (cp >= 0 ? '+' : '-') + 'M' + Math.round(Math.abs(cp) / 100);
             return (cp >= 0 ? '+' : '') + (cp / 100).toFixed(2);
+        }
+
+        function formatTime(seconds) {
+            var m = Math.floor(seconds / 60);
+            var s = Math.floor(seconds % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+
+        function updateTimers() {
+            $('#white-clock').text(formatTime(thinkTime.white));
+            $('#black-clock').text(formatTime(thinkTime.black));
+            $('#fs-white-clock').text(formatTime(thinkTime.white));
+            $('#fs-black-clock').text(formatTime(thinkTime.black));
+        }
+
+        function updateTurnIndicator() {
+            var moveCount = allMoves.length;
+            var whiteToMove = moveCount % 2 === 0;
+            // Main board bars
+            $('#white-bar').toggleClass('on-turn', whiteToMove);
+            $('#black-bar').toggleClass('on-turn', !whiteToMove);
+            // Fullscreen bars
+            $('#fs-white-bar').toggleClass('on-turn', whiteToMove);
+            $('#fs-black-bar').toggleClass('on-turn', !whiteToMove);
+            // Active clock highlight
+            $('#white-clock').toggleClass('active', whiteToMove);
+            $('#black-clock').toggleClass('active', !whiteToMove);
+            $('#fs-white-clock').toggleClass('active', whiteToMove);
+            $('#fs-black-clock').toggleClass('active', !whiteToMove);
         }
 
         function updateEvalBar(evalNormalized, cp) {
@@ -1521,6 +1585,7 @@
             if (document.getElementById('fullscreen-overlay').classList.contains('active')) {
                 syncFsPlayerInfo();
             }
+            updateTurnIndicator();
         }
 
         function renderGames(games) {
@@ -1529,6 +1594,7 @@
                 return;
             }
             var html = '';
+            var now = Date.now();
             for (var i = games.length - 1; i >= 0; i--) {
                 var g = games[i];
                 var cls = 'd';
@@ -1541,9 +1607,25 @@
                 var modeLabel = g.mode || 'selfplay';
                 var modeTooltip = modeLabel.toLowerCase().includes('critic') ? 'Stockfish-guided: NN picks moves, Stockfish critiques' : 'AI plays against itself using MCTS search';
                 html += '<span class="game-mode ' + modeClass + '" data-tooltip="' + modeTooltip + '">' + modeLabel + '</span>';
+                // Move count
+                if (g.moves_count != null) {
+                    html += '<span style="color: var(--text-muted); font-size: 10px;">' + g.moves_count + ' moves</span>';
+                }
                 html += '</div>';
                 var resultTooltip = cls === 'w' ? 'White won' : (cls === 'l' ? 'Black won' : 'Draw or unfinished');
+                html += '<div style="display:flex;align-items:center;gap:8px;">';
                 html += '<span class="game-result ' + cls + '" data-tooltip="' + resultTooltip + '">' + (g.result || '*') + '</span>';
+                // Relative time
+                if (g.timestamp) {
+                    var ageSec = Math.max(0, (now / 1000) - g.timestamp);
+                    var relStr;
+                    if (ageSec < 60) relStr = 'just now';
+                    else if (ageSec < 3600) relStr = Math.floor(ageSec / 60) + 'm ago';
+                    else if (ageSec < 86400) relStr = Math.floor(ageSec / 3600) + 'h ago';
+                    else relStr = Math.floor(ageSec / 86400) + 'd ago';
+                    html += '<span style="color: var(--text-muted); font-size: 10px;">' + relStr + '</span>';
+                }
+                html += '</div>';
                 html += '</div>';
             }
             $('#game-list').html(html);
@@ -1748,6 +1830,12 @@
                     fenCache = [];
                     currentViewIndex = 0;
                     autoFollow = true;
+                    // Reset thinking timers
+                    thinkTime = { white: 0, black: 0 };
+                    lastMoveTimestamp = null;
+                    gameStartTimestamp = null;
+                    updateTimers();
+                    updateTurnIndicator();
                     updateView();
                     buildMoveList();
                 });
@@ -1760,6 +1848,7 @@
                     }
                     // Main game (game_id 0 or absent)
                     if (data.moves) {
+                        var prevCount = allMoves.length;
                         allMoves = data.moves;
                         moveQualities = {};
                         buildFenCache(allMoves);
@@ -1767,11 +1856,30 @@
                         if (autoFollow) currentViewIndex = allMoves.length;
                         updateView();
                         scheduleEval();
+
+                        // Accumulate thinking time from SSE timestamps
+                        var ts = data.timestamp;
+                        if (ts) {
+                            if (gameStartTimestamp === null) {
+                                gameStartTimestamp = ts;
+                            }
+                            if (prevCount > 0 && lastMoveTimestamp !== null) {
+                                var elapsed = (ts - lastMoveTimestamp) / 1000.0;
+                                var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
+                                thinkTime[lastPlayer] += elapsed;
+                                updateTimers();
+                            }
+                            lastMoveTimestamp = ts;
+                        }
+                        updateTurnIndicator();
                     }
                 });
                 source.addEventListener('status_update', function(e) {
                     var data = JSON.parse(e.data);
-                    if (data.data) updateStatus(data.data);
+                    if (data.data) {
+                        updateStatus(data.data);
+                        updateTurnIndicator();
+                    }
                 });
                 source.addEventListener('mcts_progress', function(e) {
                     // Could use for progress bar
