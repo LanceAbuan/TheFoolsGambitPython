@@ -29,22 +29,58 @@ trainer = None
 training_thread = None
 _lock = threading.Lock()
 recent_games = []
-sse_event_queue = queue.Queue(maxsize=1000)
-# ---- GAME STATE ----
-# ---- GAME STATE ----
-# Game 0 = main game. Games 1-2 = side games (self-play only, reduced MCTS).
-current_game_moves = []  # legacy: still used for main game status endpoint
-current_game_status = "idle"
-
-NUM_GAMES = 10  # 1 main + 9 side games
-# Per-game state
-game_moves = [[] for _ in range(NUM_GAMES)]
-game_fens = ['' for _ in range(NUM_GAMES)]
-game_statuses = ['idle' for _ in range(NUM_GAMES)]
-game_locks = [threading.Lock() for _ in range(NUM_GAMES)]
-
-# Lock-free snapshots for HTTP status endpoint (written by side games after releasing locks)
+NUM_GAMES = 10
 side_game_snapshots = [{'status': 'idle', 'moves': []} for _ in range(NUM_GAMES)]
+game_locks = [threading.RLock() for _ in range(NUM_GAMES)]
+game_moves = [[] for _ in range(NUM_GAMES)]
+game_statuses = ['idle' for _ in range(NUM_GAMES)]
+game_fens = ['' for _ in range(NUM_GAMES)]
+
+class GameTracker:
+    def __init__(self, num_games=10):
+        self.num_games = num_games
+        self.states = {
+            i: {
+                'moves': [],
+                'fen': '',
+                'status': 'idle',
+                'eval_cp': 0,
+                'eval_norm': 0.0,
+                'is_check': False,
+                'is_checkmate': False,
+                'is_stalemate': False,
+                'timestamp': 0
+            } for i in range(num_games)
+        }
+        self.locks = [threading.RLock() for _ in range(num_games)]
+        self.last_broadcast_move_counts = [0] * num_games
+
+    def update_game(self, game_id, moves, status, fen, eval_data, timestamp=None):
+        with self.locks[game_id]:
+            self.states[game_id].update({
+                'moves': list(moves),
+                'status': status,
+                'fen': fen,
+                'eval_cp': eval_data.get('eval_cp', 0),
+                'eval_norm': eval_data.get('eval_norm', 0.0),
+                'is_check': chess.Board(fen).is_check(),
+                'is_checkmate': chess.Board(fen).is_checkmate(),
+                'is_stalemate': chess.Board(fen).is_stalemate(),
+                'timestamp': timestamp or time.time()
+            })
+
+    def get_delta_updates(self):
+        deltas = {}
+        for i in range(self.num_games):
+            with self.locks[i]:
+                current_count = len(self.states[i]['moves'])
+                if current_count != self.last_broadcast_move_counts[i]:
+                    self.last_broadcast_move_counts[i] = current_count
+                    deltas[i] = self.states[i].copy()
+        return deltas
+
+tracker = GameTracker(NUM_GAMES)
+
 
 # Per-game SF instances for side games (main game still uses shared _stockfish_instance)
 _side_game_sfs = [None] * NUM_GAMES  # index 0 unused; 1-2 for side games
@@ -305,30 +341,34 @@ def send_mcts_progress(move_num, sim_count, total_sims, top_moves):
 def update_game_state(moves, game_id=0):
     """Update move state for a specific game slot. game_id=0 is main game."""
     global current_game_moves
-    with game_locks[game_id]:
-        game_moves[game_id] = list(moves)
-        # Keep main game state in sync for legacy endpoints
-        if game_id == 0:
-            current_game_moves = list(moves)
-        # Track current FEN
-        board = chess.Board()
-        for san in moves:
-            try:
-                board.push_san(san)
-            except:
-                break
-        game_fens[game_id] = board.fen()
+    # Get FEN for eval
+    board = chess.Board()
+    for san in moves:
+        try:
+            board.push_san(san)
+        except:
+            break
+    fen = board.fen()
+    eval_data = get_cached_eval(fen) or compute_eval_with_stockfish(board)
+    
+    tracker.update_game(game_id, moves, "playing", fen, eval_data)
+    
+    # Keep main game state in sync for legacy endpoints
+    if game_id == 0:
+        current_game_moves = list(moves)
+    
     # Write lock-free snapshot for HTTP status endpoint (outside lock)
     if game_id > 0:
         side_game_snapshots[game_id] = {'status': 'playing', 'moves': list(moves)}
+
 
 def stream_game_progress(game_id=0, timestamp=None):
     """Stream game moves + current position eval via SSE for a specific game."""
     global current_game_moves, current_game_status
     
-    with game_locks[game_id]:
-        move_sans = list(game_moves[game_id])
-        status = game_statuses[game_id]
+    state = tracker.states[game_id]
+    move_sans = list(state['moves'])
+    status = state['status']
     
     board = chess.Board()
     for san in move_sans:
@@ -371,6 +411,7 @@ def stream_game_progress(game_id=0, timestamp=None):
             'is_stalemate': board.is_stalemate(),
             'timestamp': timestamp
         })
+
 
 
 def stream_game_progress_main():
@@ -632,9 +673,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                 with _lock:
                     current_game_moves = []
                     current_game_status = "self-play"
-                with game_locks[0]:
-                    game_moves[0] = []
-                    game_statuses[0] = "self-play"
+                tracker.update_game(0, [], "self-play", None, {'eval_cp': 0, 'eval_norm': 0.0})
                 
                 send_sse({'type': 'game_start', 'mode': 'self-play'})
                 
@@ -647,8 +686,8 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                         send_sse({'type': 'game_start', 'mode': 'critic'})
                         sg = CriticGame(t.model, sf, temperature=0.15)
                         game_data = sg.play(on_move=lambda moves: (
-                            update_game_state(moves),
-                            stream_game_progress()
+                            update_game_state(moves, 0),
+                            stream_game_progress(0, time.time())
                         ))
                         t.buffer.add(game_data.get('examples', []))
                         t.games_played += 1
@@ -658,14 +697,14 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
                     else:
                         log.warning(f'[TRAIN] Warning: Stockfish unavailable, falling back to self-play')
                         game_data = t.play_game(on_move=lambda moves: (
-                            update_game_state(moves),
-                            stream_game_progress()
+                            update_game_state(moves, 0),
+                            stream_game_progress(0, time.time())
                         ))
                 else:
                     log.info(f'[TRAIN] Entering self-play mode (no critic) for game {i+1}')
                     game_data = t.play_game(on_move=lambda moves: (
-                        update_game_state(moves),
-                        stream_game_progress()
+                        update_game_state(moves, 0),
+                        stream_game_progress(0, time.time())
                     ))
                 
                 log.info(f'[TRAIN] Game {i+1} finished. Moves: {len(game_data.get("moves", []))}')
@@ -759,6 +798,7 @@ def run_training(t, games_per_cycle, steps_per_cycle, use_stockfish):
             current_game_status = "error"
     finally:
         stop_side_games()
+
     
 # ---- SIDE GAME WORKERS ----
 # Each side game runs in its own thread with its own SF instance.
@@ -781,9 +821,7 @@ def run_side_game(game_id, trainer):
         return
     
     try:
-        with game_locks[game_id]:
-            game_statuses[game_id] = 'self-play'
-            game_moves[game_id] = []
+        tracker.update_game(game_id, [], 'self-play', None, {'eval_cp': 0, 'eval_norm': 0.0})
         
         send_sse({'type': 'game_start', 'game_id': game_id, 'mode': 'self-play'})
         
@@ -798,8 +836,7 @@ def run_side_game(game_id, trainer):
             trainer.buffer.add(game_data['examples'])
             trainer.games_played += 1
         
-        with game_locks[game_id]:
-            game_statuses[game_id] = 'idle'
+        tracker.update_game(game_id, game_data.get('moves', []), 'idle', None, {'eval_cp': 0, 'eval_norm': 0.0})
         
         send_sse({'type': 'game_end', 'game_id': game_id, 'result': game_data.get('result', '*')})
     except Exception as e:
@@ -807,8 +844,8 @@ def run_side_game(game_id, trainer):
         import traceback
         traceback.print_exc()
     finally:
-        with game_locks[game_id]:
-            game_statuses[game_id] = 'idle'
+        tracker.update_game(game_id, game_data.get('moves', []), 'idle', None, {'eval_cp': 0, 'eval_norm': 0.0})
+
 
 def side_game_loop(game_id, trainer):
     """Loop: play side games continuously until stopped."""

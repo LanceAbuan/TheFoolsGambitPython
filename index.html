@@ -1843,103 +1843,123 @@
             return c.fen();
         }
 
-function renderSideBoard(data) {
-    console.log('SSE Side Game Update:', data);
-    var gid = data.game_id;
-    if (!sideBoards[gid]) return;
-    // Compute FEN from moves
-    var fen = '';
-    if (data.fen) {
-        fen = data.fen;
-    } else if (data.moves) {
-        fen = fenFromMoves(data.moves);
+function handleGameUpdate(gameId, data) {
+    if (gameId === 0) {
+        if (data.moves) {
+            var prevCount = allMoves.length;
+            allMoves = data.moves;
+            moveQualities = {};
+            buildFenCache(allMoves);
+            buildMoveList();
+            if (autoFollow) currentViewIndex = allMoves.length;
+            updateView();
+            scheduleEval();
+            
+            // Accumulate thinking time from SSE timestamps
+            var ts = parseFloat(data.timestamp);
+            if (!isNaN(ts)) {
+                if (gameStartTimestamp === null) {
+                    gameStartTimestamp = ts;
+                }
+                if (lastMoveTimestamp !== null) {
+                    var elapsed = ts - lastMoveTimestamp;
+                    if (elapsed > 0) {
+                        var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
+                        thinkTime[lastPlayer] += elapsed;
+                        updateTimers();
+                    }
+                }
+                lastMoveTimestamp = ts;
+            }
+            updateTurnIndicator();
+        }
+    } else {
+        renderSideBoard(data);
     }
-    if (fen) {
-        sideBoards[gid].position(fen);
-    }
-    // Update status
-    var moveCount = data.moves ? data.moves.length : 0;
-    var statusText = moveCount + ' moves';
-    if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
-        statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
-    }
-    $('#side-board-status-' + gid).text(statusText);
 }
+
 
         /* ---------- SSE ---------- */
 
-        function connectSSE() {
-            try {
-                var source = new EventSource(API + '/api/train/stream');
-                source.addEventListener('game_start', function(e) {
-                    allMoves = [];
-                    moveQualities = {};
-                    fenCache = [];
-                    currentViewIndex = 0;
-                    autoFollow = true;
-                    // Reset thinking timers
-                    thinkTime = { white: 0, black: 0 };
-                    lastMoveTimestamp = null;
-                    gameStartTimestamp = null;
-                    updateTimers();
-                    updateTurnIndicator();
-                    updateView();
-                    buildMoveList();
-                });
-                source.addEventListener('game_progress', function(e) {
-                    var data = JSON.parse(e.data);
-                    // Side games (game_id 1, 2, 3, or 4) → render on mini boards
-                    if (data.game_id && parseInt(data.game_id) > 0 && parseInt(data.game_id) <= 4) {
-                        renderSideBoard(data);
-                        return;
+function handleGameUpdate(gameId, data) {
+    if (gameId === 0) {
+        if (data.moves) {
+            var prevCount = allMoves.length;
+            allMoves = data.moves;
+            moveQualities = {};
+            buildFenCache(allMoves);
+            buildMoveList();
+            if (autoFollow) currentViewIndex = allMoves.length;
+            updateView();
+            scheduleEval();
+            
+            // Accumulate thinking time from SSE timestamps
+            var ts = parseFloat(data.timestamp);
+            if (!isNaN(ts)) {
+                if (gameStartTimestamp === null) {
+                    gameStartTimestamp = ts;
+                }
+                if (lastMoveTimestamp !== null) {
+                    var elapsed = ts - lastMoveTimestamp;
+                    if (elapsed > 0) {
+                        var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
+                        thinkTime[lastPlayer] += elapsed;
+                        updateTimers();
                     }
-                    // Main game (game_id 0 or absent)
-                    if (data.moves) {
-                        var prevCount = allMoves.length;
-                        allMoves = data.moves;
-                        moveQualities = {};
-                        buildFenCache(allMoves);
-                        buildMoveList();
-                        if (autoFollow) currentViewIndex = allMoves.length;
-                        updateView();
-                        scheduleEval();
-
-                         // Accumulate thinking time from SSE timestamps
-                        var ts = parseFloat(data.timestamp);
-                        if (!isNaN(ts)) {
-                            if (gameStartTimestamp === null) {
-                                gameStartTimestamp = ts;
-                            }
-                            
-                            if (lastMoveTimestamp !== null) {
-                                var elapsed = ts - lastMoveTimestamp;
-                                if (elapsed > 0) {
-                                    var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
-                                    thinkTime[lastPlayer] += elapsed;
-                                    updateTimers();
-                                }
-                            }
-                            lastMoveTimestamp = ts;
-                        }
-
-                        updateTurnIndicator();
-                    }
-                });
-                source.addEventListener('status_update', function(e) {
-                    var data = JSON.parse(e.data);
-                    if (data.data) {
-                        updateStatus(data.data);
-                        updateTurnIndicator();
-                    }
-                });
-                source.addEventListener('mcts_progress', function(e) {
-                    // Could use for progress bar
-                });
-                source.onerror = function() {
-                    // SSE reconnects automatically
-                };
-            } catch(e) {}
+                }
+                lastMoveTimestamp = ts;
+            }
+            updateTurnIndicator();
         }
+    } else {
+        renderSideBoard(data);
+    }
+}
+
+function connectSSE() {
+    try {
+        var source = new EventSource(API + '/api/train/stream');
+        source.addEventListener('game_start', function(e) {
+            allMoves = [];
+            moveQualities = {};
+            fenCache = [];
+            currentViewIndex = 0;
+            autoFollow = true;
+            // Reset thinking timers
+            thinkTime = { white: 0, black: 0 };
+            lastMoveTimestamp = null;
+            gameStartTimestamp = null;
+            updateTimers();
+            updateTurnIndicator();
+            updateView();
+            buildMoveList();
+        });
+        source.addEventListener('game_progress', function(e) {
+            var data = JSON.parse(e.data);
+            handleGameUpdate(data.game_id, data);
+        });
+        source.addEventListener('multi_game_update', function(e) {
+            var data = JSON.parse(e.data);
+            Object.keys(data.updates).forEach(function(gameId) {
+                handleGameUpdate(parseInt(gameId), data.updates[gameId]);
+            });
+        });
+        source.addEventListener('status_update', function(e) {
+            var data = JSON.parse(e.data);
+            if (data.data) {
+                updateStatus(data.data);
+                updateTurnIndicator();
+            }
+        });
+        source.addEventListener('mcts_progress', function(e) {
+            // Could use for progress bar
+        });
+        source.onerror = function() {
+            // SSE reconnects automatically
+        };
+    } catch(e) {}
+}
+
 
         /* ---------- Poll ---------- */
 
