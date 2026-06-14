@@ -8,7 +8,7 @@ import time
 import shutil
 import torch
 import torch.optim as optim
-torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.benchmark = True
 
 import numpy as np
 from collections import deque

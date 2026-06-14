@@ -16,6 +16,7 @@ import threading
 import queue
 import time
 import torch
+from concurrent.futures import ThreadPoolExecutor
 from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 import logging
@@ -30,11 +31,17 @@ SF_EVAL_NOISE_SIGMA = 0.1
 MCTS_EVAL_CACHE_MAX = 500  # LRU cap on eval cache
 
 RESIGN_THRESHOLD = -0.8  # NN value below this → resign
+NUM_MCTS_THREADS = 8  # parallel threads per MCTS search
 
 
 class BatchEvaluator:
-    """Handles batching of neural network forward passes to maximize GPU throughput."""
-    def __init__(self, model, batch_size=2048, max_wait_time=0.01):
+    """Handles batching of neural network forward passes to maximize GPU throughput.
+
+    Multiple callers submit board tensors via ``get_eval``; the worker thread
+    collects them into batches and runs a single GPU forward pass.  Callers
+    block on a ``threading.Event`` (no busy-wait, no GIL contention).
+    """
+    def __init__(self, model, batch_size=512, max_wait_time=0.010):
         self.model = model
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
@@ -47,9 +54,16 @@ class BatchEvaluator:
 
     def _worker(self):
         while self.running:
-            batch = []
-            results = []
-            
+            # Block until at least one item arrives
+            try:
+                first = self.queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            batch = [first[0]]
+            results = [first[1]]
+
+            # Try to collect more items up to batch_size or max_wait_time
             start_time = time.time()
             while len(batch) < self.batch_size and (time.time() - start_time) < self.max_wait_time:
                 try:
@@ -58,17 +72,15 @@ class BatchEvaluator:
                     results.append(req[1])
                 except queue.Empty:
                     continue
-            
-            if not batch:
-                time.sleep(0.001)
-                continue
-            
+
             self.is_batching = True
+            batch_start = time.time()
             try:
-                # batch is a list of numpy arrays of shape (NUM_POSSIBLE_MOVES,)
+                # batch is a list of numpy arrays of shape (8, 8, 16)
                 input_tensor = torch.stack([torch.as_tensor(b, device=self.device) for b in batch])
-                policy_logits, values = self.model(input_tensor)
-                
+                with torch.inference_mode():
+                    policy_logits, values = self.model(input_tensor)
+
                 # values is [batch_size, 1] or [batch_size]
                 for i, res_container in enumerate(results):
                     res_container['policy'] = policy_logits[i].detach().cpu().numpy()
@@ -77,34 +89,43 @@ class BatchEvaluator:
                     else:
                         res_container['value'] = values[i].detach().item()
 
-                    res_container['done'] = True
+                    res_container['event'].set()  # wake up the waiting thread
+
+                duration = time.time() - batch_start
+                log.debug(f'[BatchEvaluator] Processed batch of {len(batch)} in {duration:.4f}s')
+            except Exception as e:
+                log.error(f'[BatchEvaluator] ERROR during forward pass: {e}')
+                # Wake up all waiters on error so they don't hang
+                for res_container in results:
+                    res_container['event'].set()
             finally:
                 self.is_batching = False
 
     def get_eval(self, board_tensor):
-        res_container = {'policy': None, 'value': None, 'done': False}
+        event = threading.Event()
+        res_container = {'policy': None, 'value': None, 'event': event}
         self.queue.put((board_tensor, res_container))
-        
-        while not res_container['done']:
-            time.sleep(0.0001)
-            
+        event.wait()  # blocks until worker sets the event — no GIL spinning
         return res_container['policy'], res_container['value']
 
 
 class MCTS:
-    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=2048, use_stockfish=True):
+    def __init__(self, model, stockfish=None, cpuct=1.0, noise_epsilon=0.25, noise_alpha=0.03, batch_size=512, use_stockfish=True, evaluator=None):
         self.model = model
         self.stockfish = stockfish
         self.cpuct = cpuct
         self.noise_epsilon = noise_epsilon
         self.noise_alpha = noise_alpha
         self._eval_cache = {}  # FEN -> value cache (LRU capped)
+        self._cache_lock = threading.Lock()
         self._device = next(model.parameters()).device
-        self.evaluator = BatchEvaluator(model, batch_size=batch_size)
+        self._tree_lock = threading.Lock()  # protects tree mutations during parallel sims
+        # Use a shared evaluator if provided, otherwise create a private one
+        self.evaluator = evaluator if evaluator is not None else BatchEvaluator(model, batch_size=batch_size)
         self.use_stockfish = use_stockfish
 
-    def search(self, board, num_simulations=800):
-        """Run MCTS search. Returns (visit_counts, nn_value) tuple.
+    def search(self, board, num_simulations=200):
+        """Run MCTS search with parallel threads. Returns (visit_counts, nn_value).
 
         nn_value is the NN's value estimate for the current position from
         the root node, reused by the caller for resignation checks.
@@ -123,9 +144,22 @@ class MCTS:
         nn_value = root.get('nn_value', 0.0)
         t1 = time.time()
         log.info(f'  [MCTS] Root built in {t1-t0:.3f}s, children={len(root["children"])}')
-        for _ in range(num_simulations):
-            board_copy = board.copy()
-            self._simulate(root, board_copy, max_depth=15)
+
+        # Parallel MCTS: split simulations across NUM_MCTS_THREADS threads
+        sims_per_thread = max(1, num_simulations // NUM_MCTS_THREADS)
+
+        def _worker(sims):
+            for _ in range(sims):
+                self._simulate(root, board.copy(), max_depth=15)
+
+        with ThreadPoolExecutor(max_workers=NUM_MCTS_THREADS) as executor:
+            futures = []
+            for i in range(NUM_MCTS_THREADS):
+                n = sims_per_thread if i < num_simulations // sims_per_thread else max(0, num_simulations - len(futures) * sims_per_thread)
+                if n > 0:
+                    futures.append(executor.submit(_worker, n))
+            for f in futures:
+                f.result()
 
         visit_counts = np.zeros(NUM_POSSIBLE_MOVES)
         for child in root['children']:
@@ -133,7 +167,8 @@ class MCTS:
                 visit_counts[move_to_idx(child['move'])] = child['visit_count']
 
         t2 = time.time()
-        log.info(f'  [MCTS] {num_simulations} sims in {t2-t1:.3f}s, visits={visit_counts.sum():.0f}')
+        avg_sim_time = (t2 - t1) / num_simulations
+        log.info(f'  [MCTS] {num_simulations} sims in {t2-t1:.3f}s (avg={avg_sim_time:.4f}s/sim), threads={NUM_MCTS_THREADS}, visits={visit_counts.sum():.0f}')
         return visit_counts, nn_value
 
     def _build_root(self, board, legal_moves):
@@ -181,26 +216,27 @@ class MCTS:
         path = []
         depth = 0
 
-        while node['children'] and depth < max_depth:
-            selected = self._select_child(node)
-            path.append((node, selected))
+        # --- Selection & Expansion (lock: tree mutations) ---
+        with self._tree_lock:
+            while node['children'] and depth < max_depth:
+                selected = self._select_child(node)
+                path.append((node, selected))
+                board.push(selected['move'])
+                if not selected['expanded']:
+                    self._expand(selected, board)
+                node = selected
+                depth += 1
 
-            board.push(selected['move'])
-
-            if not selected['expanded']:
-                self._expand(selected, board)
-
-            node = selected
-            depth += 1
-
+        # --- Evaluation (no lock: NN/Stockfish can run freely) ---
         value = self._evaluate(board)
 
-        for parent, child in reversed(path):
-            child['visit_count'] += 1
-            child['value'] = (child['value'] * (child['visit_count'] - 1) + value) / child['visit_count']
-            value = -value
-
-        root['visit_count'] += 1
+        # --- Backpropagation (lock: tree mutations) ---
+        with self._tree_lock:
+            for parent, child in reversed(path):
+                child['visit_count'] += 1
+                child['value'] = (child['value'] * (child['visit_count'] - 1) + value) / child['visit_count']
+                value = -value
+            root['visit_count'] += 1
 
     def _select_child(self, node):
         best = None
@@ -293,26 +329,28 @@ class MCTS:
         return nn_value
 
     def _nn_evaluate(self, board):
-        fen = board.fen()
-        if fen in self._eval_cache:
-            return self._eval_cache[fen]
+        fen = board.board_fen()
+        with self._cache_lock:
+            if fen in self._eval_cache:
+                return self._eval_cache[fen]
         board_tensor = board_to_tensor(board)
         _, value = self.evaluator.get_eval(board_tensor)
-        
+
         # LRU cap: evict oldest entry when cache is full
-        if len(self._eval_cache) >= MCTS_EVAL_CACHE_MAX:
-            self._eval_cache.pop(next(iter(self._eval_cache)))
-        self._eval_cache[fen] = value
+        with self._cache_lock:
+            if len(self._eval_cache) >= MCTS_EVAL_CACHE_MAX:
+                self._eval_cache.pop(next(iter(self._eval_cache)))
+            self._eval_cache[fen] = value
         return value
 
 
 
 class SelfPlayGame:
-    def __init__(self, model, num_mcts_simulations=800, max_moves=200, stockfish=None, batch_size=256, use_stockfish=True):
+    def __init__(self, model, num_mcts_simulations=400, max_moves=200, stockfish=None, batch_size=2048, use_stockfish=True, evaluator=None):
         self.model = model
         self.num_mcts_simulations = num_mcts_simulations
         self.max_moves = max_moves
-        self.mcts = MCTS(model, stockfish=stockfish, batch_size=batch_size, use_stockfish=use_stockfish)
+        self.mcts = MCTS(model, stockfish=stockfish, batch_size=batch_size, use_stockfish=use_stockfish, evaluator=evaluator)
         self.use_stockfish = use_stockfish
 
     def play(self, on_move=None):
