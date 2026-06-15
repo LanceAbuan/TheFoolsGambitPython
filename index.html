@@ -1649,7 +1649,7 @@
                 var modeClass = (g.mode || 'selfplay').toLowerCase().replace(/[^a-z]/g, '');
                 html += '<div class="game-item">';
                 html += '<div class="game-left">';
-                html += '<span class="game-num">#' + g.game_num + '</span>';
+                html += '<span class="game-num">#' + (g.game_num || '??') + '</span>';
                 var modeLabel = g.mode || 'selfplay';
                 var modeTooltip = modeLabel.toLowerCase().includes('critic') ? 'Stockfish-guided: NN picks moves, Stockfish critiques' : 'AI plays against itself using MCTS search';
                 html += '<span class="game-mode ' + modeClass + '" data-tooltip="' + modeTooltip + '">' + modeLabel + '</span>';
@@ -1872,6 +1872,17 @@ function renderSideBoard(data) {
             try {
                 var source = new EventSource(API + '/api/train/stream');
                 source.addEventListener('game_start', function(e) {
+                    var data = JSON.parse(e.data);
+                    // Side game game_start → reset that side board
+                    if (data.game_id && parseInt(data.game_id) > 0) {
+                        var gid = parseInt(data.game_id);
+                        if (sideBoards[gid]) {
+                            sideBoards[gid].position('start');
+                        }
+                        $('#side-board-status-' + gid).text('Starting...');
+                        return;
+                    }
+                    // Main game game_start
                     allMoves = [];
                     moveQualities = {};
                     fenCache = [];
@@ -1888,8 +1899,8 @@ function renderSideBoard(data) {
                 });
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
-                    // Side games (game_id 1, 2, 3, or 4) → render on mini boards
-                    if (data.game_id && parseInt(data.game_id) > 0 && parseInt(data.game_id) <= 4) {
+                    // Side games (game_id 1-9) → render on mini boards
+                    if (data.game_id && parseInt(data.game_id) > 0) {
                         renderSideBoard(data);
                         return;
                     }
