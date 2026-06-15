@@ -552,17 +552,15 @@ def train_start():
                     moves = game_data.get('moves', [])
                     
                     current_game_moves = moves
-                    current_game_status = "finished"
-                    
-                        recent_games.append({
-                            'result': result,
-                            'moves': moves[:20],
-                            'timestamp': time.time(),
-                            'game_num': 1,
-                            'mode': 'critic' if use_stockfish else 'self-play',
-                        })
-                        if len(recent_games) > 100:
-                            recent_games.pop(0)
+                    recent_games.append({
+                        'result': result,
+                        'moves': moves[:20],
+                        'timestamp': time.time(),
+                        'game_num': 1,
+                        'mode': 'critic' if use_stockfish else 'self-play',
+                    })
+                    if len(recent_games) > 100:
+                        recent_games.pop(0)
                     # Push game-finished event to SSE
                     try:
                         sse_event_queue.put_nowait({
@@ -583,6 +581,11 @@ def train_start():
                         })
                     except queue.Full:
                         log.warning('[SSE] Queue full, dropping training events')
+
+
+
+
+
 
 
 
