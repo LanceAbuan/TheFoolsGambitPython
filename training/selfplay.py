@@ -21,7 +21,6 @@ from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .model import ChessNet
 import logging
 
-
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
 
@@ -75,35 +74,59 @@ class BatchEvaluator:
 
             self.is_batching = True
             batch_start = time.time()
-            try:
-                # batch is a list of numpy arrays of shape (8, 8, 16)
-                input_tensor = torch.stack([torch.as_tensor(b, device=self.device) for b in batch])
-                with torch.inference_mode():
-                    policy_logits, values = self.model(input_tensor)
 
-                # values is [batch_size, 1] or [batch_size]
-                for i, res_container in enumerate(results):
-                    res_container['policy'] = policy_logits[i].detach().cpu().numpy()
-                    if values.dim() == 2:
-                        res_container['value'] = values[i].detach().item()
-                    else:
-                        res_container['value'] = values[i].detach().item()
+            # Process with OOM retry: split batch in half on failure
+            self._process_batch(batch, results)
 
-                    res_container['event'].set()  # wake up the waiting thread
+            duration = time.time() - batch_start
+            log.debug(f'[BatchEvaluator] Processed batch of {len(batch)} in {duration:.4f}s')
+            self.is_batching = False
 
-                duration = time.time() - batch_start
-                log.debug(f'[BatchEvaluator] Processed batch of {len(batch)} in {duration:.4f}s')
-            except Exception as e:
-                log.error(f'[BatchEvaluator] ERROR during forward pass: {e}')
-                # Wake up all waiters on error so they don't hang
+    def _process_batch(self, batch, results):
+        """Process a batch, retrying with half-size splits on OOM."""
+        try:
+            input_tensor = torch.stack([torch.as_tensor(b, device=self.device) for b in batch])
+            with torch.inference_mode():
+                policy_logits, values = self.model(input_tensor)
+
+            for i, res_container in enumerate(results):
+                res_container['policy'] = policy_logits[i].detach().cpu().numpy()
+                if values.dim() == 2:
+                    res_container['value'] = values[i].detach().item()
+                else:
+                    res_container['value'] = values[i].detach().item()
+                res_container['event'].set()
+
+        except RuntimeError as e:
+            if 'cuda' in str(e).lower() or 'alloc' in str(e).lower():
+                if len(batch) > 1:
+                    mid = len(batch) // 2
+                    log.warning(f'[BatchEvaluator] GPU OOM (batch={len(batch)}), splitting...')
+                    torch.cuda.empty_cache()
+                    self._process_batch(batch[:mid], results[:mid])
+                    self._process_batch(batch[mid:], results[mid:])
+                else:
+                    log.warning(f'[BatchEvaluator] GPU OOM on single item, returning zeros')
+                    res = results[0]
+                    res['policy'] = np.zeros(NUM_POSSIBLE_MOVES, dtype=np.float32)
+                    res['value'] = 0.0
+                    res['event'].set()
+            else:
+                log.error(f'[BatchEvaluator] RuntimeError: {e}')
                 for res_container in results:
+                    res_container['policy'] = np.zeros(NUM_POSSIBLE_MOVES, dtype=np.float32)
+                    res_container['value'] = 0.0
                     res_container['event'].set()
-            finally:
-                self.is_batching = False
+        except Exception as e:
+            log.error(f'[BatchEvaluator] ERROR during forward pass: {e}')
+            for res_container in results:
+                res_container['policy'] = np.zeros(NUM_POSSIBLE_MOVES, dtype=np.float32)
+                res_container['value'] = 0.0
+                res_container['event'].set()
 
     def get_eval(self, board_tensor):
         event = threading.Event()
-        res_container = {'policy': None, 'value': None, 'event': event}
+        res_container = {'policy': np.zeros(NUM_POSSIBLE_MOVES, dtype=np.float32), 'value': 0.0, 'event': event}
         self.queue.put((board_tensor, res_container))
         event.wait()  # blocks until worker sets the event — no GIL spinning
         return res_container['policy'], res_container['value']
@@ -344,7 +367,6 @@ class MCTS:
         return value
 
 
-
 class SelfPlayGame:
     def __init__(self, model, num_mcts_simulations=400, max_moves=200, stockfish=None, batch_size=2048, use_stockfish=True, evaluator=None):
         self.model = model
@@ -414,6 +436,7 @@ class SelfPlayGame:
                 move_sans.append(san_move)
                 if on_move:
                     on_move(list(move_sans))
+
         except Exception as e:
             log.error(f'[GAME] ERROR: {e}')
             import traceback

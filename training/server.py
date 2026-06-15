@@ -29,7 +29,7 @@ trainer = None
 training_thread = None
 _lock = threading.Lock()
 recent_games = []
-sse_event_queue = queue.Queue(maxsize=1000)
+sse_event_queue = queue.Queue(maxsize=5000)
 
 # ---- BROADCAST MANAGER ----
 class StreamManager:
@@ -352,7 +352,10 @@ def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_
                 })
 
             game_data = sp.play(on_move=on_move_callback)
+            
+            # Add a small delay so the game is watchable on the stream
 
+            
             event_queue.put({
                 "type": "finished",
                 "game_id": gid,
@@ -410,9 +413,13 @@ def _side_game_event_consumer():
                 side_game_snapshots[gid] = {"status": "finished", "moves": moves}
                 recent_games.append({
                     "result": event["result"],
-                    "moves": moves[:20],
+                    "moves": event["moves"][:20],
                     "timestamp": event["timestamp"],
+                    "game_num": gid + 1,
+                    "mode": "critic" if event.get("status") == "finished" else "self-play",
                 })
+                if len(recent_games) > 100:
+                    recent_games.pop(0)
                 # Send as SSE 'game_progress' event
                 try:
                     sse_event_queue.put_nowait({
@@ -454,7 +461,7 @@ def start_side_games(trainer):
     model = trainer.model  # already on GPU from Trainer init
     shared_evaluator = BatchEvaluator(model, batch_size=512, max_wait_time=0.010)
 
-    num_sims = 100  # per side game (reduced for latency; 9 games × 100 = 900 total sims/move-cycle)
+    num_sims = 400  # per side game (user requested)
 
     for gid in range(1, NUM_GAMES):
         if _side_game_threads[gid] and _side_game_threads[gid].is_alive():
@@ -475,20 +482,24 @@ def train_status():
     t = get_trainer()
     status = t.get_status()
 
-    # Include the most recent active side-game moves as current_game
-    active_moves = []
-    active_status = 'idle'
+    # Include all active side games
+    side_games_status = []
     for gid in range(1, NUM_GAMES):
         snap = side_game_snapshots[gid]
-        if snap['status'] == 'playing' and len(snap['moves']) > len(active_moves):
-            active_moves = snap['moves']
-            active_status = 'playing'
-
+        if snap['status'] == 'playing':
+            side_games_status.append({
+                'game_id': gid,
+                'status': snap['status'],
+                'moves': snap['moves'],
+            })
+    
+    status['side_games'] = side_games_status
     status['current_game'] = {
-        'status': active_status,
-        'moves': active_moves,
+        'status': current_game_status,
+        'moves': current_game_moves,
     }
-    status['recent_games'] = recent_games[:20]
+
+    status['recent_games'] = recent_games[-20:]
     return jsonify(status)
 
 
@@ -532,14 +543,26 @@ def train_start():
                         })
                     except queue.Full:
                         pass
+                    
+                    global current_game_status, current_game_moves
+                    current_game_status = "playing"
+                    
                     game_data = t.play_game()
                     result = game_data.get('result', '*')
                     moves = game_data.get('moves', [])
-                    recent_games.append({
-                        'result': result,
-                        'moves': moves[:20],
-                        'timestamp': time.time(),
-                    })
+                    
+                    current_game_moves = moves
+                    current_game_status = "finished"
+                    
+                        recent_games.append({
+                            'result': result,
+                            'moves': moves[:20],
+                            'timestamp': time.time(),
+                            'game_num': 1,
+                            'mode': 'critic' if use_stockfish else 'self-play',
+                        })
+                        if len(recent_games) > 100:
+                            recent_games.pop(0)
                     # Push game-finished event to SSE
                     try:
                         sse_event_queue.put_nowait({
@@ -560,6 +583,8 @@ def train_start():
                         })
                     except queue.Full:
                         log.warning('[SSE] Queue full, dropping training events')
+
+
 
                 # Train
                 for _ in range(steps_per_cycle):

@@ -65,7 +65,7 @@ def auto_start_training():
         _req.post('http://localhost:5001/api/train/start', json={
             'games_per_cycle': 20,
             'steps_per_cycle': 50,
-            'mcts_simulations': 500,
+            'mcts_simulations': 600,
             'use_stockfish': True
         }, timeout=5)
         print('[AUTO] Training started automatically.')
@@ -74,6 +74,11 @@ def auto_start_training():
 
 
 if __name__ == '__main__':
+    # Initialize trainer and start side-game processes (must be in __main__
+    # so spawned child processes don't re-execute this)
+    from training.server import init_and_start
+    init_and_start()
+
     t = threading.Thread(target=auto_start_training, daemon=True)
     t.start()
     app.run(debug=False, host='0.0.0.0', port=5001, threaded=True)
