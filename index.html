@@ -890,7 +890,7 @@
         
                 <div class="board-nav">
                     <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
-                    <button class="nav-btn" id="btn-play" onclick="window.togglePlay()" title="Play through moves">&#9654; Play</button>
+                    <button class="nav-btn" id="btn-play" onclick="window.togglePlay()" title="Play through moves">&#9654;</button>
                     <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous move">&#8592;</button>
                     <span class="move-label" id="move-label">Move 0/0</span>
                     <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
@@ -1381,7 +1381,7 @@
         };
 
         function updatePlayBtn() {
-            $('#btn-play').html(isPlaying ? '&#9654;&#9654; Pause' : '&#9654; Play');
+            $('#btn-play').html(isPlaying ? '&#9654;&#9654;' : '&#9654;');
         }
 
         window.goToMove = function(moveIdx) {
@@ -1925,7 +1925,9 @@ function renderSideBoard(data) {
         try {
             var result = sideGames[gid].move(data.move);
             if (result) {
-                sideBoards[gid].move({from: result.from, to: result.to, promotion: result.promotion});
+                sideBoards[gid].move(result.from + '-' + result.to);
+                // Safety fallback: ensure board updates even if move() is silently ignored
+                sideBoards[gid].position(sideGames[gid].fen(), false);
             }
         } catch(e) {
             console.warn('Side board ' + gid + ' move error:', e);
@@ -2096,7 +2098,7 @@ function renderSideBoard(data) {
                             try {
                                 var mResult = mainGame.move(data.move);
                                 if (mResult) {
-                                    liveBoard.move({from: mResult.from, to: mResult.to, promotion: mResult.promotion});
+                                    liveBoard.move(mResult.from + '-' + mResult.to);
                                     fenCache.push(mainGame.fen());
                                 } else {
                                     fenCache.push('');
