@@ -401,7 +401,7 @@ def _side_game_event_consumer():
                     sse_event_queue.put_nowait({
                         "_sse_event": "game_progress",
                         "game_id": gid,
-                        "moves": moves,
+                        "move": moves[-1],  # single latest SAN for smooth animation
                         "status": "playing",
                         "timestamp": event.get("timestamp"),
                     })
@@ -554,7 +554,7 @@ def train_start():
                             sse_event_queue.put_nowait({
                                 "_sse_event": "game_progress",
                                 "game_id": 0,
-                                "moves": moves,
+                                "move": moves[-1],  # single latest SAN for smooth animation
                                 "status": "playing",
                                 "timestamp": time.time(),
                             })

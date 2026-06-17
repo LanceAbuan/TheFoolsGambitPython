@@ -195,6 +195,50 @@
             opacity: 1;
         }
 
+        /* SSE Event Log */
+        .sse-log-section {
+            margin: 12px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .sse-log-header {
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            user-select: none;
+        }
+        .sse-log-header:hover { background: var(--bg-hover); }
+        .sse-log-body {
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 10px;
+            line-height: 1.6;
+            padding: 4px 0;
+            background: var(--bg-primary);
+        }
+        .sse-log-body.collapsed { display: none; }
+        .sse-log-entry {
+            padding: 2px 12px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            gap: 8px;
+            align-items: baseline;
+        }
+        .sse-log-entry:last-child { border-bottom: none; }
+        .sse-log-time { color: var(--text-muted); flex-shrink: 0; }
+        .sse-log-type { font-weight: 600; color: var(--accent-green); flex-shrink: 0; min-width: 60px; }
+        .sse-log-type.game_start { color: #4fc3f7; }
+        .sse-log-type.game_progress { color: #81c784; }
+        .sse-log-type.status_update { color: #ffb74d; }
+        .sse-log-data { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
         /* SSE connection status */
         #sse-status {
             font-size: 10px;
@@ -974,6 +1018,14 @@
                 </div>
             </div>
 
+            <!-- SSE Event Log -->
+            <div class="sse-log-section">
+                <div class="sse-log-header" onclick="toggleSSELog()">SSE Events <span id="sse-log-toggle">&#9660;</span></div>
+                <div id="sse-log-body" class="sse-log-body">
+                    <div style="padding: 8px; color: var(--text-muted); font-size: 10px; font-style: italic;">Waiting for events...</div>
+                </div>
+            </div>
+
             <!-- Recent Games -->
             <div class="games-section">
                 <div class="games-header" data-tooltip="Recent training games. Critic = guided by Stockfish. Self-play = AI vs itself.">Recent Games</div>
@@ -1121,6 +1173,8 @@
         var allMoves = [];
         var currentViewIndex = 0;
         var             sideBoards = [null, null, null, null, null, null, null, null, null, null]; // index 0 unused; 1-9 = side game boards
+        var mainGame = null;         // chess.js instance for main board (SAN→UCI conversion + animation)
+        var sideGames = {};          // gid → chess.js instance for side board animation
 
         var autoFollow = true;
         var isPlaying = false;
@@ -1614,6 +1668,11 @@
                     allMoves = newMoves;
                     buildFenCache(allMoves);
                     buildMoveList();
+                    // Rebuild mainGame from full array
+                    mainGame = new Chess();
+                    for (var mi = 0; mi < allMoves.length; mi++) {
+                        try { mainGame.move(allMoves[mi]); } catch(e) { break; }
+                    }
                     currentViewIndex = newMoves.length;
                     autoFollow = true;
                     isPlaying = false;
@@ -1630,6 +1689,11 @@
                     allMoves = newMoves;
                     buildFenCache(allMoves);
                     buildMoveList();
+                    // Sync mainGame from full array
+                    mainGame = new Chess();
+                    for (var mi = 0; mi < allMoves.length; mi++) {
+                        try { mainGame.move(allMoves[mi]); } catch(e) { break; }
+                    }
                     if (autoFollow) {
                         currentViewIndex = allMoves.length;
                     }
@@ -1854,26 +1918,87 @@ function renderSideBoard(data) {
     console.log('SSE Side Game Update:', data);
     var gid = data.game_id;
     if (!sideBoards[gid]) return;
-    // Compute FEN from moves
-    var fen = '';
-    if (data.fen) {
-        fen = data.fen;
-    } else if (data.moves) {
-        fen = fenFromMoves(data.moves);
+
+    if (data.move) {
+        // Single move — animate it smoothly on the mini board
+        if (!sideGames[gid]) sideGames[gid] = new Chess();
+        try {
+            var result = sideGames[gid].move(data.move);
+            if (result) {
+                sideBoards[gid].move({from: result.from, to: result.to, promotion: result.promotion});
+            }
+        } catch(e) {
+            console.warn('Side board ' + gid + ' move error:', e);
+        }
+        var moveCount = sideGames[gid] ? sideGames[gid].history().length : 0;
+        var statusText = moveCount + ' moves';
+        if (data.is_checkmate || data.is_stalemate) {
+            statusText = data.is_checkmate ? 'Checkmate' : 'Stalemate';
+        }
+        $('#side-board-status-' + gid).text(statusText);
+
+    } else {
+        // Full moves array or FEN — atomic update (reconnect or finished)
+        var fen = '';
+        if (data.fen) {
+            fen = data.fen;
+        } else if (data.moves) {
+            fen = fenFromMoves(data.moves);
+            // Rebuild side game instance from full array
+            sideGames[gid] = new Chess();
+            for (var i = 0; i < data.moves.length; i++) {
+                try { sideGames[gid].move(data.moves[i]); } catch(e) { break; }
+            }
+        }
+        if (fen) {
+            sideBoards[gid].position(fen);
+        }
+        var moveCount = data.moves ? data.moves.length : 0;
+        var statusText = moveCount + ' moves';
+        if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
+            statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
+        }
+        $('#side-board-status-' + gid).text(statusText);
     }
-    if (fen) {
-        sideBoards[gid].position(fen);
-    }
-    // Update status
-    var moveCount = data.moves ? data.moves.length : 0;
-    var statusText = moveCount + ' moves';
-    if (data.status === 'finished' || data.is_checkmate || data.is_stalemate) {
-        statusText = (data.is_checkmate ? 'Checkmate' : (data.is_stalemate ? 'Stalemate' : 'Done'));
-    }
-    $('#side-board-status-' + gid).text(statusText);
 }
 
         /* ---------- SSE ---------- */
+
+        var sseLogCollapsed = false;
+        function toggleSSELog() {
+            sseLogCollapsed = !sseLogCollapsed;
+            var body = document.getElementById('sse-log-body');
+            var toggle = document.getElementById('sse-log-toggle');
+            if (body) body.classList.toggle('collapsed', sseLogCollapsed);
+            if (toggle) toggle.innerHTML = sseLogCollapsed ? '&#9654;' : '&#9660;';
+        }
+        function logSSEEvent(type, data) {
+            try {
+                var body = document.getElementById('sse-log-body');
+                if (!body) return;
+                var ts = new Date().toLocaleTimeString();
+                var summary = '';
+                if (data.game_id != null) summary += 'game=' + data.game_id + ' ';
+                if (data.moves) summary += 'moves=' + data.moves.length + ' ';
+                if (data.result) summary += 'result=' + data.result + ' ';
+                if (data.data) {
+                    if (data.data.status) summary += 'status=' + data.data.status + ' ';
+                    if (data.data.step != null) summary += 'step=' + data.data.step + ' ';
+                    if (data.data.games_played != null) summary += 'games=' + data.data.games_played + ' ';
+                }
+                
+                var entry = document.createElement('div');
+                entry.className = 'sse-log-entry';
+                entry.innerHTML = '<span class="sse-log-time">' + ts + '</span>' +
+                    '<span class="sse-log-type ' + type + '">' + type + '</span>' +
+                    '<span class="sse-log-data">' + (summary || JSON.stringify(data).slice(0, 80)) + '</span>';
+                body.appendChild(entry);
+                // Keep last 50 events
+                while (body.children.length > 50) body.removeChild(body.firstChild);
+                // Auto-scroll to bottom
+                body.scrollTop = body.scrollHeight;
+            } catch(e) { /* ignore log errors */ }
+        }
 
         function connectSSE() {
             var statusEl = document.getElementById('sse-status');
@@ -1885,15 +2010,42 @@ function renderSideBoard(data) {
                     // Reset lastMoveTimestamp on reconnect so we don't
                     // accumulate a huge time spike from the disconnect period
                     lastMoveTimestamp = null;
+                    logSSEEvent('connected', {});
                     console.log('SSE Connection Opened');
+                    // Catch up: if we missed moves while disconnected, poll full state
+                    $.ajax({
+                        url: API + '/api/train/status',
+                        method: 'GET',
+                        timeout: 10000,
+                        success: function(status) {
+                            if (status.current_game && status.current_game.moves) {
+                                var pollMoves = status.current_game.moves;
+                                if (pollMoves.length > allMoves.length) {
+                                    allMoves = pollMoves;
+                                    moveQualities = {};
+                                    buildFenCache(allMoves);
+                                    buildMoveList();
+                                    mainGame = new Chess();
+                                    for (var mi = 0; mi < allMoves.length; mi++) {
+                                        try { mainGame.move(allMoves[mi]); } catch(e) { break; }
+                                    }
+                                    if (autoFollow) currentViewIndex = allMoves.length;
+                                    updateView();
+                                    scheduleEval();
+                                }
+                            }
+                        }
+                    });
                 };
                 source.onerror = function() {
                     statusEl.textContent = 'SSE: Disconnected (Retrying...)';
                     statusEl.style.color = 'var(--accent-red)';
+                    logSSEEvent('disconnected', {});
                     console.error('SSE Connection Error');
                 };
                 source.addEventListener('game_start', function(e) {
                     var data = JSON.parse(e.data);
+                    logSSEEvent('game_start', data);
                     console.log('SSE game_start:', data);
                     // Side game game_start → reset that side board
                     if (data.game_id && parseInt(data.game_id, 10) > 0) {
@@ -1901,6 +2053,7 @@ function renderSideBoard(data) {
                         if (sideBoards[gid]) {
                             sideBoards[gid].position('start');
                         }
+                        sideGames[gid] = new Chess();
                         $('#side-board-status-' + gid).text('Starting...');
                         return;
                     }
@@ -1910,6 +2063,7 @@ function renderSideBoard(data) {
                     fenCache = [];
                     currentViewIndex = 0;
                     autoFollow = true;
+                    mainGame = new Chess();
                     // Reset thinking timers
                     thinkTime = { white: 0, black: 0 };
                     lastMoveTimestamp = null;
@@ -1921,6 +2075,7 @@ function renderSideBoard(data) {
                 });
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
+                    logSSEEvent('game_progress', data);
                     console.log('SSE game_progress:', data);
                     // Side games (game_id 1-9) → render on mini boards
                     if (data.game_id && parseInt(data.game_id, 10) > 0) {
@@ -1928,23 +2083,41 @@ function renderSideBoard(data) {
                         return;
                     }
                     // Main game (game_id 0 or absent)
-                    if (data.moves) {
-                        var prevCount = allMoves.length;
-                        allMoves = data.moves;
+                    var prevCount = allMoves.length;
+                    var ts = parseFloat(data.timestamp);
+
+                    if (data.move) {
+                        // Single new move — animate it smoothly
+                        allMoves.push(data.move);
                         moveQualities = {};
-                        buildFenCache(allMoves);
+
+                        // Animate piece on chessboard.js using UCI from chess.js
+                        if (mainGame) {
+                            try {
+                                var mResult = mainGame.move(data.move);
+                                if (mResult) {
+                                    liveBoard.move({from: mResult.from, to: mResult.to, promotion: mResult.promotion});
+                                    fenCache.push(mainGame.fen());
+                                } else {
+                                    fenCache.push('');
+                                }
+                            } catch(e) {
+                                // Fallback: rebuild via FEN
+                                fenCache.push('');
+                                console.warn('move anim fallback:', e);
+                            }
+                        } else {
+                            fenCache.push('');
+                        }
+
                         buildMoveList();
                         if (autoFollow) currentViewIndex = allMoves.length;
                         updateView();
                         scheduleEval();
-    
+
                         // Accumulate thinking time from SSE timestamps
-                        var ts = parseFloat(data.timestamp);
                         if (!isNaN(ts)) {
-                            if (gameStartTimestamp === null) {
-                                gameStartTimestamp = ts;
-                            }
-                            
+                            if (gameStartTimestamp === null) gameStartTimestamp = ts;
                             if (lastMoveTimestamp !== null) {
                                 var elapsed = ts - lastMoveTimestamp;
                                 if (elapsed > 0) {
@@ -1955,12 +2128,43 @@ function renderSideBoard(data) {
                             }
                             lastMoveTimestamp = ts;
                         }
-    
+
+                        updateTurnIndicator();
+
+                    } else if (data.moves) {
+                        // Full array (reconnect or finished) — rebuild from scratch
+                        allMoves = data.moves;
+                        moveQualities = {};
+                        buildFenCache(allMoves);
+                        buildMoveList();
+                        if (autoFollow) currentViewIndex = allMoves.length;
+                        // Sync chess.js instance
+                        mainGame = new Chess();
+                        for (var mi = 0; mi < allMoves.length; mi++) {
+                            try { mainGame.move(allMoves[mi]); } catch(e) { break; }
+                        }
+                        updateView();
+                        scheduleEval();
+
+                        if (!isNaN(ts)) {
+                            if (gameStartTimestamp === null) gameStartTimestamp = ts;
+                            if (lastMoveTimestamp !== null) {
+                                var elapsed = ts - lastMoveTimestamp;
+                                if (elapsed > 0) {
+                                    var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
+                                    thinkTime[lastPlayer] += elapsed;
+                                    updateTimers();
+                                }
+                            }
+                            lastMoveTimestamp = ts;
+                        }
+
                         updateTurnIndicator();
                     }
                 });
                 source.addEventListener('status_update', function(e) {
                     var data = JSON.parse(e.data);
+                    logSSEEvent('status_update', data);
                     console.log('SSE status_update:', data);
                     if (data.data) {
                         updateStatus(data.data);
@@ -1968,8 +2172,20 @@ function renderSideBoard(data) {
                     }
                 });
                 source.addEventListener('mcts_progress', function(e) {
+                    var data = JSON.parse(e.data);
+                    logSSEEvent('mcts_progress', data);
                     // Could use for progress bar
                 });
+                // Catch any other event types not explicitly handled
+                source.onmessage = function(e) {
+                    // Log but don't double-log named events (they're already handled above)
+                    if (e.type === 'message' && e.data) {
+                        try {
+                            var d = JSON.parse(e.data);
+                            if (!d._sse_event) logSSEEvent('raw', d);
+                        } catch(ex) {}
+                    }
+                };
             } catch(e) {
                 console.error('Error initializing SSE:', e);
             }
