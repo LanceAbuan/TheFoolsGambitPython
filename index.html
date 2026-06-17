@@ -329,20 +329,6 @@
             font-size: 11px;
             color: var(--text-muted);
         }
-        .player-clock {
-            font-size: 18px;
-            font-weight: 800;
-            font-family: 'Inter', monospace;
-            background: var(--bg-tertiary);
-            padding: 3px 10px;
-            border-radius: 4px;
-            color: var(--text-primary);
-        }
-        .player-clock.active {
-            background: var(--text-primary);
-            color: var(--bg-tertiary);
-            box-shadow: 0 0 8px rgba(129,182,76,0.4);
-        }
 
         #live-board {
             width: 100%;
@@ -874,7 +860,6 @@
                         <div class="player-name"><span class="turn-dot"></span>Stockfish (depth 10)</div>
                         <div class="player-detail" id="black-detail">Critic opponent</div>
                     </div>
-                    <div class="player-clock" id="black-clock">0:00</div>
                 </div>
                 <div id="live-board"></div>
                 <div class="player-info-bar bottom" id="white-bar">
@@ -882,7 +867,6 @@
                         <div class="player-name"><span class="turn-dot"></span>Fool's Gambit AI</div>
                         <div class="player-detail" id="white-detail">ELO ~200</div>
                     </div>
-                    <div class="player-clock" id="white-clock">0:00</div>
                 </div>
         
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
@@ -1064,7 +1048,6 @@
                             <div class="player-name"><span class="turn-dot"></span><span id="fs-opponent-name">Stockfish (depth 10)</span></div>
                             <div class="player-detail" id="fs-opponent-detail"></div>
                         </div>
-                        <div class="player-clock" id="fs-black-clock">0:00</div>
                     </div>
                     <div id="fullscreen-board"></div>
                     <div class="player-info-bar bottom" id="fs-white-bar">
@@ -1072,7 +1055,6 @@
                             <div class="player-name"><span class="turn-dot"></span>Fool's Gambit AI</div>
                             <div class="player-detail" id="fs-ai-detail"></div>
                         </div>
-                        <div class="player-clock" id="fs-white-clock">0:00</div>
                     </div>
                 </div>
             </div>
@@ -1190,10 +1172,6 @@
         var isAnalyzing = false;
         var currentAnalysisId = 0;
 
-        /* ---------- Thinking timers ---------- */
-        var thinkTime = { white: 0, black: 0 }; // accumulated seconds
-        var lastMoveTimestamp = null;           // SSE timestamp of last move
-        var gameStartTimestamp = null;          // SSE timestamp of game start
 
         var API = (function() {
             var loc = window.location.hostname;
@@ -1473,8 +1451,6 @@
             $('#fs-opponent-name').text(oppName);
             $('#fs-opponent-detail').text(oppDetail);
             $('#fs-ai-detail').text(aiDetail);
-            // Sync timers from the timer variables
-            renderClocks();
             updateTurnIndicator();
             // Mode label + dynamic title
             var statusText = $('#status-text').text();
@@ -1509,30 +1485,6 @@
             return (cp >= 0 ? '+' : '') + (cp / 100).toFixed(2);
         }
 
-        function formatTime(seconds) {
-            var m = Math.floor(seconds / 60);
-            var s = Math.round(seconds % 60);
-            if (s === 60) { m += 1; s = 0; }
-            return m + ':' + (s < 10 ? '0' : '') + s;
-        }
-
-        function renderClocks() {
-            var now = Date.now() / 1000;
-            var wt = thinkTime.white;
-            var bt = thinkTime.black;
-            if (lastMoveTimestamp != null) {
-                var elapsed = now - lastMoveTimestamp;
-                if (elapsed > 0) {
-                    if (allMoves.length % 2 === 0) wt += elapsed;
-                    else bt += elapsed;
-                }
-            }
-            $('#white-clock').text(formatTime(wt));
-            $('#black-clock').text(formatTime(bt));
-            $('#fs-white-clock').text(formatTime(wt));
-            $('#fs-black-clock').text(formatTime(bt));
-        }
-
         function updateTurnIndicator() {
             var moveCount = allMoves.length;
             var whiteToMove = moveCount % 2 === 0;
@@ -1542,11 +1494,6 @@
             // Fullscreen bars
             $('#fs-white-bar').toggleClass('on-turn', whiteToMove);
             $('#fs-black-bar').toggleClass('on-turn', !whiteToMove);
-            // Active clock highlight
-            $('#white-clock').toggleClass('active', whiteToMove);
-            $('#black-clock').toggleClass('active', !whiteToMove);
-            $('#fs-white-clock').toggleClass('active', whiteToMove);
-            $('#fs-black-clock').toggleClass('active', !whiteToMove);
         }
 
         function updateEvalBar(evalNormalized, cp) {
@@ -2045,9 +1992,6 @@ function renderSideBoard(data) {
                 source.onopen = function() {
                     statusEl.textContent = 'SSE: Connected';
                     statusEl.style.color = 'var(--accent-green)';
-                    // Reset lastMoveTimestamp on reconnect so we don't
-                    // accumulate a huge time spike from the disconnect period
-                    lastMoveTimestamp = null;
                     logSSEEvent('connected', {});
                     console.log('SSE Connection Opened');
                     // Catch up: if we missed moves while disconnected, poll full state
@@ -2102,11 +2046,6 @@ function renderSideBoard(data) {
                     currentViewIndex = 0;
                     autoFollow = true;
                     mainGame = new Chess();
-                    // Reset thinking timers
-                    thinkTime = { white: 0, black: 0 };
-                    lastMoveTimestamp = data.timestamp ? parseFloat(data.timestamp) : null;
-                    gameStartTimestamp = lastMoveTimestamp;
-                    renderClocks();
                     updateTurnIndicator();
                     updateView();
                     buildMoveList();
@@ -2121,9 +2060,6 @@ function renderSideBoard(data) {
                         return;
                     }
                     // Main game (game_id 0 or absent)
-                    var prevCount = allMoves.length;
-                    var ts = parseFloat(data.timestamp);
-
                     if (data.move) {
                         // Single new move — animate it smoothly
                         allMoves.push(data.move);
@@ -2153,20 +2089,6 @@ function renderSideBoard(data) {
                         updateView();
                         scheduleEval();
 
-                        // Accumulate thinking time from SSE timestamps
-                        if (!isNaN(ts)) {
-                            if (gameStartTimestamp === null) gameStartTimestamp = ts;
-                            if (lastMoveTimestamp !== null) {
-                                var elapsed = ts - lastMoveTimestamp;
-                                if (elapsed > 0) {
-                                    var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
-                                    thinkTime[lastPlayer] += elapsed;
-                                    renderClocks();
-                                }
-                            }
-                            lastMoveTimestamp = ts;
-                        }
-
                         updateTurnIndicator();
 
                     } else if (data.moves) {
@@ -2183,19 +2105,6 @@ function renderSideBoard(data) {
                         }
                         updateView();
                         scheduleEval();
-
-                        if (!isNaN(ts)) {
-                            if (gameStartTimestamp === null) gameStartTimestamp = ts;
-                            if (lastMoveTimestamp !== null) {
-                                var elapsed = ts - lastMoveTimestamp;
-                                if (elapsed > 0) {
-                                    var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
-                                    thinkTime[lastPlayer] += elapsed;
-                                    renderClocks();
-                                }
-                            }
-                            lastMoveTimestamp = ts;
-                        }
 
                         updateTurnIndicator();
                     }
@@ -2254,7 +2163,6 @@ function renderSideBoard(data) {
             pollStatus();
             connectSSE();
             setInterval(pollStatus, 5000);
-            setInterval(renderClocks, 200);
             updateEvalBar(0, 0);
             // Escape key closes fullscreen
             $(document).on('keydown', function(e) {
