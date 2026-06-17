@@ -6,6 +6,7 @@ import os
 import json
 import time
 import shutil
+import threading
 import torch
 import torch.optim as optim
 torch.backends.cudnn.benchmark = True
@@ -94,9 +95,11 @@ def download_from_hf():
 class TrainingBuffer:
     def __init__(self, max_size=MAX_BUFFER_SIZE):
         self.buffer = deque(maxlen=max_size)
+        self._lock = threading.Lock()
 
     def add(self, examples):
-        self.buffer.extend(examples)
+        with self._lock:
+            self.buffer.extend(examples)
 
     def sample(self, batch_size):
         if len(self.buffer) == 0:
