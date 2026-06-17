@@ -13,3 +13,5 @@ model_dir/
 nohup.out
 # Eval cache (regenerated from Stockfish)
 eval_cache.json
+# Log files
+*.log
