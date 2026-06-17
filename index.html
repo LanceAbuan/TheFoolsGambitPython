@@ -991,6 +991,10 @@
             <div class="metrics-section">
                 <div class="metrics-header" data-tooltip="Neural network training progress and quality metrics">Training</div>
                 <div class="metrics-row">
+                    <div class="metric" data-tooltip="Side games (visual) completed.">
+                        <div class="metric-val" id="m-side-games">—</div>
+                        <div class="metric-lbl">Side</div>
+                    </div>
                     <div class="metric" data-tooltip="Total self-play & critic games completed">
                         <div class="metric-val" id="m-games">—</div>
                         <div class="metric-lbl">Games</div>
@@ -1607,7 +1611,8 @@
             $('#m-games').text(status.games_played != null ? status.games_played.toLocaleString() : '—');
             $('#m-buffer').text(status.buffer_size != null ? status.buffer_size.toLocaleString() : '—');
             $('#m-steps').text(status.step != null ? status.step.toLocaleString() : '—');
-            $('#m-loss').text(status.loss ? status.loss.toFixed(4) : '—');
+            $('#m-loss').text(status.loss != null ? status.loss.toFixed(4) : '—');
+            $('#m-side-games').text(status.side_games_completed != null ? status.side_games_completed.toLocaleString() : '—');
             $('#m-elo').text(status.estimated_elo ? '~' + status.estimated_elo.toLocaleString() : '~200');
 
             // Dynamic opponent display based on current game mode
@@ -1974,20 +1979,40 @@ function renderSideBoard(data) {
             if (body) body.classList.toggle('collapsed', sseLogCollapsed);
             if (toggle) toggle.innerHTML = sseLogCollapsed ? '&#9654;' : '&#9660;';
         }
+        window.toggleSSELog = toggleSSELog;
         function logSSEEvent(type, data) {
             try {
                 var body = document.getElementById('sse-log-body');
                 if (!body) return;
                 var ts = new Date().toLocaleTimeString();
                 var summary = '';
-                if (data.game_id != null) summary += 'game=' + data.game_id + ' ';
-                if (data.moves) summary += 'moves=' + data.moves.length + ' ';
-                if (data.result) summary += 'result=' + data.result + ' ';
-                if (data.data) {
-                    if (data.data.status) summary += 'status=' + data.data.status + ' ';
+                if (data.game_id != null) summary += 'g' + data.game_id + ' ';
+
+                if (type === 'game_progress' && data.move) {
+                    // Single-move event: move number, side, SAN, whose turn
+                    var moveNum = allMoves.length + 1;
+                    var side = allMoves.length % 2 === 0 ? 'W' : 'B';
+                    var turn = allMoves.length % 2 === 0 ? 'B' : 'W';
+                    summary += '#' + moveNum + ' ' + side + ':' + data.move + ' (' + turn + ')';
+                } else if (type === 'game_progress' && data.moves) {
+                    // Finished game: total moves, last move, result
+                    var last = data.moves[data.moves.length - 1];
+                    summary += 'FINAL ' + data.moves.length + 'm last=' + last;
+                } else if (data.moves) {
+                    summary += 'moves=' + data.moves.length + ' ';
+                }
+
+                if (data.result) summary += ' r=' + data.result + ' ';
+
+                if (type === 'status_update' && data.data) {
+                    if (data.data.status) summary += data.data.status + ' ';
                     if (data.data.step != null) summary += 'step=' + data.data.step + ' ';
                     if (data.data.games_played != null) summary += 'games=' + data.data.games_played + ' ';
+                    if (data.data.loss != null) summary += 'loss=' + data.data.loss.toFixed(4) + ' ';
+                    if (data.data.estimated_elo != null) summary += 'elo=' + data.data.estimated_elo + ' ';
                 }
+
+                if (data.status && type !== 'game_progress') summary += '[' + data.status + '] ';
                 
                 var entry = document.createElement('div');
                 entry.className = 'sse-log-entry';

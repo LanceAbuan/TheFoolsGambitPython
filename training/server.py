@@ -127,6 +127,7 @@ _side_game_running = [False] * NUM_GAMES
 _side_game_threads = [None] * NUM_GAMES
 _side_game_event_queue = None  # threading.Queue, created in start_side_games
 _side_game_event_consumer_thread = None
+_side_games_completed = 0  # incremented when a side game finishes
 
 # ---- EVAL CACHE ----
 # LRU cache: FEN -> {eval_cp, eval_norm, top_moves, move_analysis, timestamp}
@@ -316,6 +317,7 @@ def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_
         shared_evaluator: shared BatchEvaluator for all side games
         event_queue: threading.Queue to send events back to main process
     """
+    global _side_games_completed
     from .selfplay import SelfPlayGame
 
     log.info(f'[SIDE-GAME {gid}] Thread started')
@@ -330,7 +332,7 @@ def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_
         evaluator=shared_evaluator,
     )
 
-    while True:
+    while _side_game_running[gid]:
         try:
             board = chess.Board()
             log.info(f'[SIDE-GAME {gid}] New game started')
@@ -364,6 +366,7 @@ def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_
                 "status": "finished",
                 "timestamp": time.time(),
             })
+            _side_games_completed += 1
             log.info(f'[SIDE-GAME {gid}] Game finished: {game_data["result"]}')
             time.sleep(1)
 
@@ -447,7 +450,7 @@ def start_side_games(trainer):
     """
     from .selfplay import BatchEvaluator
 
-    global _side_game_event_queue, _side_game_event_consumer_thread
+    global _side_game_event_queue, _side_game_event_consumer_thread, _side_game_running, _side_game_threads
 
     # Shared event queue for all side games → SSE
     _side_game_event_queue = queue.Queue()
@@ -467,6 +470,7 @@ def start_side_games(trainer):
         if _side_game_threads[gid] and _side_game_threads[gid].is_alive():
             continue
 
+        _side_game_running[gid] = True
         t = threading.Thread(
             target=_side_game_worker,
             args=(gid, model, num_sims, shared_evaluator, _side_game_event_queue),
@@ -494,6 +498,7 @@ def train_status():
             })
 
     status['side_games'] = side_games_status
+    status['side_games_completed'] = _side_games_completed
     status['current_game'] = {
         'status': current_game_status,
         'moves': current_game_moves,
@@ -743,17 +748,66 @@ def download_model():
 
 @training_bp.route('/api/train/reset', methods=['POST'])
 def train_reset():
-    global trainer, recent_games, current_game_moves
+    global trainer, recent_games, current_game_moves, training_thread
+    global _side_game_running, _side_game_threads, side_game_snapshots
+    global _side_games_completed
+    global sse_event_queue, _side_game_event_queue
+
+    # 1. Stop training loop
+    if trainer is not None:
+        trainer.running = False
+    if training_thread is not None and training_thread.is_alive():
+        training_thread.join(timeout=10)
+        training_thread = None
+    log.info('[RESET] Training loop stopped')
+
+    # 2. Stop side game threads
+    for gid in range(1, NUM_GAMES):
+        _side_game_running[gid] = False
+    for gid in range(1, NUM_GAMES):
+        t = _side_game_threads[gid]
+        if t is not None and t.is_alive():
+            t.join(timeout=5)
+        _side_game_threads[gid] = None
+    _side_game_running = [False] * NUM_GAMES
+    _side_games_completed = 0
+    log.info('[RESET] Side game threads stopped')
+
+    # 3. Drain side game event queue
+    if _side_game_event_queue is not None:
+        while not _side_game_event_queue.empty():
+            try:
+                _side_game_event_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    # 4. Delete all checkpoint files
     import glob
     for f in glob.glob(os.path.join(LOCAL_MODEL_DIR, '*.pt')):
         os.remove(f)
+        log.info(f'[RESET] Deleted checkpoint: {f}')
+
+    # 5. Clear state
     trainer = None
     recent_games = []
     current_game_moves = []
-    # Clear eval cache on reset
+    for gid in range(NUM_GAMES):
+        side_game_snapshots[gid] = {"status": "idle", "moves": []}
+    log.info('[RESET] State cleared')
+
+    # 6. Drain SSE queue
+    if sse_event_queue is not None:
+        while not sse_event_queue.empty():
+            try:
+                sse_event_queue.get_nowait()
+            except queue.Empty:
+                break
+
+    # 7. Clear eval cache
     with eval_cache_lock:
         eval_cache.clear()
-    return jsonify({"status": "reset"})
+
+    return jsonify({"status": "reset", "message": "Training fully reset. Use POST /api/train/start to begin fresh."}), 200
 
 def init_and_start(trainer_ref=None):
     """Initialize the trainer and start side games.
