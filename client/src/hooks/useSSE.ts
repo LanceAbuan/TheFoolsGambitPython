@@ -66,8 +66,8 @@ export function useSSE() {
       try {
         g.move(san);
         dispatch({ type: 'SET_SIDE_FEN', gameId: gid, fen: g.fen(), moveCount: g.moveNumber() });
-      } catch {
-        /* invalid move — skip silently */
+      } catch (err) {
+        console.warn(`[useSSE] invalid move for side game ${gid}: "${san}"`, err);
       }
     },
     [dispatch, sideGameRefs]
