@@ -112,7 +112,7 @@
         .main {
             display: flex;
             justify-content: center;
-            align-items: flex-start;
+            align-items: center;
             gap: 24px;
             max-width: 1400px;
             margin: 0 auto;
@@ -782,15 +782,13 @@
         @media (max-width: 900px) {
             .main { flex-direction: column; align-items: center; }
             .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; height: auto; max-height: 600px; }
-            .board-area { padding: 8px; grid-template-columns: 1fr; flex-direction: column; align-items: center; }
+            .board-area { display: flex; flex-direction: column; align-items: center; padding: 8px; }
             .board-wrapper { width: 100%; max-width: 400px; }
-            .eval-bar-container { min-height: 320px; max-height: 320px; }
+            .eval-bar-container { display: none; }
+            .side-boards { max-width: 400px; width: 100%; }
+            .side-board { max-width: unset; }
             .player-info-bar { width: 100% !important; max-width: 400px !important; }
             .move-list-section { max-height: 160px; }
-            /* Mobile order: board → side boards → eval bar */
-            .board-area > .board-wrapper { order: -1; }
-            .board-area > .side-boards { order: 0; }
-            .board-area > .eval-bar-container { order: 1; }
         }
     </style>
 </head>
