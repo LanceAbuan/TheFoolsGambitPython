@@ -302,7 +302,7 @@ def _eager_init():
         import traceback
         traceback.print_exc()
 
-def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_queue):
+def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_queue, buffer):
     """Entry point for a side-game thread.
 
     Runs in a daemon thread with its own MCTS tree, sharing a single
@@ -316,6 +316,8 @@ def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_
         num_mcts_simulations: MCTS simulations per move
         shared_evaluator: shared BatchEvaluator for all side games
         event_queue: threading.Queue to send events back to main process
+        buffer: TrainingBuffer — side game examples are added here after
+                each completed game so they contribute to training.
     """
     global _side_games_completed
     from .selfplay import SelfPlayGame
@@ -354,6 +356,12 @@ def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_
                 })
 
             game_data = sp.play(on_move=on_move_callback)
+
+            # Contribute training examples to the shared buffer
+            examples = game_data.get('examples', [])
+            if examples:
+                buffer.add(examples)
+                log.info(f'[SIDE-GAME {gid}] Added {len(examples)} training examples to buffer')
 
             # Add a small delay so the game is watchable on the stream
 
@@ -473,7 +481,7 @@ def start_side_games(trainer):
         _side_game_running[gid] = True
         t = threading.Thread(
             target=_side_game_worker,
-            args=(gid, model, num_sims, shared_evaluator, _side_game_event_queue),
+            args=(gid, model, num_sims, shared_evaluator, _side_game_event_queue, trainer.buffer),
             daemon=True,
         )
         t.start()
