@@ -24,13 +24,31 @@ from training.server import training_bp
 app = Flask(__name__)
 app.register_blueprint(training_bp)
 
+REACT_DIST = os.path.join(os.path.dirname(__file__), "client", "dist")
+
 @app.route("/")
 def index():
-    return send_from_directory(os.path.dirname(__file__), "index.html")
+    """Serve the React app."""
+    return send_from_directory(REACT_DIST, "index.html")
+
+@app.route("/assets/<path:path>")
+def serve_react_assets(path):
+    """Vite puts hashed assets under /assets/."""
+    return send_from_directory(os.path.join(REACT_DIST, "assets"), path)
+
+@app.route("/static/<path:path>")
+def serve_static(path):
+    """Serve vendored static files (jQuery, chessboard.js, images, etc.)."""
+    return send_from_directory(os.path.join(os.path.dirname(__file__), "static"), path)
 
 @app.route("/<path:path>")
 def static_files(path):
-    return send_from_directory(os.path.dirname(__file__), path)
+    """Catch-all: try React build first, then project root."""
+    import os as _os
+    react_path = _os.path.join(REACT_DIST, path)
+    if _os.path.exists(react_path):
+        return send_from_directory(REACT_DIST, path)
+    return send_from_directory(_os.path.dirname(__file__), path)
 
 ALLOWED_ORIGINS = {
     'https://gambit.lanceabuan.tech',

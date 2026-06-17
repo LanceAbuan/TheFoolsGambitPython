@@ -15,3 +15,8 @@ nohup.out
 eval_cache.json
 # Log files
 *.log
+# Client build output
+client/dist/
+
+# Client node_modules (overrides root rule for nested dir)
+client/node_modules/
