@@ -1600,7 +1600,7 @@
              // Update moves
             if (status.current_game && status.current_game.moves) {
                 var newMoves = status.current_game.moves;
-                if (newMoves.length > allMoves.length || newMoves.length === 0) {
+                if (newMoves.length > allMoves.length) {
                     allMoves = newMoves;
                     buildFenCache(allMoves);
                     buildMoveList();
