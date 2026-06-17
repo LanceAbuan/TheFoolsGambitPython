@@ -112,7 +112,7 @@
         .main {
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             gap: 24px;
             max-width: 1400px;
             margin: 0 auto;
@@ -128,7 +128,6 @@
             grid-template-columns: auto 1fr auto;
             justify-content: center;
             align-items: stretch;
-            padding: 20px;
             gap: 24px;
         }
 
@@ -196,16 +195,24 @@
             opacity: 1;
         }
 
+        /* SSE connection status */
+        #sse-status {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-bottom: 5px;
+        }
+
         /* Side game boards */
         .side-boards {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 12px;
             flex-shrink: 0;
-            min-width: 412px;
+            min-width: 0;
         }
         .side-board {
-            width: 200px;
+            max-width: 200px;
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
             border-radius: 6px;
@@ -775,7 +782,7 @@
         @media (max-width: 900px) {
             .main { flex-direction: column; align-items: center; }
             .sidebar { width: 100%; min-width: unset; border-left: none; border-top: 1px solid var(--border-color); margin: 20px 0; height: auto; max-height: 600px; }
-            .board-area { padding: 8px; flex-direction: column; align-items: center; }
+            .board-area { padding: 8px; grid-template-columns: 1fr; flex-direction: column; align-items: center; }
             .board-wrapper { width: 100%; max-width: 400px; }
             .eval-bar-container { min-height: 320px; max-height: 320px; }
             .player-info-bar { width: 100% !important; max-width: 400px !important; }
@@ -837,11 +844,11 @@
                 </div>
         
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
-                <div id="sse-status" style="font-size: 10px; color: var(--text-muted); text-align: center; margin-bottom: 5px;">SSE: Disconnected</div>
-        <div id="debug-info" style="font-size: 9px; color: #888; text-align: center; margin-bottom: 10px; font-family: monospace;">Debug: Waiting for SSE...</div>
+                <div id="sse-status">SSE: Disconnected</div>
         
                 <div class="board-nav">
                     <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
+                    <button class="nav-btn" id="btn-play" onclick="window.togglePlay()" title="Play through moves">&#9654; Play</button>
                     <button class="nav-btn" id="btn-back" onclick="window.navMove(-1)" title="Previous move">&#8592;</button>
                     <span class="move-label" id="move-label">Move 0/0</span>
                     <button class="nav-btn" id="btn-fwd" onclick="window.navMove(1)" title="Next move">&#8594;</button>
@@ -1297,6 +1304,9 @@
 
         window.togglePlay = function() {
             isPlaying = !isPlaying;
+            if (!isPlaying) {
+                clearInterval(playInterval);
+            }
             updatePlayBtn();
             if (isPlaying) {
                 autoFollow = true;
@@ -1476,7 +1486,11 @@
             var pct = Math.max(0, Math.min(100, 50 + (evalNormalized * 200)));
             var fill = document.getElementById('eval-bar-fill');
             fill.style.height = pct + '%';
-            fill.className = 'eval-bar-fill';
+            // Preserve 'flipped' class while setting negative when black advantage
+            var cls = 'eval-bar-fill';
+            if (fill.classList.contains('flipped')) cls += ' flipped';
+            if (pct < 50) cls += ' negative';
+            fill.className = cls;
             
             var cpStr = formatEval(cp);
             if (pct >= 50) {
@@ -1515,24 +1529,22 @@
             if (['playing', 'self-play', 'supervised', 'critic', 'stockfish', 'starting', 'Active'].indexOf(rawStatus) !== -1) {
                 badgeClass = 'playing';
                 displayStatus = 'Playing';
-                        badgeClass = 'playing';
-                        displayStatus = 'Playing';
-                    } else if (rawStatus === 'training') {
-                        badgeClass = 'training';
-                        displayStatus = 'Training';
-                    } else if (rawStatus === 'batching') {
-                        badgeClass = 'training';
-                        displayStatus = 'Batching';
-                    } else if (rawStatus === 'error') {
-                        badgeClass = 'error';
-                        displayStatus = 'Error';
-                    } else if (['idle', 'stopped', 'checkpoint'].indexOf(rawStatus) !== -1) {
-                        displayStatus = 'Idle';
-                    } else {
-                        // Unknown status -- pass through as-is rather than showing "Idle"
-                        displayStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
-                        badgeClass = 'playing';
-                    }
+            } else if (rawStatus === 'training') {
+                badgeClass = 'training';
+                displayStatus = 'Training';
+            } else if (rawStatus === 'batching') {
+                badgeClass = 'training';
+                displayStatus = 'Batching';
+            } else if (rawStatus === 'error') {
+                badgeClass = 'error';
+                displayStatus = 'Error';
+            } else if (['idle', 'stopped', 'checkpoint'].indexOf(rawStatus) !== -1) {
+                displayStatus = 'Idle';
+            } else {
+                // Unknown status -- pass through as-is rather than showing "Idle"
+                displayStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+                badgeClass = 'playing';
+            }
 
 
             var badge = $('#status-badge');
@@ -1597,7 +1609,7 @@
                 renderGames(status.recent_games);
             }
 
-             // Update moves
+              // Update moves
             if (status.current_game && status.current_game.moves) {
                 var newMoves = status.current_game.moves;
                 if (newMoves.length > allMoves.length) {
@@ -1607,14 +1619,16 @@
                     currentViewIndex = newMoves.length;
                     autoFollow = true;
                     isPlaying = false;
+                    clearInterval(playInterval);
                     updatePlayBtn();
-                    // Sync fullscreen on new game
+                    // Sync fullscreen on new game (respect manual nav)
                     if (fsBoard) {
-                        fsViewIndex = allMoves.length;
-                        fsAutoFollow = true;
-                        updateFsView();
+                        if (fsAutoFollow) {
+                            fsViewIndex = allMoves.length;
+                            updateFsView();
+                        }
                     }
-                } else {
+                } else if (newMoves.length >= allMoves.length) {
                     allMoves = newMoves;
                     buildFenCache(allMoves);
                     buildMoveList();
@@ -1694,13 +1708,6 @@
         function doEval(force) {
             if (isAnalyzing && !force) return;
             var fen = fenCache[currentViewIndex] || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
-            if (!fen) {
-                var c = new Chess();
-                for (var i = 0; i < currentViewIndex; i++) {
-                    try { c.move(allMoves[i]); } catch(e) { break; }
-                }
-                fen = c.fen();
-            }
             currentFen = fen;
 
             // Show loading
@@ -1877,6 +1884,9 @@ function renderSideBoard(data) {
                 source.onopen = function() {
                     statusEl.textContent = 'SSE: Connected';
                     statusEl.style.color = 'var(--accent-green)';
+                    // Reset lastMoveTimestamp on reconnect so we don't
+                    // accumulate a huge time spike from the disconnect period
+                    lastMoveTimestamp = null;
                     console.log('SSE Connection Opened');
                 };
                 source.onerror = function() {
@@ -1888,8 +1898,8 @@ function renderSideBoard(data) {
                     var data = JSON.parse(e.data);
                     console.log('SSE game_start:', data);
                     // Side game game_start → reset that side board
-                    if (data.game_id && parseInt(data.game_id) > 0) {
-                        var gid = parseInt(data.game_id);
+                    if (data.game_id && parseInt(data.game_id, 10) > 0) {
+                        var gid = parseInt(data.game_id, 10);
                         if (sideBoards[gid]) {
                             sideBoards[gid].position('start');
                         }
@@ -1915,7 +1925,7 @@ function renderSideBoard(data) {
                     var data = JSON.parse(e.data);
                     console.log('SSE game_progress:', data);
                     // Side games (game_id 1-9) → render on mini boards
-                    if (data.game_id && parseInt(data.game_id) > 0) {
+                    if (data.game_id && parseInt(data.game_id, 10) > 0) {
                         renderSideBoard(data);
                         return;
                     }
@@ -1962,9 +1972,6 @@ function renderSideBoard(data) {
                 source.addEventListener('mcts_progress', function(e) {
                     // Could use for progress bar
                 });
-                source.onerror = function() {
-                    // SSE reconnects automatically
-                };
             } catch(e) {
                 console.error('Error initializing SSE:', e);
             }

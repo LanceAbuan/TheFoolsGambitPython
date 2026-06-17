@@ -383,10 +383,13 @@ class StockfishPlayer:
                 san = board.san(move)
                 eval_cp = m['Centipawn'] if m['Centipawn'] is not None else 0
                 if m['Mate'] is not None:
-                    eval_cp = m['Mate'] if m['Mate'] > 0 else m['Mate']
+                    # Scale mate value to centipawn convention (mate_in_N * 10000)
+                    # so the frontend can format it as +M3 instead of +0.03
+                    eval_cp = m['Mate'] * 10000
 
-                # Flip to White's perspective: Centipawn is from side-to-move's POV
-                if board.turn == chess.WHITE:
+                # Flip to White's perspective: Stockfish eval is from side-to-move's POV;
+                # negate when Black to move so positive always = good for White.
+                if board.turn == chess.BLACK:
                     eval_cp = -eval_cp
 
                 moves.append({
