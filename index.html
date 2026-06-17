@@ -1474,7 +1474,7 @@
             $('#fs-opponent-detail').text(oppDetail);
             $('#fs-ai-detail').text(aiDetail);
             // Sync timers from the timer variables
-            updateTimers();
+            renderClocks();
             updateTurnIndicator();
             // Mode label + dynamic title
             var statusText = $('#status-text').text();
@@ -1511,15 +1511,26 @@
 
         function formatTime(seconds) {
             var m = Math.floor(seconds / 60);
-            var s = Math.floor(seconds % 60);
+            var s = Math.round(seconds % 60);
+            if (s === 60) { m += 1; s = 0; }
             return m + ':' + (s < 10 ? '0' : '') + s;
         }
 
-        function updateTimers() {
-            $('#white-clock').text(formatTime(thinkTime.white));
-            $('#black-clock').text(formatTime(thinkTime.black));
-            $('#fs-white-clock').text(formatTime(thinkTime.white));
-            $('#fs-black-clock').text(formatTime(thinkTime.black));
+        function renderClocks() {
+            var now = Date.now() / 1000;
+            var wt = thinkTime.white;
+            var bt = thinkTime.black;
+            if (lastMoveTimestamp != null) {
+                var elapsed = now - lastMoveTimestamp;
+                if (elapsed > 0) {
+                    if (allMoves.length % 2 === 0) wt += elapsed;
+                    else bt += elapsed;
+                }
+            }
+            $('#white-clock').text(formatTime(wt));
+            $('#black-clock').text(formatTime(bt));
+            $('#fs-white-clock').text(formatTime(wt));
+            $('#fs-black-clock').text(formatTime(bt));
         }
 
         function updateTurnIndicator() {
@@ -2093,9 +2104,9 @@ function renderSideBoard(data) {
                     mainGame = new Chess();
                     // Reset thinking timers
                     thinkTime = { white: 0, black: 0 };
-                    lastMoveTimestamp = null;
-                    gameStartTimestamp = null;
-                    updateTimers();
+                    lastMoveTimestamp = data.timestamp ? parseFloat(data.timestamp) : null;
+                    gameStartTimestamp = lastMoveTimestamp;
+                    renderClocks();
                     updateTurnIndicator();
                     updateView();
                     buildMoveList();
@@ -2150,7 +2161,7 @@ function renderSideBoard(data) {
                                 if (elapsed > 0) {
                                     var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
                                     thinkTime[lastPlayer] += elapsed;
-                                    updateTimers();
+                                    renderClocks();
                                 }
                             }
                             lastMoveTimestamp = ts;
@@ -2180,7 +2191,7 @@ function renderSideBoard(data) {
                                 if (elapsed > 0) {
                                     var lastPlayer = prevCount % 2 === 1 ? 'black' : 'white';
                                     thinkTime[lastPlayer] += elapsed;
-                                    updateTimers();
+                                    renderClocks();
                                 }
                             }
                             lastMoveTimestamp = ts;
@@ -2243,6 +2254,7 @@ function renderSideBoard(data) {
             pollStatus();
             connectSSE();
             setInterval(pollStatus, 5000);
+            setInterval(renderClocks, 200);
             updateEvalBar(0, 0);
             // Escape key closes fullscreen
             $(document).on('keydown', function(e) {
