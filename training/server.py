@@ -548,6 +548,8 @@ def train_start():
                     current_game_status = "playing"
 
                     def on_move_callback(moves):
+                        global current_game_moves
+                        current_game_moves = moves
                         try:
                             sse_event_queue.put_nowait({
                                 "_sse_event": "game_progress",
