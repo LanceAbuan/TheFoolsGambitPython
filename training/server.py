@@ -227,13 +227,13 @@ def get_cached_eval(fen):
         entry = eval_cache.get(fen)
         if entry and (time.time() - entry['timestamp']) < EVAL_CACHE_TTL:
             return entry
-        
+
         # Check persistent cache
         if fen in persistent_cache:
-            # Note: We don't have a timestamp for persistent entries, 
+            # Note: We don't have a timestamp for persistent entries,
             # so we treat them as valid but could implement a TTL if needed.
             return persistent_cache[fen]
-            
+
         return None
 
 def set_cached_eval(fen, eval_data):
@@ -290,12 +290,12 @@ def _eager_init():
         sf = get_stockfish()
         trainer = Trainer(stockfish=sf)
         log.info('[BOOT] Trainer initialized eagerly')
-        
+
         # Side game Stockfish instances (None for NN-only)
         for i in range(1, NUM_GAMES):
             _side_game_sfs[i] = None
             log.info(f'[SF] Side game {i} configured for NN-only')
-            
+
     except Exception as e:
         log.error(f'[BOOT] Eager init failed: {e}')
         import traceback
@@ -352,10 +352,10 @@ def _side_game_worker(gid, model, num_mcts_simulations, shared_evaluator, event_
                 })
 
             game_data = sp.play(on_move=on_move_callback)
-            
+
             # Add a small delay so the game is watchable on the stream
 
-            
+
             event_queue.put({
                 "type": "finished",
                 "game_id": gid,
@@ -492,7 +492,7 @@ def train_status():
                 'status': snap['status'],
                 'moves': snap['moves'],
             })
-    
+
     status['side_games'] = side_games_status
     status['current_game'] = {
         'status': current_game_status,
@@ -543,14 +543,26 @@ def train_start():
                         })
                     except queue.Full:
                         pass
-                    
+
                     global current_game_status, current_game_moves
                     current_game_status = "playing"
-                    
-                    game_data = t.play_game()
+
+                    def on_move_callback(moves):
+                        try:
+                            sse_event_queue.put_nowait({
+                                "_sse_event": "game_progress",
+                                "game_id": 0,
+                                "moves": moves,
+                                "status": "playing",
+                                "timestamp": time.time(),
+                            })
+                        except queue.Full:
+                            pass
+
+                    game_data = t.play_game(on_move=on_move_callback)
                     result = game_data.get('result', '*')
                     moves = game_data.get('moves', [])
-                    
+
                     current_game_moves = moves
                     recent_games.append({
                         'result': result,
@@ -577,10 +589,17 @@ def train_start():
                                 "status": "playing",
                                 "games_played": t.games_played,
                                 "result": result,
+                                "buffer_size": len(t.buffer),
+                                "loss": t.loss,
+                                "step": t.step,
+                                "policy_loss": t.policy_loss,
+                                "value_loss": t.value_loss,
+                                "estimated_elo": t.estimate_elo()
                             },
                         })
                     except queue.Full:
                         log.warning('[SSE] Queue full, dropping training events')
+
 
 
 
@@ -673,11 +692,11 @@ def train_analyze():
     """Full Stockfish analysis — served from cache or shared Stockfish (NO temp instance)."""
     data = request.get_json(silent=True) or {}
     fen = data.get('fen', chess.STARTING_FEN)
-    
+
     board = chess.Board(fen)
     if not board.is_valid():
         return jsonify({"error": "Invalid FEN"}), 400
-    
+
     # Try cache first
     cached = get_cached_eval(fen)
     if cached:
@@ -688,10 +707,10 @@ def train_analyze():
             'move_analysis': cached['move_analysis'],
             'cached': True
         })
-    
+
     # Compute via shared instance
     result = get_or_compute_eval(board)
-    
+
     return jsonify({
         'evaluation': result['eval_cp'],
         'evaluation_normalized': result['eval_norm'],

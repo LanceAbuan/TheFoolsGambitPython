@@ -837,6 +837,8 @@
                 </div>
         
                 <div class="what-happening" id="what-happening">Waiting for data...</div>
+                <div id="sse-status" style="font-size: 10px; color: var(--text-muted); text-align: center; margin-bottom: 5px;">SSE: Disconnected</div>
+        <div id="debug-info" style="font-size: 9px; color: #888; text-align: center; margin-bottom: 10px; font-family: monospace;">Debug: Waiting for SSE...</div>
         
                 <div class="board-nav">
                     <button class="nav-btn" id="btn-first" onclick="window.goToMove(0)" title="Jump to first move">&#9668;</button>
@@ -1869,10 +1871,22 @@ function renderSideBoard(data) {
         /* ---------- SSE ---------- */
 
         function connectSSE() {
+            var statusEl = document.getElementById('sse-status');
             try {
                 var source = new EventSource(API + '/api/train/stream');
+                source.onopen = function() {
+                    statusEl.textContent = 'SSE: Connected';
+                    statusEl.style.color = 'var(--accent-green)';
+                    console.log('SSE Connection Opened');
+                };
+                source.onerror = function() {
+                    statusEl.textContent = 'SSE: Disconnected (Retrying...)';
+                    statusEl.style.color = 'var(--accent-red)';
+                    console.error('SSE Connection Error');
+                };
                 source.addEventListener('game_start', function(e) {
                     var data = JSON.parse(e.data);
+                    console.log('SSE game_start:', data);
                     // Side game game_start → reset that side board
                     if (data.game_id && parseInt(data.game_id) > 0) {
                         var gid = parseInt(data.game_id);
@@ -1899,6 +1913,7 @@ function renderSideBoard(data) {
                 });
                 source.addEventListener('game_progress', function(e) {
                     var data = JSON.parse(e.data);
+                    console.log('SSE game_progress:', data);
                     // Side games (game_id 1-9) → render on mini boards
                     if (data.game_id && parseInt(data.game_id) > 0) {
                         renderSideBoard(data);
@@ -1914,8 +1929,8 @@ function renderSideBoard(data) {
                         if (autoFollow) currentViewIndex = allMoves.length;
                         updateView();
                         scheduleEval();
-
-                         // Accumulate thinking time from SSE timestamps
+    
+                        // Accumulate thinking time from SSE timestamps
                         var ts = parseFloat(data.timestamp);
                         if (!isNaN(ts)) {
                             if (gameStartTimestamp === null) {
@@ -1932,12 +1947,13 @@ function renderSideBoard(data) {
                             }
                             lastMoveTimestamp = ts;
                         }
-
+    
                         updateTurnIndicator();
                     }
                 });
                 source.addEventListener('status_update', function(e) {
                     var data = JSON.parse(e.data);
+                    console.log('SSE status_update:', data);
                     if (data.data) {
                         updateStatus(data.data);
                         updateTurnIndicator();
@@ -1949,7 +1965,9 @@ function renderSideBoard(data) {
                 source.onerror = function() {
                     // SSE reconnects automatically
                 };
-            } catch(e) {}
+            } catch(e) {
+                console.error('Error initializing SSE:', e);
+            }
         }
 
         /* ---------- Poll ---------- */
