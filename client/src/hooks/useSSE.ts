@@ -56,14 +56,18 @@ export function useSSE() {
 
   const updateSideGame = useCallback(
     (gid: number, san: string) => {
-      const g = sideGameRefs.current[gid];
-      if (g) {
-        try {
-          g.move(san);
-          dispatch({ type: 'SET_SIDE_FEN', gameId: gid, fen: g.fen(), moveCount: g.moveNumber() });
-        } catch {
-          /* invalid move */
-        }
+      let g = sideGameRefs.current[gid];
+      if (!g) {
+        // Lazy init — handles the case where game_start was missed
+        // (e.g. reconnect mid-game or late page load)
+        g = new Chess();
+        sideGameRefs.current[gid] = g;
+      }
+      try {
+        g.move(san);
+        dispatch({ type: 'SET_SIDE_FEN', gameId: gid, fen: g.fen(), moveCount: g.moveNumber() });
+      } catch {
+        /* invalid move — skip silently */
       }
     },
     [dispatch, sideGameRefs]
@@ -90,6 +94,30 @@ export function useSSE() {
     [dispatch, sideGameRefs]
   );
 
+  /** Seed (or refresh) side games from a full status response.
+   *  Skips games that already have the same FEN to avoid churn. */
+  const seedSideGames = useCallback(
+    (status: any) => {
+      const games = status.side_games;
+      if (!games) return;
+      for (let gid = 1; gid < games.length; gid++) {
+        const gd = games[gid];
+        if (!gd) continue;
+        if (gd.moves?.length) {
+          // Only rebuild if the number of moves differs (avoids flicker)
+          const existing = sideGameRefs.current[gid];
+          const existingCount = existing ? existing.moveNumber() : 0;
+          if (existingCount !== gd.moves.length) {
+            rebuildSideGame(gid, gd.moves);
+          }
+        } else if (!sideGameRefs.current[gid]) {
+          initSideGame(gid);
+        }
+      }
+    },
+    [rebuildSideGame, initSideGame, sideGameRefs]
+  );
+
   useEffect(() => {
     const connect = () => {
       if (sourceRef.current) sourceRef.current.close();
@@ -102,12 +130,15 @@ export function useSSE() {
         logEvent('connected', {});
         api.getStatus().then((status) => {
           dispatch({ type: 'SET_TRAINING_STATUS', status });
+          // Catch up main game if we're behind
           if (status.current_game?.moves?.length) {
             const s = stateRef.current;
             if (s.allMoves.length < status.current_game.moves.length) {
               catchUpMoves(status.current_game.moves);
             }
           }
+          // Seed side games (skips ones already in sync)
+          seedSideGames(status);
         }).catch(() => {});
       };
 
@@ -167,6 +198,10 @@ export function useSSE() {
         logEvent('status_update', data);
         if (data.data) {
           dispatch({ type: 'SET_TRAINING_STATUS', status: data.data });
+          // status_update may carry side_games from the server broadcast
+          if (data.data.side_games) {
+            seedSideGames(data.data);
+          }
         }
       });
 
