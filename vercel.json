@@ -1,16 +1,12 @@
 {
   "version": 2,
-  "framework": null,
-  "functions": {
-    "api/**/*.js": {
-      "memory": 2048,
-      "maxDuration": 10
-    }
-  },
+  "buildCommand": "cd client && npm ci && npm run build",
+  "outputDirectory": "client/dist",
   "github": {
-    "enabled": true
+    "enabled": true,
+    "silent": true
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
