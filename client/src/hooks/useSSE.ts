@@ -119,13 +119,22 @@ export function useSSE() {
   );
 
   useEffect(() => {
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
     const connect = () => {
       if (sourceRef.current) sourceRef.current.close();
       dispatch({ type: 'SET_SSE_STATUS', status: 'Connecting...' });
-      const source = new EventSource(SSE_URL);
+      let source: EventSource;
+      try {
+        source = new EventSource(SSE_URL, { withCredentials: true });
+      } catch (err) {
+        console.warn('[useSSE] Failed to create EventSource, retrying in 3s', err);
+        reconnectTimer = setTimeout(connect, 3000);
+        return;
+      }
       sourceRef.current = source;
 
-      source.onopen = () => {
+      source.addEventListener('open', () => {
         dispatch({ type: 'SET_SSE_STATUS', status: 'Connected' });
         logEvent('connected', {});
         api.getStatus().then((status) => {
@@ -140,11 +149,19 @@ export function useSSE() {
           // Seed side games (skips ones already in sync)
           seedSideGames(status);
         }).catch(() => {});
-      };
+      });
 
-      source.onerror = () => {
+      source.addEventListener('error', () => {
         dispatch({ type: 'SET_SSE_STATUS', status: 'Error — reconnecting...' });
-      };
+        // As a safety net, schedule an explicit reconnect
+        // (EventSource auto-reconnects but sometimes the 'open' event
+        //  doesn't fire on the new connection, leaving us stuck)
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          if (sourceRef.current) sourceRef.current.close();
+          connect();
+        }, 5000);
+      });
 
       source.addEventListener('game_start', (e: MessageEvent) => {
         const data = JSON.parse(e.data);
@@ -213,6 +230,7 @@ export function useSSE() {
     connect();
 
     return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (sourceRef.current) sourceRef.current.close();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

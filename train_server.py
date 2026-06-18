@@ -52,15 +52,24 @@ def static_files(path):
 
 ALLOWED_ORIGINS = {
     'https://gambit.lanceabuan.tech',
+    'https://api.lanceabuan.tech',
     'http://localhost:5001',
     'http://127.0.0.1:5001',
+    'http://localhost:5173',   # Vite dev server
 }
 
 @app.after_request
 def add_cors_headers(response):
     origin = request.headers.get('Origin', '')
-    if origin in ALLOWED_ORIGINS or not origin:
-        response.headers['Access-Control-Allow-Origin'] = origin if origin else '*'
+    # Allow known origins, any *.lanceabuan.tech, any localhost, or non-browser requests
+    if not origin:
+        response.headers['Access-Control-Allow-Origin'] = '*'
+    elif origin in ALLOWED_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    elif '.lanceabuan.tech' in origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    elif origin.startswith('http://localhost'):
+        response.headers['Access-Control-Allow-Origin'] = origin
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, X-Requested-With'
     response.headers['Access-Control-Allow-Credentials'] = 'true'
