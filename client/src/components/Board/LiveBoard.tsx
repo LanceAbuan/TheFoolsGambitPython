@@ -2,6 +2,8 @@ import { useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { useGame } from '../../GameContext';
 
+const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
+
 export default function LiveBoard() {
   const { state } = useGame();
 
@@ -12,7 +14,7 @@ export default function LiveBoard() {
         return state.fenCache[idx];
       }
     }
-    return 'start';
+    return STARTING_FEN;
   }, [state.fenCache, state.currentViewIndex]);
 
   return (
