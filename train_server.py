@@ -21,7 +21,7 @@ import threading
 from flask import Flask, jsonify, after_this_request, request, send_from_directory
 from training.server import training_bp
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
 app.register_blueprint(training_bp)
 
 REACT_DIST = os.path.join(os.path.dirname(__file__), "client", "dist")
@@ -38,8 +38,8 @@ def serve_react_assets(path):
 
 @app.route("/static/<path:path>")
 def serve_static(path):
-    """Serve vendored static files (jQuery, chessboard.js, images, etc.)."""
-    return send_from_directory(os.path.join(os.path.dirname(__file__), "static"), path)
+    """Serve static files (favicon, chessboard.css) from React build's public/ copy."""
+    return send_from_directory(os.path.join(REACT_DIST, "static"), path)
 
 @app.route("/<path:path>")
 def static_files(path):
