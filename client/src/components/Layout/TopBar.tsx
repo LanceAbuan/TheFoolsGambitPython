@@ -1,6 +1,7 @@
 import { Group, Title, Badge, ActionIcon, Tooltip, Text } from '@mantine/core';
-import { IconRotate, IconMaximize } from '@tabler/icons-react';
+import { IconRotate, IconMaximize, IconBook } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
+import { Link } from 'react-router-dom';
 
 export default function TopBar() {
   const { state, flipBoard, dispatch } = useGame();
@@ -48,6 +49,14 @@ export default function TopBar() {
       </Group>
 
       <Group gap={2} wrap="nowrap">
+        <Link to="/docs" style={{ textDecoration: 'none' }}>
+          <Group gap={2} style={{ color: '#c9d1d9' }}>
+            <ActionIcon variant="subtle" color="gray" size="md">
+              <IconBook size={18} />
+            </ActionIcon>
+            <Text size="sm" fw={500}>Docs</Text>
+          </Group>
+        </Link>
         <Tooltip label="Flip board">
           <ActionIcon onClick={flipBoard} variant="subtle" color="gray" size="md">
             <IconRotate size={18} />

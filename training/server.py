@@ -128,6 +128,7 @@ _side_game_threads = [None] * NUM_GAMES
 _side_game_event_queue = None  # threading.Queue, created in start_side_games
 _side_game_event_consumer_thread = None
 _side_games_completed = 0  # incremented when a side game finishes
+_side_at_last_train = 0  # snapshot of _side_games_completed at last training batch
 
 # Cycle tracking (read/written by _training_loop and train_status)
 _games_this_cycle = 0
@@ -500,16 +501,15 @@ def train_status():
     t = get_trainer()
     status = t.get_status()
 
-    # Include all active side games
+    # Include all side games (idle, playing, finished) so frontend can seed them all
     side_games_status = []
     for gid in range(1, NUM_GAMES):
         snap = side_game_snapshots[gid]
-        if snap['status'] == 'playing':
-            side_games_status.append({
-                'game_id': gid,
-                'status': snap['status'],
-                'moves': snap['moves'],
-            })
+        side_games_status.append({
+            'game_id': gid,
+            'status': snap['status'],
+            'moves': snap['moves'],
+        })
 
     status['side_games'] = side_games_status
     status['side_games_completed'] = _side_games_completed
@@ -555,115 +555,134 @@ def train_start():
 
     def _training_loop():
         global training_thread, _games_this_cycle, _steps_this_cycle, _games_per_cycle, _steps_per_cycle
+        global _side_at_last_train
         t.running = True
+        # Train a few steps after each batch of 10 total games (1 main + 9 side)
+        steps_per_batch = max(1, steps_per_cycle // games_per_cycle)
         try:
             while t.running:
-                _games_this_cycle = 0
-                _steps_this_cycle = 0
-                # Play games
-                for _ in range(games_per_cycle):
-                    if not t.running:
-                        break
-                    t.status = "critic" if use_stockfish else "self-play"
-                    # Notify frontend that a new main game is starting
+                t.status = "critic" if use_stockfish else "self-play"
+
+                # Notify frontend that a new main game is starting
+                try:
+                    sse_event_queue.put_nowait({
+                        "_sse_event": "game_start",
+                        "game_id": 0,
+                        "timestamp": time.time(),
+                    })
+                except queue.Full:
+                    pass
+
+                global current_game_status, current_game_moves
+                current_game_status = "playing"
+
+                def on_move_callback(moves):
+                    global current_game_moves
+                    current_game_moves = moves
                     try:
                         sse_event_queue.put_nowait({
-                            "_sse_event": "game_start",
+                            "_sse_event": "game_progress",
                             "game_id": 0,
+                            "move": moves[-1],  # single latest SAN for smooth animation
+                            "status": "playing",
                             "timestamp": time.time(),
                         })
                     except queue.Full:
                         pass
 
-                    global current_game_status, current_game_moves
-                    current_game_status = "playing"
+                # ── Play ONE game ──
+                game_data = t.play_game(on_move=on_move_callback)
+                result = game_data.get('result', '*')
+                moves = game_data.get('moves', [])
 
-                    def on_move_callback(moves):
-                        global current_game_moves
-                        current_game_moves = moves
-                        try:
-                            sse_event_queue.put_nowait({
-                                "_sse_event": "game_progress",
-                                "game_id": 0,
-                                "move": moves[-1],  # single latest SAN for smooth animation
-                                "status": "playing",
-                                "timestamp": time.time(),
-                            })
-                        except queue.Full:
-                            pass
+                current_game_moves = moves
+                recent_games.append({
+                    'result': result,
+                    'moves': moves[:20],
+                    'timestamp': time.time(),
+                    'game_num': 1,
+                    'mode': 'critic' if use_stockfish else 'self-play',
+                })
+                if len(recent_games) > 100:
+                    recent_games.pop(0)
 
-                    game_data = t.play_game(on_move=on_move_callback)
-                    _games_this_cycle += 1
-                    result = game_data.get('result', '*')
-                    moves = game_data.get('moves', [])
-
-                    current_game_moves = moves
-                    recent_games.append({
-                        'result': result,
-                        'moves': moves[:20],
-                        'timestamp': time.time(),
-                        'game_num': 1,
-                        'mode': 'critic' if use_stockfish else 'self-play',
+                # Push game-finished event to SSE
+                try:
+                    sse_event_queue.put_nowait({
+                        "_sse_event": "game_progress",
+                        "game_id": 0,
+                        "moves": moves,
+                        "result": result,
+                        "status": "finished",
+                        "timestamp": time.time(),
                     })
-                    if len(recent_games) > 100:
-                        recent_games.pop(0)
-                    # Push game-finished event to SSE
-                    try:
-                        sse_event_queue.put_nowait({
-                            "_sse_event": "game_progress",
-                            "game_id": 0,
-                            "moves": moves,
+                    sse_event_queue.put_nowait({
+                        "_sse_event": "status_update",
+                        "data": {
+                            "status": "playing",
+                            "games_played": t.games_played,
                             "result": result,
-                            "status": "finished",
-                            "timestamp": time.time(),
-                        })
-                        sse_event_queue.put_nowait({
-                            "_sse_event": "status_update",
-                            "data": {
-                                "status": "playing",
-                                "games_played": t.games_played,
-                                "result": result,
-                                "buffer_size": len(t.buffer),
-                                "loss": t.loss,
-                                "step": t.step,
-                                "policy_loss": t.policy_loss,
-                                "value_loss": t.value_loss,
-                                "estimated_elo": t.estimate_elo(),
-                                "cycle": {
-                                    "games_this_cycle": _games_this_cycle,
-                                    "games_per_cycle": _games_per_cycle,
-                                    "steps_this_cycle": _steps_this_cycle,
-                                    "steps_per_cycle": _steps_per_cycle,
-                                    "min_buffer_for_train": MIN_BATCH_SIZE,
-                                },
+                            "buffer_size": len(t.buffer),
+                            "loss": t.loss,
+                            "step": t.step,
+                            "policy_loss": t.policy_loss,
+                            "value_loss": t.value_loss,
+                            "estimated_elo": t.estimate_elo(),
+                            "cycle": {
+                                "games_this_cycle": _games_this_cycle,
+                                "games_per_cycle": _games_per_cycle,
+                                "steps_this_cycle": _steps_this_cycle,
+                                "steps_per_cycle": _steps_per_cycle,
+                                "min_buffer_for_train": MIN_BATCH_SIZE,
                             },
-                        })
-                    except queue.Full:
-                        log.warning('[SSE] Queue full, dropping training events')
+                        },
+                    })
+                except queue.Full:
+                    log.warning('[SSE] Queue full, dropping training events')
 
+                # ── Train only when 10 total games have completed ──
+                total_games = t.games_played + _side_games_completed
+                if total_games >= _side_at_last_train + 10:
+                    _games_this_cycle += 1
+                    _side_at_last_train += 10
 
+                    for _ in range(steps_per_batch):
+                        if not t.running:
+                            break
+                        training_result = t.train_step()
+                        if training_result:
+                            _steps_this_cycle += 1
+                            try:
+                                sse_event_queue.put_nowait({
+                                    "_sse_event": "status_update",
+                                    "data": {
+                                        "status": "training",
+                                        "step": training_result['step'],
+                                        "loss": training_result['loss'],
+                                        "buffer_size": training_result.get('buffer_size', 0),
+                                        "cycle": {
+                                            "games_this_cycle": _games_this_cycle,
+                                            "games_per_cycle": _games_per_cycle,
+                                            "steps_this_cycle": _steps_this_cycle,
+                                            "steps_per_cycle": _steps_per_cycle,
+                                            "min_buffer_for_train": MIN_BATCH_SIZE,
+                                        },
+                                    },
+                                })
+                            except queue.Full:
+                                pass
 
-
-
-
-
-
-
-                # Train
-                for _ in range(steps_per_cycle):
-                    if not t.running:
-                        break
-                    result = t.train_step()
-                    if result:
-                        _steps_this_cycle += 1
+                    # ── Checkpoint at cycle boundary ──
+                    if _games_this_cycle >= games_per_cycle:
+                        t.save_checkpoint()
+                        t.status = "idle"
                         try:
                             sse_event_queue.put_nowait({
                                 "_sse_event": "status_update",
                                 "data": {
-                                    "status": "training",
-                                    "step": result['step'],
-                                    "loss": result['loss'],
-                                    "buffer_size": result.get('buffer_size', 0),
+                                    "status": "idle",
+                                    "games_played": t.games_played,
+                                    "step": t.step,
                                     "cycle": {
                                         "games_this_cycle": _games_this_cycle,
                                         "games_per_cycle": _games_per_cycle,
@@ -675,27 +694,9 @@ def train_start():
                             })
                         except queue.Full:
                             pass
+                        _games_this_cycle = 0
+                        _steps_this_cycle = 0
 
-                t.save_checkpoint()
-                t.status = "idle"
-                try:
-                    sse_event_queue.put_nowait({
-                        "_sse_event": "status_update",
-                        "data": {
-                            "status": "idle",
-                            "games_played": t.games_played,
-                            "step": t.step,
-                            "cycle": {
-                                "games_this_cycle": _games_this_cycle,
-                                "games_per_cycle": _games_per_cycle,
-                                "steps_this_cycle": _steps_this_cycle,
-                                "steps_per_cycle": _steps_per_cycle,
-                                "min_buffer_for_train": MIN_BATCH_SIZE,
-                            },
-                        },
-                    })
-                except queue.Full:
-                    pass
         except Exception as e:
             log.error(f'[TRAINING] Loop error: {e}')
             t.status = "error"
@@ -799,7 +800,7 @@ def download_model():
 def train_reset():
     global trainer, recent_games, current_game_moves, training_thread
     global _side_game_running, _side_game_threads, side_game_snapshots
-    global _side_games_completed
+    global _side_games_completed, _side_at_last_train
     global sse_event_queue, _side_game_event_queue
 
     # 1. Stop training loop
@@ -820,6 +821,7 @@ def train_reset():
         _side_game_threads[gid] = None
     _side_game_running = [False] * NUM_GAMES
     _side_games_completed = 0
+    _side_at_last_train = 0
     log.info('[RESET] Side game threads stopped')
 
     # 3. Drain side game event queue

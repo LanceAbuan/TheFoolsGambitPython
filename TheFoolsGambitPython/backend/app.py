@@ -96,5 +96,21 @@ def api_state():
     return jsonify(new_game())
 
 
+@app.route("/api/docs")
+def api_docs():
+    """Fetch the documentation content."""
+    try:
+        # Note: The path is relative to the current working directory.
+        # Since the backend is in TheFoolsGambitPython/TheFoolsGambitPython/backend,
+        # and the docs are in /home/lance/TheFoolsGambitPython/docs,
+        # we need to handle the path correctly.
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "docs"))
+        with open(os.path.join(base_path, "ARCHITECTURE.md"), "r") as f:
+            content = f.read()
+        return jsonify({"content": content})
+    except FileNotFoundError:
+        return jsonify({"error": "Documentation file not found"}), 404
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
