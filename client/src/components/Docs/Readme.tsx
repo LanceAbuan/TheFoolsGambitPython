@@ -4,13 +4,13 @@ export default function Readme() {
   return (
     <Container size={800} py="xl">
       <Title order={1} mb="md">Architecture Deep Dive</Title>
-      <Text c="dimmed" italic>
+      <Text c="dimmed" style={{ fontStyle: 'italic' }}>
         Everything you want to know about how Fool's Gambit works, from the neural network to the dashboard.
       </Text>
       
       <Divider my="xl" />
       
-      <Stack spacing="xl">
+      <Stack gap="xl">
         <Box>
           <Title order={2}>System Architecture</Title>
           <Text style={{ whiteSpace: 'pre', fontFamily: 'monospace', padding: '1rem', background: '#161B22', border: '1px solid #30363D' }}>

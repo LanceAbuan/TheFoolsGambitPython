@@ -1,4 +1,4 @@
-import { Container, Group, Text, ActionIcon } from '@mantine/core';
+import { Group, Text, ActionIcon } from '@mantine/core';
 import { IconArrowLeft } from '@tabler/icons-react';
 import { Link } from 'react-router-dom';
 import Readme from '../components/Docs/Readme';
