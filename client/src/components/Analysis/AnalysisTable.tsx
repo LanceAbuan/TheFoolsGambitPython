@@ -28,7 +28,6 @@ export default function AnalysisTable() {
               <Table.Th>#</Table.Th>
               <Table.Th>Move</Table.Th>
               <Table.Th>Eval</Table.Th>
-              <Table.Th>Type</Table.Th>
               <Table.Th>Quality</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -38,7 +37,6 @@ export default function AnalysisTable() {
                 <Table.Td>{i + 1}</Table.Td>
                 <Table.Td style={{ fontFamily: 'monospace' }}>{row.san || row.move}</Table.Td>
                 <Table.Td>{row.evaluation != null ? (row.evaluation / 100).toFixed(2) : '-'}</Table.Td>
-                <Table.Td>{row.type || '-'}</Table.Td>
                 <Table.Td>
                   {row.quality && (
                     <Badge

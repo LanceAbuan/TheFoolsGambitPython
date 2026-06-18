@@ -82,13 +82,13 @@ export default function App() {
               </div>
             </div>
 
-            {/* Right sidebar */}
+            {/* Right sidebar — cube/grid layout */}
             <div className="sidebar-column">
-              <MoveList />
-              <AnalysisTable />
-              <MetricsGrid />
-              <SSEEventLog />
-              <RecentGames />
+              <div><MoveList /></div>
+              <div><SSEEventLog /></div>
+              <div className="sidebar-full"><AnalysisTable /></div>
+              <div className="sidebar-full"><MetricsGrid /></div>
+              <div className="sidebar-full"><RecentGames /></div>
             </div>
           </div>
         </AppShell.Main>
