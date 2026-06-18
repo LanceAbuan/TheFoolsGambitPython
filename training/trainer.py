@@ -316,7 +316,7 @@ class Trainer:
                     if not legal:
                         break
                     with torch.no_grad():
-                        tensor = board_to_tensor(board).to(self.device)
+                        tensor = torch.FloatTensor(board_to_tensor(board)).to(self.device)
                         pred_policy, _ = self.model(tensor.unsqueeze(0))
                     scores = {}
                     for m in legal:
