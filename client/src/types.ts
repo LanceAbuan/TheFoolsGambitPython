@@ -6,6 +6,14 @@ export interface SSEEvent {
   timestamp: number;
 }
 
+export interface CycleInfo {
+  games_this_cycle: number;
+  games_per_cycle: number;
+  steps_this_cycle: number;
+  steps_per_cycle: number;
+  min_buffer_for_train: number;
+}
+
 /** Training status from /api/train/status */
 export interface TrainingStatus {
   status: string;
@@ -15,6 +23,7 @@ export interface TrainingStatus {
   estimated_elo: number | null;
   buffer_size: number;
   side_games_completed?: number;
+  cycle?: CycleInfo;
   current_game?: {
     id?: number;
     moves: string[];

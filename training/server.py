@@ -18,7 +18,7 @@ log.setLevel(logging.INFO)
 import torch
 torch.backends.cudnn.benchmark = True
 
-from .trainer import Trainer, LOCAL_MODEL_DIR
+from .trainer import Trainer, LOCAL_MODEL_DIR, MIN_BATCH_SIZE
 from .tensorize import board_to_tensor
 from .stockfish_engine import StockfishPlayer
 from .critic_game import CriticGame
@@ -128,6 +128,12 @@ _side_game_threads = [None] * NUM_GAMES
 _side_game_event_queue = None  # threading.Queue, created in start_side_games
 _side_game_event_consumer_thread = None
 _side_games_completed = 0  # incremented when a side game finishes
+
+# Cycle tracking (read/written by _training_loop and train_status)
+_games_this_cycle = 0
+_steps_this_cycle = 0
+_games_per_cycle = 10
+_steps_per_cycle = 20
 
 # ---- EVAL CACHE ----
 # LRU cache: FEN -> {eval_cp, eval_norm, top_moves, move_analysis, timestamp}
@@ -507,6 +513,13 @@ def train_status():
 
     status['side_games'] = side_games_status
     status['side_games_completed'] = _side_games_completed
+    status['cycle'] = {
+        'games_this_cycle': _games_this_cycle,
+        'games_per_cycle': _games_per_cycle,
+        'steps_this_cycle': _steps_this_cycle,
+        'steps_per_cycle': _steps_per_cycle,
+        'min_buffer_for_train': MIN_BATCH_SIZE,
+    }
     status['current_game'] = {
         'status': current_game_status,
         'moves': current_game_moves,
@@ -522,9 +535,12 @@ def train_start():
     global training_thread
     t = get_trainer()
 
+    global _games_per_cycle, _steps_per_cycle
     data = request.get_json(silent=True) or {}
     games_per_cycle = data.get('games_per_cycle', 10)
     steps_per_cycle = data.get('steps_per_cycle', 20)
+    _games_per_cycle = games_per_cycle
+    _steps_per_cycle = steps_per_cycle
     mcts_sims = data.get('mcts_simulations', 400)
     use_stockfish = data.get('use_stockfish', True)
 
@@ -538,10 +554,12 @@ def train_start():
         pass
 
     def _training_loop():
-        global training_thread
+        global training_thread, _games_this_cycle, _steps_this_cycle, _games_per_cycle, _steps_per_cycle
         t.running = True
         try:
             while t.running:
+                _games_this_cycle = 0
+                _steps_this_cycle = 0
                 # Play games
                 for _ in range(games_per_cycle):
                     if not t.running:
@@ -575,6 +593,7 @@ def train_start():
                             pass
 
                     game_data = t.play_game(on_move=on_move_callback)
+                    _games_this_cycle += 1
                     result = game_data.get('result', '*')
                     moves = game_data.get('moves', [])
 
@@ -629,6 +648,7 @@ def train_start():
                         break
                     result = t.train_step()
                     if result:
+                        _steps_this_cycle += 1
                         try:
                             sse_event_queue.put_nowait({
                                 "_sse_event": "status_update",
