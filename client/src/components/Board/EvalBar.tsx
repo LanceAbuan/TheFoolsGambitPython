@@ -18,12 +18,12 @@ export default function EvalBar() {
   const neutralGray = '#30363D';
 
   return (
-    <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0 }}>
+    <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0, alignSelf: 'stretch' }}>
       <Box
         style={{
           position: 'relative',
           width: 28,
-          height: 400,
+          flex: 1,
           background: neutralGray,
           borderRadius: 6,
           overflow: 'hidden',

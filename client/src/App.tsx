@@ -76,7 +76,7 @@ export default function App() {
 
               {/* Side boards grid */}
               <div className="side-boards-grid">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
+                {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((id) => (
                   <SideBoard key={id} gameId={id} />
                 ))}
               </div>
