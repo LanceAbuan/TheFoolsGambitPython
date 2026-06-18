@@ -9,7 +9,7 @@ export default function SideBoard({ gameId }: Props) {
   const { state } = useGame();
   const fen = state.sideFens[gameId];
   const moveCount = state.sideMoveCounts[gameId] || 0;
-  const boardKey = `${gameId}-${moveCount}-${(fen || 'start').slice(0, 8)}`;
+  const boardKey = `${gameId}-${moveCount}-${(fen || 'rnbqkbnr').slice(0, 8)}`;
 
   return (
     <div className="side-board-item">
@@ -17,7 +17,7 @@ export default function SideBoard({ gameId }: Props) {
       <Chessboard
         key={boardKey}
         options={{
-          position: fen || 'start',
+          position: fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
           animationDurationInMs: 200,
           showAnimations: true,
           allowDragging: false,

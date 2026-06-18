@@ -12,7 +12,7 @@ export default function FullscreenOverlay() {
 
   const pos = state.fenCache.length > 0
     ? state.fenCache[Math.min(state.currentViewIndex, state.fenCache.length - 1)]
-    : 'start';
+    : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
 
   return (
     <Modal
