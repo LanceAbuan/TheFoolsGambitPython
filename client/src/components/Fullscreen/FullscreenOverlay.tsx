@@ -1,4 +1,4 @@
-import { Modal, ActionIcon, Group } from '@mantine/core';
+import { Modal, ActionIcon, Group, Paper } from '@mantine/core';
 import { IconMinimize } from '@tabler/icons-react';
 import { Chessboard } from 'react-chessboard';
 import { useGame } from '../../GameContext';
@@ -27,37 +27,45 @@ export default function FullscreenOverlay() {
           alignItems: 'center',
           justifyContent: 'center',
           height: 'calc(100vh - 60px)',
-          background: '#312e22',
+          background: '#0D1117',
         },
       }}
     >
       <Group justify="flex-end" style={{ width: '100%', maxWidth: 672 }}>
-        <ActionIcon onClick={close} variant="subtle" size="lg">
+        <ActionIcon onClick={close} variant="subtle" color="gray" size="lg">
           <IconMinimize size={20} />
         </ActionIcon>
       </Group>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <EvalBar />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <PlayerInfoBar
-            name="Stockfish (depth 10)"
-            detail="Critic opponent"
+            name="Self-Play (NN)"
+            detail="vs Self"
             isTurn={state.allMoves.length % 2 !== 0}
             color="top"
           />
-          <Chessboard
-            options={{
-              position: pos,
-              boardOrientation: state.boardOrientation,
-              animationDurationInMs: 300,
-              showAnimations: true,
-              allowDragging: false,
-              boardStyle: { borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' },
-              darkSquareStyle: { backgroundColor: '#625b4d' },
-              lightSquareStyle: { backgroundColor: '#b7b09c' },
-            }}
-          />
+          <Paper
+            p="sm"
+            radius="md"
+            mt={4}
+            mb={4}
+            style={{ background: '#161B22', border: '1px solid #30363D' }}
+          >
+            <Chessboard
+              options={{
+                position: pos,
+                boardOrientation: state.boardOrientation,
+                animationDurationInMs: 300,
+                showAnimations: true,
+                allowDragging: false,
+                boardStyle: { borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' },
+                darkSquareStyle: { backgroundColor: '#625b4d' },
+                lightSquareStyle: { backgroundColor: '#b7b09c' },
+              }}
+            />
+          </Paper>
           <PlayerInfoBar
             name="Fool's Gambit AI"
             detail="Training"

@@ -66,14 +66,14 @@ export interface AnalysisResult {
   cached?: boolean;
 }
 
-/** Move quality classification colors */
+/** Move quality classification colors (Mantine theme color names) */
 export const MOVE_COLORS: Record<string, string> = {
-  best: '#81b64c',
-  good: '#4a90d9',
-  ok: '#8a8580',
-  bad: '#e88734',
-  blunder: '#e94560',
-  book: '#9b59b6',
+  best: 'move-best',
+  good: 'move-good',
+  ok: 'move-ok',
+  bad: 'move-bad',
+  blunder: 'move-blunder',
+  book: 'move-book',
 };
 
 /** Move quality label */

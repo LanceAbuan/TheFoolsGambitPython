@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AppShell, Text } from '@mantine/core';
+import { AppShell } from '@mantine/core';
 import { useGame } from './GameContext';
 import { useSSE } from './hooks/useSSE';
 import { useStatus } from './hooks/useStatus';
@@ -41,7 +41,7 @@ export default function App() {
         header={{ height: 50 }}
         styles={{
           main: {
-            background: '#312e22',
+            background: '#0D1117',
             paddingTop: '50px',
             paddingLeft: 0,
             paddingRight: 0,
@@ -54,18 +54,18 @@ export default function App() {
 
         <AppShell.Main>
           <div className="main-layout" style={{ padding: 16 }}>
-            {/* Eval bar (left) */}
-            <EvalBar />
-
             {/* Center column */}
             <div className="main-column">
               <PlayerInfoBar
-                name="Stockfish (depth 10)"
-                detail="Critic opponent"
+                name="Self-Play (NN)"
+                detail="vs Self"
                 isTurn={!whiteToMove}
                 color="top"
               />
-              <LiveBoard />
+              <div className="board-row">
+                <EvalBar />
+                <LiveBoard />
+              </div>
               <PlayerInfoBar
                 name="Fool's Gambit AI"
                 detail="Training"
@@ -74,16 +74,9 @@ export default function App() {
               />
               <BoardNav />
 
-              <Text className="what-happening" size="sm" c="dimmed">
-                {state.whatHappening}
-              </Text>
-              <Text id="sse-status" size="xs" c="dimmed" ta="center" mb={8}>
-                SSE: {state.sseStatus}
-              </Text>
-
               {/* Side boards grid */}
               <div className="side-boards-grid">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
+                {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((id) => (
                   <SideBoard key={id} gameId={id} />
                 ))}
               </div>
