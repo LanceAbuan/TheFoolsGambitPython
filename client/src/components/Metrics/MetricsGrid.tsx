@@ -16,16 +16,18 @@ function MetricCard({ label, value }: MetricCardProps) {
   );
 }
 
-function cycleLabel(c: CycleInfo, status: string): string {
-  const isPlaying = status === 'playing' || status === 'critic' || status === 'self-play';
-  const isTraining = status === 'training';
-  if (c.games_per_cycle > 0 && isPlaying) {
-    return `Game ${Math.min(c.games_this_cycle + 1, c.games_per_cycle)}/${c.games_per_cycle}`;
+function cycleLabel(c: CycleInfo, status: string): { line1: string; line2?: string } {
+  if (status === 'playing' || status === 'critic' || status === 'self-play') {
+    return { line1: `Game ${Math.min(c.games_this_cycle + 1, c.games_per_cycle)} / ${c.games_per_cycle}` };
   }
-  if (c.steps_per_cycle > 0 && isTraining) {
-    return `Train ${c.steps_this_cycle}/${c.steps_per_cycle}`;
+  if (status === 'training') {
+    return { line1: `Step ${c.steps_this_cycle} / ${c.steps_per_cycle}` };
   }
-  return '—';
+  if (status === 'stockfish') {
+    return { line1: 'Calibrating ELO', line2: 'vs Stockfish' };
+  }
+  // idle
+  return { line1: `${c.games_per_cycle} games + ${c.steps_per_cycle} steps`, line2: 'Waiting for start...' };
 }
 
 export default function MetricsGrid() {
@@ -56,7 +58,7 @@ export default function MetricsGrid() {
     { label: 'Side', value: (s.side_games_completed ?? 0).toLocaleString() },
   ];
 
-  const cycleText = c ? cycleLabel(c, s.status) : null;
+  const cycleData = c ? cycleLabel(c, s.status) : null;
 
   return (
     <div>
@@ -66,10 +68,20 @@ export default function MetricsGrid() {
           <MetricCard key={m.label} label={m.label} value={m.value} />
         ))}
       </SimpleGrid>
-      {cycleText && cycleText !== '—' && (
-        <div className="metric-card" style={{ marginTop: 8 }}>
+      {c && cycleData && (
+        <div
+          className="metric-card"
+          style={{
+            marginTop: 8,
+            border: '1px solid #4a4540',
+            background: '#2f2b27',
+          }}
+        >
           <Text className="metric-label">Cycle</Text>
-          <Text className="metric-value" style={{ fontSize: 14 }}>{cycleText}</Text>
+          <Text className="metric-value" style={{ fontSize: 16 }}>{cycleData.line1}</Text>
+          {cycleData.line2 && (
+            <Text style={{ fontSize: 11, color: '#6b6560', marginTop: 2 }}>{cycleData.line2}</Text>
+          )}
         </div>
       )}
     </div>
