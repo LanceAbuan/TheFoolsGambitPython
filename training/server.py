@@ -478,7 +478,7 @@ def start_side_games(trainer):
     model = trainer.model  # already on GPU from Trainer init
     shared_evaluator = BatchEvaluator(model, batch_size=512, max_wait_time=0.010)
 
-    num_sims = 400  # per side game (user requested)
+    num_sims = 350  # per side game
 
     for gid in range(1, NUM_GAMES):
         if _side_game_threads[gid] and _side_game_threads[gid].is_alive():

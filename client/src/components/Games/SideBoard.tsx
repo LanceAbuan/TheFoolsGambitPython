@@ -1,6 +1,7 @@
 import { Chessboard } from 'react-chessboard';
-import { Paper, Text, Badge } from '@mantine/core';
+import { Paper, Text, Badge, Group } from '@mantine/core';
 import { useGame } from '../../GameContext';
+import { BOARD_COLORS, DEFAULT_FEN } from '../../utils/board';
 
 interface Props {
   gameId: number;
@@ -22,39 +23,29 @@ export default function SideBoard({ gameId }: Props) {
         position: 'relative',
       }}
     >
-      <Text size="xs" fw={600} c="#6E7681" tt="uppercase" mb={6} style={{ letterSpacing: '0.3px' }}>
-        Game {gameId}
-      </Text>
+      <Group gap="xs" mb={6} justify="space-between" wrap="nowrap">
+        <Text size="xs" fw={600} c="#6E7681" tt="uppercase" style={{ letterSpacing: '0.3px' }}>
+          Game {gameId}
+        </Text>
+        {moveCount > 0 && (
+          <Badge size="sm" color="green" variant="filled">
+            Move {moveCount}
+          </Badge>
+        )}
+      </Group>
 
-      <div style={{ position: 'relative' }}>
+      <div>
         <Chessboard
           options={{
-            position: fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
+            position: fen || DEFAULT_FEN,
             animationDurationInMs: 200,
             showAnimations: true,
             allowDragging: false,
             boardStyle: { borderRadius: '2px' },
-            darkSquareStyle: { backgroundColor: '#625b4d' },
-            lightSquareStyle: { backgroundColor: '#b7b09c' },
+            darkSquareStyle: { backgroundColor: BOARD_COLORS.dark },
+            lightSquareStyle: { backgroundColor: BOARD_COLORS.light },
           }}
         />
-        {moveCount > 0 && (
-          <Badge
-            size="sm"
-            color="green"
-            variant="filled"
-            style={{
-              position: 'absolute',
-              top: 4,
-              right: 4,
-              pointerEvents: 'none',
-              zIndex: 10,
-              backdropFilter: 'blur(2px)',
-            }}
-          >
-            {moveCount}
-          </Badge>
-        )}
       </div>
 
       {moveCount === 0 && (

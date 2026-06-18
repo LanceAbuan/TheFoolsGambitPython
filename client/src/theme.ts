@@ -144,6 +144,13 @@ export const theme = createTheme({
       textSecondary: '#8B949E',
       textMuted: '#6E7681',
       borderColor: '#30363D',
+      cardBg: '#161B22',
+      inputBg: '#0D1117',
+      hoverBg: '#21262D',
+      chessDark: '#625b4d',
+      chessLight: '#b7b09c',
+      sectionHeaderBorder: '#30363D',
+      accentBlue: '#58a6ff',
     },
   },
 });

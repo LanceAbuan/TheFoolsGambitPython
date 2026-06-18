@@ -49,16 +49,21 @@ body {
 }
 
 .sidebar-column {
-  width: 340px;
+  width: 380px;
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 10px;
+  align-content: start;
   position: sticky;
   top: 66px; /* header 50px + padding 16px */
   height: calc(100vh - 82px); /* header 50px + padding 16*2 = 82 */
   overflow-y: auto;
   padding-right: 6px;
+}
+
+.sidebar-full {
+  grid-column: 1 / -1;
 }
 
 /* ── Move entry highlights ── */
