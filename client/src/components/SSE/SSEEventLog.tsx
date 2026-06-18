@@ -1,4 +1,5 @@
-import { ScrollArea, Text } from '@mantine/core';
+import { ScrollArea, Text, Group, Paper, Badge } from '@mantine/core';
+import { IconBroadcast } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 
 function formatSSETime(ts: number): string {
@@ -22,25 +23,34 @@ export default function SSEEventLog() {
   const { state } = useGame();
 
   return (
-    <div>
-      <div className="section-header">
-        Event Log ({state.sseEvents.length})
-      </div>
+    <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
+      <Group gap="xs" mb="xs">
+        <IconBroadcast size={16} color="#8B949E" />
+        <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+          Event Log
+        </Text>
+        <Badge size="sm" color="gray" variant="filled" ml="auto">
+          {state.sseEvents.length}
+        </Badge>
+      </Group>
+
       <ScrollArea h={250}>
         {state.sseEvents.length === 0 ? (
           <Text size="xs" c="dimmed">No events yet</Text>
         ) : (
           [...state.sseEvents].reverse().map((ev) => (
-            <div key={ev.id} className="sse-entry">
-              <span className="sse-time">{formatSSETime(ev.timestamp)}</span>
+            <div key={ev.id} style={{ padding: '3px 6px', borderBottom: '1px solid #21262D', fontSize: 11, lineHeight: 1.4 }}>
+              <span style={{ color: '#6E7681' }}>{formatSSETime(ev.timestamp)}</span>
               {' '}
-              <span className="sse-type">{ev.type}</span>
+              <Badge size="xs" color="green" variant="filled" style={{ textTransform: 'none' }}>
+                {ev.type}
+              </Badge>
               {' '}
-              <span className="sse-data">{formatSSEData(ev.data)}</span>
+              <span style={{ color: '#8B949E' }}>{formatSSEData(ev.data)}</span>
             </div>
           ))
         )}
       </ScrollArea>
-    </div>
+    </Paper>
   );
 }

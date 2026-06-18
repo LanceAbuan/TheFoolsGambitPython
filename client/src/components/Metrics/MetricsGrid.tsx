@@ -1,4 +1,5 @@
-import { SimpleGrid, Text } from '@mantine/core';
+import { SimpleGrid, Text, Paper, Group, Badge } from '@mantine/core';
+import { IconActivity } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 import type { CycleInfo } from '../../types';
 
@@ -9,10 +10,14 @@ interface MetricCardProps {
 
 function MetricCard({ label, value }: MetricCardProps) {
   return (
-    <div className="metric-card">
-      <Text className="metric-label">{label}</Text>
-      <Text className="metric-value">{value}</Text>
-    </div>
+    <Paper p="sm" radius="sm" style={{ background: '#0D1117', border: '1px solid #30363D' }}>
+      <Text size="xs" c="#6E7681" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+        {label}
+      </Text>
+      <Text size="xl" fw={700} c="#C9D1D9" mt={2}>
+        {value}
+      </Text>
+    </Paper>
   );
 }
 
@@ -36,10 +41,15 @@ export default function MetricsGrid() {
 
   if (!s) {
     return (
-      <div>
-        <div className="section-header">Metrics</div>
+      <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
+        <Group gap="xs" mb="xs">
+          <IconActivity size={16} color="#8B949E" />
+          <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+            Metrics
+          </Text>
+        </Group>
         <Text size="sm" c="dimmed">No data</Text>
-      </div>
+      </Paper>
     );
   }
 
@@ -61,29 +71,41 @@ export default function MetricsGrid() {
   const cycleData = c ? cycleLabel(c, s.status) : null;
 
   return (
-    <div>
-      <div className="section-header">Metrics</div>
-      <SimpleGrid cols={2} spacing="sm">
+    <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
+      <Group gap="xs" mb="sm">
+        <IconActivity size={16} color="#8B949E" />
+        <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+          Metrics
+        </Text>
+        <Badge size="sm" color={s.status === 'running' || s.status === 'playing' ? 'green' : 'gray'} variant="filled" ml="auto">
+          {s.status}
+        </Badge>
+      </Group>
+
+      <SimpleGrid cols={2} spacing="xs">
         {metrics.map((m) => (
           <MetricCard key={m.label} label={m.label} value={m.value} />
         ))}
       </SimpleGrid>
+
       {c && cycleData && (
-        <div
-          className="metric-card"
-          style={{
-            marginTop: 8,
-            border: '1px solid #4a4540',
-            background: '#2f2b27',
-          }}
+        <Paper
+          p="sm"
+          radius="sm"
+          mt="sm"
+          style={{ background: '#0D1117', border: '1px solid #30363D' }}
         >
-          <Text className="metric-label">Cycle</Text>
-          <Text className="metric-value" style={{ fontSize: 16 }}>{cycleData.line1}</Text>
+          <Text size="xs" c="#6E7681" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+            Cycle
+          </Text>
+          <Text size="md" fw={700} c="#C9D1D9" mt={2}>
+            {cycleData.line1}
+          </Text>
           {cycleData.line2 && (
-            <Text style={{ fontSize: 11, color: '#6b6560', marginTop: 2 }}>{cycleData.line2}</Text>
+            <Text size="xs" c="#6E7681" mt={2}>{cycleData.line2}</Text>
           )}
-        </div>
+        </Paper>
       )}
-    </div>
+    </Paper>
   );
 }

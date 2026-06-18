@@ -1,4 +1,4 @@
-import { ActionIcon, Text } from '@mantine/core';
+import { ActionIcon, Text, Group, Paper } from '@mantine/core';
 import {
   IconPlayerTrackPrev,
   IconPlayerSkipBack,
@@ -66,17 +66,42 @@ export default function BoardNav() {
   }, []);
 
   return (
-    <div className="board-nav">
-      <ActionIcon onClick={goToStart} variant="subtle"><IconPlayerTrackPrev size={16} /></ActionIcon>
-      <ActionIcon onClick={goBack} variant="subtle"><IconPlayerSkipBack size={16} /></ActionIcon>
-      <ActionIcon onClick={togglePlay} variant="subtle" color={isPlaying ? 'accent-orange' : undefined}>
-        {isPlaying ? <IconPlayerStop size={16} /> : <IconPlayerPlay size={16} />}
-      </ActionIcon>
-      <ActionIcon onClick={goForward} variant="subtle"><IconPlayerSkipForward size={16} /></ActionIcon>
-      <ActionIcon onClick={goToEnd} variant="subtle"><IconPlayerTrackNext size={16} /></ActionIcon>
-      <Text size="sm" c="dimmed" style={{ minWidth: 80, textAlign: 'center' }}>
-        Move {state.currentViewIndex}/{state.allMoves.length}
-      </Text>
-    </div>
+    <Paper
+      p="xs"
+      radius="sm"
+      mt={8}
+      style={{
+        maxWidth: 672,
+        width: '100%',
+        background: '#161B22',
+        border: '1px solid #21262D',
+      }}
+    >
+      <Group justify="center" gap="xs" wrap="nowrap">
+        <ActionIcon onClick={goToStart} variant="subtle" color="gray" size="md">
+          <IconPlayerTrackPrev size={16} />
+        </ActionIcon>
+        <ActionIcon onClick={goBack} variant="subtle" color="gray" size="md">
+          <IconPlayerSkipBack size={16} />
+        </ActionIcon>
+        <ActionIcon
+          onClick={togglePlay}
+          variant="filled"
+          color={isPlaying ? 'orange' : 'blue'}
+          size="md"
+        >
+          {isPlaying ? <IconPlayerStop size={16} /> : <IconPlayerPlay size={16} />}
+        </ActionIcon>
+        <ActionIcon onClick={goForward} variant="subtle" color="gray" size="md">
+          <IconPlayerSkipForward size={16} />
+        </ActionIcon>
+        <ActionIcon onClick={goToEnd} variant="subtle" color="gray" size="md">
+          <IconPlayerTrackNext size={16} />
+        </ActionIcon>
+        <Text size="sm" c="#6E7681" ml="xs" style={{ fontVariantNumeric: 'tabular-nums', minWidth: 80, textAlign: 'center' }}>
+          Move {state.currentViewIndex}/{state.allMoves.length}
+        </Text>
+      </Group>
+    </Paper>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AppShell, Text } from '@mantine/core';
+import { AppShell } from '@mantine/core';
 import { useGame } from './GameContext';
 import { useSSE } from './hooks/useSSE';
 import { useStatus } from './hooks/useStatus';
@@ -41,7 +41,7 @@ export default function App() {
         header={{ height: 50 }}
         styles={{
           main: {
-            background: '#312e22',
+            background: '#0D1117',
             paddingTop: '50px',
             paddingLeft: 0,
             paddingRight: 0,
@@ -73,13 +73,6 @@ export default function App() {
                 color="bottom"
               />
               <BoardNav />
-
-              <Text className="what-happening" size="sm" c="dimmed">
-                {state.whatHappening}
-              </Text>
-              <Text id="sse-status" size="xs" c="dimmed" ta="center" mb={8}>
-                SSE: {state.sseStatus}
-              </Text>
 
               {/* Side boards grid */}
               <div className="side-boards-grid">

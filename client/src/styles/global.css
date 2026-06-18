@@ -1,8 +1,8 @@
 /* ── Base layout ── */
 body {
   margin: 0;
-  background: #312e22;
-  color: #fff;
+  background: #0D1117;
+  color: #C9D1D9;
   min-height: 100vh;
   overflow-x: hidden;
 }
@@ -32,141 +32,6 @@ body {
   max-width: 672px;
 }
 
-/* ── Player info bars ── */
-.player-info-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  max-width: 672px;
-  padding: 6px 10px;
-  margin: 0;
-  gap: 8px;
-}
-
-.player-info-bar .player-name {
-  font-size: 14px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.player-info-bar .player-detail {
-  font-size: 11px;
-  color: #6b6560;
-}
-
-.turn-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #81b64c;
-  opacity: 0;
-  transition: opacity 0.2s;
-  flex-shrink: 0;
-}
-
-.player-info-bar.on-turn .turn-dot {
-  opacity: 1;
-}
-
-/* ── Board navigation ── */
-.board-nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-  max-width: 672px;
-  width: 100%;
-  justify-content: center;
-}
-
-.move-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #b0a99f;
-  padding: 0 8px;
-  min-width: 80px;
-  text-align: center;
-}
-
-/* ── What happening / SSE status ── */
-.what-happening {
-  font-size: 13px;
-  color: #b0a99f;
-  text-align: center;
-  padding: 6px 0;
-  max-width: 672px;
-  width: 100%;
-}
-
-#sse-status {
-  font-size: 11px;
-  text-align: center;
-  margin-bottom: 8px;
-}
-
-/* ── Side boards grid ── */
-.side-boards-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  max-width: 672px;
-  width: 100%;
-  margin-top: 16px;
-  margin-bottom: 24px;
-}
-
-.side-board-item {
-  background: #272522;
-  border-radius: 6px;
-  padding: 10px;
-  text-align: center;
-  position: relative;
-}
-
-.side-board-item .board-wrapper {
-  max-width: 100%;
-}
-
-.side-board-item .board-label {
-  font-size: 11px;
-  color: #6b6560;
-  margin-bottom: 6px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.side-board-item .board-status {
-  font-size: 11px;
-  color: #6b6560;
-  margin-top: 6px;
-}
-
-/* Overlay badge for side game move count */
-.side-board-wrapper {
-  position: relative;
-}
-
-.side-board-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  background: rgba(0, 0, 0, 0.65);
-  color: #81b64c;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  z-index: 10;
-  pointer-events: none;
-  line-height: 1.4;
-  backdrop-filter: blur(2px);
-}
-
 /* ── Main layout ── */
 .main-layout {
   display: flex;
@@ -181,7 +46,6 @@ body {
   flex-direction: column;
   align-items: center;
   min-width: 0;
-  /* no overflow — the page itself scrolls if main content is tall */
 }
 
 .sidebar-column {
@@ -189,7 +53,7 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   position: sticky;
   top: 66px; /* header 50px + padding 16px */
   height: calc(100vh - 82px); /* header 50px + padding 16*2 = 82 */
@@ -197,34 +61,7 @@ body {
   padding-right: 6px;
 }
 
-/* Custom thin scrollbar for sidebar */
-.sidebar-column::-webkit-scrollbar {
-  width: 5px;
-}
-.sidebar-column::-webkit-scrollbar-track {
-  background: transparent;
-}
-.sidebar-column::-webkit-scrollbar-thumb {
-  background: #4a4540;
-  border-radius: 3px;
-  border: 1px solid transparent;
-  background-clip: content-box;
-}
-.sidebar-column::-webkit-scrollbar-thumb:hover {
-  background: #5a5550;
-  border: 1px solid transparent;
-  background-clip: content-box;
-}
-
-/* ── Move list ── */
-.move-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  font-family: 'Inter', monospace;
-  font-size: 13px;
-}
-
+/* ── Move entry highlights ── */
 .move-entry {
   cursor: pointer;
   padding: 2px 6px;
@@ -233,127 +70,50 @@ body {
 }
 
 .move-entry:hover {
-  background: #3d3935;
+  background: #21262D;
 }
 
 .move-entry.active {
-  background: #4a4540;
+  background: #30363D;
   color: #fff;
 }
 
-.move-entry .move-num {
-  color: #6b6560;
-  margin-right: 2px;
+/* ── Custom thin scrollbar for sidebar ── */
+.sidebar-column::-webkit-scrollbar {
+  width: 5px;
+}
+.sidebar-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-column::-webkit-scrollbar-thumb {
+  background: #484F58;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+}
+.sidebar-column::-webkit-scrollbar-thumb:hover {
+  background: #6E7681;
+  border: 1px solid transparent;
+  background-clip: content-box;
 }
 
-/* ── Metrics ── */
-.metric-card {
-  background: #272522;
-  border-radius: 6px;
-  padding: 10px 14px;
-  display: flex;
-  flex-direction: column;
+/* ── Global scrollbar styling ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #484F58;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #6E7681;
 }
 
-.metric-label {
-  font-size: 11px;
-  color: #6b6560;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.metric-value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-}
-
-/* ── SSE event log ── */
-.sse-log {
-  max-height: 300px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 11px;
-}
-
-.sse-entry {
-  padding: 3px 6px;
-  border-bottom: 1px solid #3d3935;
-  line-height: 1.4;
-}
-
-.sse-entry .sse-time {
-  color: #6b6560;
-}
-
-.sse-entry .sse-type {
-  color: #81b64c;
-  font-weight: 600;
-}
-
-.sse-entry .sse-data {
-  color: #b0a99f;
-}
-
-/* ── Recent games ── */
-.game-card {
-  background: #272522;
-  border-radius: 4px;
-  padding: 8px 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.game-card:hover {
-  background: #3d3935;
-}
-
-.game-card .game-result {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.game-card .game-meta {
-  font-size: 11px;
-  color: #6b6560;
-}
-
-/* ── Analysis table ── */
-.analysis-table {
-  width: 100%;
-  font-size: 12px;
-}
-
-.analysis-table th {
-  text-align: left;
-  color: #6b6560;
-  font-weight: 600;
-  padding: 4px 6px;
-  border-bottom: 1px solid #3d3935;
-}
-
-.analysis-table td {
-  padding: 4px 6px;
-  border-bottom: 1px solid #3d3935;
-}
-
-.analysis-table tr:hover td {
-  background: #3d3935;
-}
-
-/* ── Section headers ── */
-.section-header {
-  font-size: 12px;
-  font-weight: 700;
-  color: #b0a99f;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #3d3935;
-  margin-bottom: 8px;
-}
-
-/* ── Fullscreen ── */
+/* ── Fullscreen bar ── */
 .fullscreen-bar {
   display: flex;
   align-items: center;
@@ -362,6 +122,17 @@ body {
   padding: 8px 0;
   width: 100%;
   max-width: 672px;
+}
+
+/* ── Side boards grid ── */
+.side-boards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  max-width: 672px;
+  width: 100%;
+  margin-top: 16px;
+  margin-bottom: 24px;
 }
 
 /* ── Responsive ── */
@@ -384,7 +155,7 @@ body {
   }
 
   .side-boards-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
     gap: 10px;
   }
 }
