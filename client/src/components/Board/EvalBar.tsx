@@ -12,10 +12,12 @@ export default function EvalBar() {
   // White advantage pushes white fill up from center
   const pct = Math.max(2, Math.min(98, 50 - t * 48));
 
-  // Green for white advantage, red for black advantage
-  const greenTop = '#3fb950';
-  const redBottom = '#f85149';
+  // White at top (white's advantage), black at bottom (black's advantage)
+  // like chess.com / lichess style
+  const whiteFill = '#ffffff';
+  const blackFill = '#000000';
   const neutralGray = '#30363D';
+  const midGray = '#484F58';
 
   return (
     <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0, alignSelf: 'stretch' }}>
@@ -30,17 +32,17 @@ export default function EvalBar() {
           boxShadow: 'inset 0 0 6px rgba(0,0,0,0.6)',
         }}
       >
-        {/* Background gradient — full-bar gradient from green → gray → red */}
+        {/* Subtle background hint */}
         <Box
           style={{
             position: 'absolute',
             inset: 0,
-            background: `linear-gradient(to bottom, ${greenTop} 0%, ${greenTop} 30%, ${neutralGray} 50%, ${redBottom} 70%, ${redBottom} 100%)`,
-            opacity: 0.15,
+            background: `linear-gradient(to bottom, ${whiteFill}88 0%, ${whiteFill}22 30%, transparent 50%, #00000022 70%, #00000088 100%)`,
+            opacity: 0.3,
           }}
         />
 
-        {/* Top fill (white advantage zone) */}
+        {/* Top portion — White's advantage */}
         <Box
           style={{
             position: 'absolute',
@@ -48,12 +50,13 @@ export default function EvalBar() {
             left: 0,
             width: '100%',
             height: `${100 - pct}%`,
-            background: `linear-gradient(to bottom, ${greenTop}, color-mix(in srgb, ${greenTop} 40%, ${neutralGray} 60%))`,
+            background: `linear-gradient(to bottom, ${whiteFill}, ${midGray})`,
             transition: 'height 0.3s ease',
+            opacity: 0.85,
           }}
         />
 
-        {/* Bottom fill (black advantage zone) */}
+        {/* Bottom portion — Black's advantage */}
         <Box
           style={{
             position: 'absolute',
@@ -61,8 +64,9 @@ export default function EvalBar() {
             left: 0,
             width: '100%',
             height: `${pct}%`,
-            background: `linear-gradient(to top, ${redBottom}, color-mix(in srgb, ${redBottom} 40%, ${neutralGray} 60%))`,
+            background: `linear-gradient(to top, ${blackFill}, ${midGray})`,
             transition: 'height 0.3s ease',
+            opacity: 0.85,
           }}
         />
 
@@ -74,7 +78,7 @@ export default function EvalBar() {
             left: 2,
             width: 'calc(100% - 4px)',
             height: 2,
-            background: '#484F58',
+            background: midGray,
             zIndex: 1,
             borderRadius: 1,
           }}
@@ -88,7 +92,7 @@ export default function EvalBar() {
             left: 4,
             width: 'calc(100% - 8px)',
             height: 1,
-            background: '#484F58',
+            background: midGray,
             opacity: 0.3,
           }}
         />
@@ -99,7 +103,7 @@ export default function EvalBar() {
             left: 4,
             width: 'calc(100% - 8px)',
             height: 1,
-            background: '#484F58',
+            background: midGray,
             opacity: 0.3,
           }}
         />
@@ -109,7 +113,7 @@ export default function EvalBar() {
         size="xs"
         fw={700}
         mt={6}
-        c={cp > 0 ? '#3fb950' : cp < 0 ? '#f85149' : '#8B949E'}
+        c={cp > 0 ? '#C9D1D9' : cp < 0 ? '#8B949E' : '#8B949E'}
         style={{ fontVariantNumeric: 'tabular-nums' }}
       >
         {cp > 0 ? '+' : ''}{cp.toFixed(1)}
