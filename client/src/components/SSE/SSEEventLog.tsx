@@ -30,7 +30,7 @@ export default function SSEEventLog() {
         {state.sseEvents.length === 0 ? (
           <Text size="xs" c="dimmed">No events yet</Text>
         ) : (
-          state.sseEvents.map((ev) => (
+          [...state.sseEvents].reverse().map((ev) => (
             <div key={ev.id} className="sse-entry">
               <span className="sse-time">{formatSSETime(ev.timestamp)}</span>
               {' '}

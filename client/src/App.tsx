@@ -60,8 +60,8 @@ export default function App() {
             {/* Center column */}
             <div className="main-column">
               <PlayerInfoBar
-                name="Stockfish (depth 10)"
-                detail="Critic opponent"
+                name="Self-Play (NN)"
+                detail="vs Self"
                 isTurn={!whiteToMove}
                 color="top"
               />

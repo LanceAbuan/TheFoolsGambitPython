@@ -1,6 +1,3 @@
-/* Import chessboard styles */
-
-
 /* ── Base layout ── */
 body {
   margin: 0;
@@ -8,6 +5,52 @@ body {
   color: #fff;
   min-height: 100vh;
   overflow-x: hidden;
+}
+
+/* ── Eval bar ── */
+.eval-bar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 36px;
+  margin: 0 8px;
+}
+
+.eval-bar-track {
+  position: relative;
+  width: 24px;
+  height: 400px;
+  background: #1a1816;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.eval-bar-fill,
+.eval-bar-fill-bottom {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  transition: height 0.3s ease, background 0.3s ease;
+}
+
+.eval-bar-divider {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  z-index: 1;
+}
+
+.eval-bar-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #b0a99f;
+  margin-top: 6px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Board ── */
@@ -66,41 +109,6 @@ body {
   opacity: 1;
 }
 
-/* ── Eval bar ── */
-.eval-bar-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 36px;
-  margin: 0 8px;
-}
-
-.eval-bar-track {
-  position: relative;
-  width: 20px;
-  height: 400px;
-  background: #211f1c;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.eval-bar-fill {
-  position: absolute;
-  bottom: 50%;
-  left: 0;
-  width: 100%;
-  background: #fff;
-  transition: height 0.3s ease;
-}
-
-.eval-bar-value {
-  font-size: 11px;
-  font-weight: 600;
-  color: #b0a99f;
-  margin-top: 4px;
-  white-space: nowrap;
-}
-
 /* ── Board navigation ── */
 .board-nav {
   display: flex;
@@ -141,18 +149,19 @@ body {
 .side-boards-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 16px;
   max-width: 672px;
   width: 100%;
-  margin-top: 12px;
+  margin-top: 16px;
   margin-bottom: 24px;
 }
 
 .side-board-item {
   background: #272522;
-  border-radius: 4px;
-  padding: 8px;
+  border-radius: 6px;
+  padding: 10px;
   text-align: center;
+  position: relative;
 }
 
 .side-board-item .board-wrapper {
@@ -162,13 +171,37 @@ body {
 .side-board-item .board-label {
   font-size: 11px;
   color: #6b6560;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .side-board-item .board-status {
   font-size: 11px;
+  color: #6b6560;
+  margin-top: 6px;
+}
+
+/* Overlay badge for side game move count */
+.side-board-wrapper {
+  position: relative;
+}
+
+.side-board-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.65);
   color: #81b64c;
-  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  z-index: 10;
+  pointer-events: none;
+  line-height: 1.4;
+  backdrop-filter: blur(2px);
 }
 
 /* ── Main layout ── */
@@ -177,6 +210,7 @@ body {
   gap: 16px;
   padding: 16px;
   flex: 1;
+  height: calc(100vh - 82px); /* viewport minus header + padding */
 }
 
 .main-column {
@@ -185,6 +219,7 @@ body {
   flex-direction: column;
   align-items: center;
   min-width: 0;
+  overflow-y: auto; /* main column scrolls if needed */
 }
 
 .sidebar-column {
@@ -193,6 +228,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
+  max-height: 100%;
+  padding-right: 4px;
+}
+
+/* Scrollbar styling for sidebar */
+.sidebar-column::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-column::-webkit-scrollbar-thumb {
+  background: #4a4540;
+  border-radius: 2px;
 }
 
 /* ── Move list ── */
@@ -348,10 +398,13 @@ body {
   .main-layout {
     flex-direction: column;
     padding: 8px;
+    height: auto;
   }
 
   .sidebar-column {
     width: 100%;
+    max-height: none;
+    overflow-y: visible;
   }
 
   .eval-bar-container {
@@ -360,5 +413,6 @@ body {
 
   .side-boards-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 }

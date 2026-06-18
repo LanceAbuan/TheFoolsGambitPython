@@ -41,8 +41,8 @@ export default function FullscreenOverlay() {
         <EvalBar />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <PlayerInfoBar
-            name="Stockfish (depth 10)"
-            detail="Critic opponent"
+            name="Self-Play (NN)"
+            detail="vs Self"
             isTurn={state.allMoves.length % 2 !== 0}
             color="top"
           />

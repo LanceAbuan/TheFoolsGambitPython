@@ -36,7 +36,7 @@ export default function AnalysisTable() {
             <Table.Tr key={i}>
               <Table.Td>{i + 1}</Table.Td>
               <Table.Td style={{ fontFamily: 'monospace' }}>{row.san || row.move}</Table.Td>
-              <Table.Td>{row.eval || '-'}</Table.Td>
+              <Table.Td>{row.evaluation != null ? row.evaluation.toFixed(1) : '-'}</Table.Td>
               <Table.Td>{row.type || '-'}</Table.Td>
               <Table.Td>
                 {row.quality && (
