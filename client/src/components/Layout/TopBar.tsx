@@ -1,41 +1,10 @@
 import { Group, Title, Badge, ActionIcon, Tooltip, Text } from '@mantine/core';
-import { IconPlayerPlay, IconPlayerStop, IconRefresh, IconRotate, IconMaximize } from '@tabler/icons-react';
+import { IconRotate, IconMaximize } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
-import { api } from '../../api';
 
 export default function TopBar() {
-  const { state, dispatch, flipBoard } = useGame();
-
-  const handleStart = async () => {
-    try {
-      await api.startTraining();
-      dispatch({ type: 'SET_WHAT_HAPPENING', text: 'Training started' });
-    } catch {
-      dispatch({ type: 'SET_WHAT_HAPPENING', text: 'Failed to start training' });
-    }
-  };
-
-  const handleStop = async () => {
-    try {
-      await api.stopTraining();
-      dispatch({ type: 'SET_WHAT_HAPPENING', text: 'Training stopped' });
-    } catch {
-      dispatch({ type: 'SET_WHAT_HAPPENING', text: 'Failed to stop training' });
-    }
-  };
-
-  const handleReset = async () => {
-    try {
-      await api.resetTraining();
-      dispatch({ type: 'RESET_MOVES' });
-      dispatch({ type: 'SET_FEN_CACHE', cache: [] });
-      dispatch({ type: 'SET_WHAT_HAPPENING', text: 'Training reset' });
-    } catch {
-      dispatch({ type: 'SET_WHAT_HAPPENING', text: 'Failed to reset training' });
-    }
-  };
-
-  const toggleFullscreen = () => dispatch({ type: 'TOGGLE_FULLSCREEN' });
+  const { state, flipBoard, dispatch } = useGame();
+  const handleFullscreen = () => dispatch({ type: 'TOGGLE_FULLSCREEN' });
 
   const sseColor =
     state.sseStatus === 'Connected'
@@ -79,28 +48,13 @@ export default function TopBar() {
       </Group>
 
       <Group gap={2} wrap="nowrap">
-        <Tooltip label="Start training">
-          <ActionIcon onClick={handleStart} color="green" variant="subtle" size="md">
-            <IconPlayerPlay size={18} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Stop training">
-          <ActionIcon onClick={handleStop} color="red" variant="subtle" size="md">
-            <IconPlayerStop size={18} />
-          </ActionIcon>
-        </Tooltip>
-        <Tooltip label="Reset training">
-          <ActionIcon onClick={handleReset} variant="subtle" color="gray" size="md">
-            <IconRefresh size={18} />
-          </ActionIcon>
-        </Tooltip>
         <Tooltip label="Flip board">
           <ActionIcon onClick={flipBoard} variant="subtle" color="gray" size="md">
             <IconRotate size={18} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Fullscreen">
-          <ActionIcon onClick={toggleFullscreen} variant="subtle" color="gray" size="md">
+          <ActionIcon onClick={handleFullscreen} variant="subtle" color="gray" size="md">
             <IconMaximize size={18} />
           </ActionIcon>
         </Tooltip>
