@@ -106,7 +106,7 @@ export default function EvalBar() {
         c="#8B949E"
         style={{ fontVariantNumeric: 'tabular-nums' }}
       >
-        {cp > 0 ? '+' : ''}{cp.toFixed(1)}
+        {cp > 0 ? '+' : ''}{(cp / 100).toFixed(2)}
       </Text>
     </Box>
   );

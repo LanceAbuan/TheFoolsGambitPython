@@ -37,9 +37,9 @@ export default function FullscreenOverlay() {
         </ActionIcon>
       </Group>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, maxWidth: 672, width: '100%' }}>
         <EvalBar />
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 0 }}>
           <PlayerInfoBar
             name="Self-Play (NN)"
             detail="vs Self"

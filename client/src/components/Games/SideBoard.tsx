@@ -22,11 +22,18 @@ export default function SideBoard({ gameId }: Props) {
         position: 'relative',
       }}
     >
-      <Text size="xs" fw={600} c="#6E7681" tt="uppercase" mb={6} style={{ letterSpacing: '0.3px' }}>
-        Game {gameId}
-      </Text>
+      <Group gap="xs" mb={6} justify="space-between" wrap="nowrap">
+        <Text size="xs" fw={600} c="#6E7681" tt="uppercase" style={{ letterSpacing: '0.3px' }}>
+          Game {gameId}
+        </Text>
+        {moveCount > 0 && (
+          <Badge size="sm" color="green" variant="filled">
+            Move {moveCount}
+          </Badge>
+        )}
+      </Group>
 
-      <div style={{ position: 'relative' }}>
+      <div>
         <Chessboard
           options={{
             position: fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
@@ -38,23 +45,6 @@ export default function SideBoard({ gameId }: Props) {
             lightSquareStyle: { backgroundColor: '#b7b09c' },
           }}
         />
-        {moveCount > 0 && (
-          <Badge
-            size="sm"
-            color="green"
-            variant="filled"
-            style={{
-              position: 'absolute',
-              top: 4,
-              right: 4,
-              pointerEvents: 'none',
-              zIndex: 10,
-              backdropFilter: 'blur(2px)',
-            }}
-          >
-            {moveCount}
-          </Badge>
-        )}
       </div>
 
       {moveCount === 0 && (
