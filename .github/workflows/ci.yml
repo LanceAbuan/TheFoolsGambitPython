@@ -17,46 +17,11 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install API dependencies
-        run: npm install
+      - name: Install client dependencies
+        run: cd client && npm ci
 
-      - name: API smoke tests
-        run: |
-          node -e "
-          const handler = require('./api/index.js');
-
-          const makeReq = (url, body) => ({ method: 'POST', url, body: typeof body === 'string' ? body : JSON.stringify(body) });
-          const makeRes = () => { const r = { _body: null }; r.setHeader = () => r; r.status = (s) => r; r.json = (d) => { r._body = d; return r; }; r.end = () => r; return r; };
-          const call = (url, body) => new Promise(resolve => { const r = makeRes(); handler(makeReq(url, body), r).then(() => resolve(r._body)); });
-
-          (async () => {
-            // 1. New game
-            let state = await call('/api/new-game', {});
-            if (state.status !== 'active') throw new Error('new-game: expected active');
-            if (state.turn !== 'white') throw new Error('new-game: expected white to move');
-
-            // 2. Make move
-            state = await call('/api/make-move', { fen: state.fen, uci: 'e2e4' });
-            if (state.status !== 'active') throw new Error('make-move: expected active');
-            if (state.turn !== 'black') throw new Error('make-move: expected black to move');
-            if (state.pgn !== 'e4') throw new Error('make-move: expected e4');
-
-            // 3. AI move
-            state = await call('/api/ai-move', { fen: state.fen, aiDepth: 2 });
-            if (state.status !== 'active') throw new Error('ai-move: expected active');
-            if (state.turn !== 'white') throw new Error('ai-move: expected white to move');
-
-            // 4. Illegal move
-            state = await call('/api/make-move', { fen: state.fen, uci: 'e2e8' });
-            if (!state.error) throw new Error('illegal: expected error');
-
-            // 5. Undo
-            state = await call('/api/undo', { fen: (await call('/api/new-game', {})).fen });
-            if (state.status !== 'active') throw new Error('undo: expected active');
-
-            console.log('All API tests passed');
-          })().catch(e => { console.error('Test failed:', e.message); process.exit(1); });
-          "
+      - name: Build React app
+        run: cd client && npm run build
 
       - name: Verify Vercel config
         run: |
@@ -65,9 +30,20 @@ jobs:
           with open('vercel.json') as f:
             config = json.load(f)
           assert config['version'] == 2
-          assert any('/api/' in r.get('source', '') for r in config.get('rewrites', []))
+          assert config['outputDirectory'] == 'client/dist'
+          assert config['buildCommand']
+          assert any('/index.html' in r.get('destination', '') for r in config.get('rewrites', []))
           print('Vercel config valid')
           "
+
+      - name: API health check
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://api.lanceabuan.tech/api/train/status 2>&1) || true
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "API server is healthy"
+          else
+            echo "API server not reachable (expected on PRs from forks)"
+          fi
 
   deploy-check:
     needs: test
@@ -85,3 +61,12 @@ jobs:
             exit 1
           fi
           echo "Live site is healthy"
+
+      - name: API health check
+        run: |
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://api.lanceabuan.tech/api/train/status)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "API returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "API server is healthy"
