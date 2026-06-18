@@ -6,18 +6,20 @@ export default function EvalBar() {
   const analysis = state.analysis as any;
   const cp = analysis?.evaluation ?? 0;
 
-  // cp in centipawns, typically -500..+500 for normal positions
-  // normalize to -1..1, then map to percentage from bottom
+  // Normalize cp (-2000..+2000) to -1..1
   const t = Math.max(-1, Math.min(1, cp / 2000));
-  // White advantage pushes white fill up from center
-  const pct = Math.max(2, Math.min(98, 50 - t * 48));
 
-  // White at top (white's advantage), black at bottom (black's advantage)
-  // like chess.com / lichess style
-  const whiteFill = '#ffffff';
-  const blackFill = '#000000';
-  const neutralGray = '#30363D';
-  const midGray = '#484F58';
+  // Divider position from bottom (0–100%)
+  // cp > 0 (white winning) pushes divider up → more bottom fill
+  const pct = Math.max(2, Math.min(98, 50 + t * 48));
+
+  // Flip colors when board orientation is flipped
+  const isNormal = state.boardOrientation === 'white';
+  const bottomColor = isNormal ? '#ffffff' : '#000000';
+  const topColor = isNormal ? '#000000' : '#ffffff';
+
+  // When flipped, invert which side grows with advantage
+  const bottomHeight = isNormal ? pct : 100 - pct;
 
   return (
     <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 36, flexShrink: 0, alignSelf: 'stretch' }}>
@@ -26,51 +28,39 @@ export default function EvalBar() {
           position: 'relative',
           width: 28,
           flex: 1,
-          background: neutralGray,
+          background: '#30363D',
           borderRadius: 6,
           overflow: 'hidden',
           boxShadow: 'inset 0 0 6px rgba(0,0,0,0.6)',
         }}
       >
-        {/* Subtle background hint */}
-        <Box
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: `linear-gradient(to bottom, ${whiteFill}88 0%, ${whiteFill}22 30%, transparent 50%, #00000022 70%, #00000088 100%)`,
-            opacity: 0.3,
-          }}
-        />
-
-        {/* Top portion — White's advantage */}
-        <Box
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: `${100 - pct}%`,
-            background: `linear-gradient(to bottom, ${whiteFill}, ${midGray})`,
-            transition: 'height 0.3s ease',
-            opacity: 0.85,
-          }}
-        />
-
-        {/* Bottom portion — Black's advantage */}
+        {/* Bottom portion */}
         <Box
           style={{
             position: 'absolute',
             bottom: 0,
             left: 0,
             width: '100%',
-            height: `${pct}%`,
-            background: `linear-gradient(to top, ${blackFill}, ${midGray})`,
+            height: `${bottomHeight}%`,
+            background: bottomColor,
             transition: 'height 0.3s ease',
-            opacity: 0.85,
           }}
         />
 
-        {/* Center divider line */}
+        {/* Top portion */}
+        <Box
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: `${100 - bottomHeight}%`,
+            background: topColor,
+            transition: 'height 0.3s ease',
+          }}
+        />
+
+        {/* Center divider */}
         <Box
           style={{
             position: 'absolute',
@@ -78,7 +68,7 @@ export default function EvalBar() {
             left: 2,
             width: 'calc(100% - 4px)',
             height: 2,
-            background: midGray,
+            background: '#484F58',
             zIndex: 1,
             borderRadius: 1,
           }}
@@ -92,7 +82,7 @@ export default function EvalBar() {
             left: 4,
             width: 'calc(100% - 8px)',
             height: 1,
-            background: midGray,
+            background: '#484F58',
             opacity: 0.3,
           }}
         />
@@ -103,7 +93,7 @@ export default function EvalBar() {
             left: 4,
             width: 'calc(100% - 8px)',
             height: 1,
-            background: midGray,
+            background: '#484F58',
             opacity: 0.3,
           }}
         />
@@ -113,7 +103,7 @@ export default function EvalBar() {
         size="xs"
         fw={700}
         mt={6}
-        c={cp > 0 ? '#C9D1D9' : cp < 0 ? '#8B949E' : '#8B949E'}
+        c="#8B949E"
         style={{ fontVariantNumeric: 'tabular-nums' }}
       >
         {cp > 0 ? '+' : ''}{cp.toFixed(1)}
