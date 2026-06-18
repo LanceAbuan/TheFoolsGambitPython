@@ -95,16 +95,17 @@ export function useSSE() {
   );
 
   /** Seed (or refresh) side games from a full status response.
-   *  Skips games that already have the same FEN to avoid churn. */
+   *  Skips games that already have the same FEN to avoid churn.
+   *  Uses gd.game_id rather than array index to handle sparse arrays correctly. */
   const seedSideGames = useCallback(
     (status: any) => {
-      const games = status.side_games;
+      const games: any[] | undefined = status.side_games;
       if (!games) return;
-      for (let gid = 1; gid < games.length; gid++) {
-        const gd = games[gid];
+      for (const gd of games) {
         if (!gd) continue;
+        const gid = gd.game_id;
+        if (gid == null) continue;
         if (gd.moves?.length) {
-          // Only rebuild if the number of moves differs (avoids flicker)
           const existing = sideGameRefs.current[gid];
           const existingCount = existing ? existing.moveNumber() : 0;
           if (existingCount !== gd.moves.length) {

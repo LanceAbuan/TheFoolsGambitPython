@@ -49,21 +49,16 @@ body {
 }
 
 .sidebar-column {
-  width: 380px;
+  width: 320px;
   flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-content: start;
   position: sticky;
   top: 66px; /* header 50px + padding 16px */
   height: calc(100vh - 82px); /* header 50px + padding 16*2 = 82 */
   overflow-y: auto;
   padding-right: 6px;
-}
-
-.sidebar-full {
-  grid-column: 1 / -1;
 }
 
 /* ── Move entry highlights ── */
@@ -83,39 +78,37 @@ body {
   color: #fff;
 }
 
-/* ── Custom thin scrollbar for sidebar ── */
+/* ── Custom slick scrollbar for sidebar ── */
 .sidebar-column::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
 }
 .sidebar-column::-webkit-scrollbar-track {
   background: transparent;
 }
 .sidebar-column::-webkit-scrollbar-thumb {
-  background: #484F58;
-  border-radius: 3px;
-  border: 1px solid transparent;
-  background-clip: content-box;
+  background: #30363D;
+  border-radius: 4px;
+  transition: background 0.2s ease;
 }
 .sidebar-column::-webkit-scrollbar-thumb:hover {
-  background: #6E7681;
-  border: 1px solid transparent;
-  background-clip: content-box;
+  background: #3B82F6;
 }
 
 /* ── Global scrollbar styling ── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #484F58;
-  border-radius: 3px;
+  background: #30363D;
+  border-radius: 4px;
+  transition: background 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #6E7681;
+  background: #3B82F6;
 }
 
 /* ── Fullscreen bar ── */

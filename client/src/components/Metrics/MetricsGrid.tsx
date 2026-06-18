@@ -19,7 +19,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 
 function cycleLabel(c: CycleInfo, status: string): { line1: string; line2?: string } {
   if (status === 'playing' || status === 'critic' || status === 'self-play') {
-    return { line1: `Game ${Math.min(c.games_this_cycle + 1, c.games_per_cycle)} / ${c.games_per_cycle}` };
+    return { line1: `Batch ${Math.min(c.games_this_cycle + 1, c.games_per_cycle)} / ${c.games_per_cycle}` };
   }
   if (status === 'training') {
     return { line1: `Step ${c.steps_this_cycle} / ${c.steps_per_cycle}` };
@@ -27,7 +27,7 @@ function cycleLabel(c: CycleInfo, status: string): { line1: string; line2?: stri
   if (status === 'stockfish') {
     return { line1: 'Calibrating ELO', line2: 'vs Stockfish' };
   }
-  return { line1: `${c.games_per_cycle} games + ${c.steps_per_cycle} steps`, line2: 'Waiting for start...' };
+  return { line1: `${c.games_per_cycle} batches × 10 games`, line2: `${c.steps_per_cycle} training steps per cycle` };
 }
 
 export default function MetricsGrid() {
@@ -47,13 +47,16 @@ export default function MetricsGrid() {
     ? `${(s.buffer_size ?? 0).toLocaleString()} / ${c.min_buffer_for_train} min`
     : (s.buffer_size ?? 0).toLocaleString();
 
+  const totalGames = (s.games_played ?? 0) + (s.side_games_completed ?? 0);
+
   const metrics = [
     { label: 'Status', value: s.status || '-' },
     { label: 'Step', value: (s.step ?? 0).toLocaleString() },
-    { label: 'Games', value: (s.games_played ?? 0).toLocaleString() },
+    { label: 'Total', value: totalGames.toLocaleString() },
     { label: 'Loss', value: s.loss != null ? s.loss.toFixed(4) : '—' },
     { label: 'ELO', value: s.estimated_elo != null ? `~${s.estimated_elo}` : '—' },
     { label: 'Buffer', value: bufferLabel },
+    { label: 'Main', value: (s.games_played ?? 0).toLocaleString() },
     { label: 'Side', value: (s.side_games_completed ?? 0).toLocaleString() },
   ];
 
