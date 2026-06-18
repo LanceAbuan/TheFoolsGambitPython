@@ -54,9 +54,6 @@ export default function App() {
 
         <AppShell.Main>
           <div className="main-layout" style={{ padding: 16 }}>
-            {/* Eval bar (left) */}
-            <EvalBar />
-
             {/* Center column */}
             <div className="main-column">
               <PlayerInfoBar
@@ -65,7 +62,10 @@ export default function App() {
                 isTurn={!whiteToMove}
                 color="top"
               />
-              <LiveBoard />
+              <div className="board-row">
+                <EvalBar />
+                <LiveBoard />
+              </div>
               <PlayerInfoBar
                 name="Fool's Gambit AI"
                 detail="Training"

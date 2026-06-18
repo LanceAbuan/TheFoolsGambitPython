@@ -1,47 +1,89 @@
+import { Box, Text, useMantineTheme } from '@mantine/core';
 import { useGame } from '../../GameContext';
-
-function evalColor(cp: number): string {
-  // White advantage → light (white-ish), Black advantage → dark (black-ish)
-  const t = Math.max(-1, Math.min(1, cp / 2000)); // normalize to -1..1
-  // Mix between black (bad for white) and white (good for white)
-  const r = Math.round(128 + t * 127);
-  const g = Math.round(128 - Math.abs(t) * 80);
-  const b = Math.round(128 - t * 127);
-  return `rgb(${r}, ${g}, ${b})`;
-}
 
 export default function EvalBar() {
   const { state } = useGame();
+  const theme = useMantineTheme();
   const analysis = state.analysis as any;
-  const evalNorm = analysis?.evaluation_normalized ?? 0;
   const cp = analysis?.evaluation ?? 0;
 
-  // evalNorm is -1..1. White positive = white winning.
-  // Fill from bottom: 50% = equal. White advantage pushes fill up, black pushes down.
-  const pct = Math.max(2, Math.min(98, 50 - evalNorm * 48));
+  // cp in centipawns, typically -500..+500 for normal positions
+  // normalize to -1..1, then map to percentage from bottom
+  const t = Math.max(-1, Math.min(1, cp / 2000));
+  // White advantage pushes white fill up from center
+  const pct = Math.max(2, Math.min(98, 50 - t * 48));
+
+  // Colors using Mantine theme palette
+  const whiteFill = theme.colors.gray[0];   // light for white's advantage
+  const blackFill = theme.colors.dark[8];    // dark for black's advantage
+  const trackBg = theme.colors.dark[6];
+  const dividerColor = theme.colors.dark[3];
+  const textColor = theme.colors.gray[5];
+
+  // For the top portion (white advantage) — gradient from light to medium
+  const topColor = cp > 0 ? whiteFill : trackBg;
+  // For the bottom portion (black advantage) — gradient from dark to medium
+  const bottomColor = cp < 0 ? blackFill : trackBg;
 
   return (
-    <div className="eval-bar-container">
-      <div className="eval-bar-track">
-        <div
-          className="eval-bar-fill"
+    <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 28, flexShrink: 0 }}>
+      <Box
+        style={{
+          position: 'relative',
+          width: 20,
+          height: 400,
+          background: trackBg,
+          borderRadius: theme.radius.sm,
+          overflow: 'hidden',
+          boxShadow: 'inset 0 0 4px rgba(0,0,0,0.5)',
+        }}
+      >
+        {/* Top fill (white advantage zone) — extends downward from top */}
+        <Box
           style={{
-            height: `${100 - pct}%`,
+            position: 'absolute',
             top: 0,
-            background: `linear-gradient(to bottom, ${evalColor(Math.max(0, cp))}, ${evalColor(cp)})`,
+            left: 0,
+            width: '100%',
+            height: `${100 - pct}%`,
+            background: `linear-gradient(to bottom, ${topColor}, ${theme.colors.dark[5]})`,
+            transition: 'height 0.3s ease, background 0.3s ease',
           }}
         />
-        <div
-          className="eval-bar-fill-bottom"
+        {/* Bottom fill (black advantage zone) — extends upward from bottom */}
+        <Box
           style={{
-            height: `${pct}%`,
+            position: 'absolute',
             bottom: 0,
-            background: `linear-gradient(to top, ${evalColor(Math.min(0, cp))}, ${evalColor(cp)})`,
+            left: 0,
+            width: '100%',
+            height: `${pct}%`,
+            background: `linear-gradient(to top, ${bottomColor}, ${theme.colors.dark[5]})`,
+            transition: 'height 0.3s ease, background 0.3s ease',
           }}
         />
-        <div className="eval-bar-divider" />
-      </div>
-      <div className="eval-bar-value">{cp > 0 ? '+' : ''}{cp.toFixed(1)}</div>
-    </div>
+        {/* Center divider line */}
+        <Box
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: 0,
+            width: '100%',
+            height: 2,
+            background: dividerColor,
+            zIndex: 1,
+          }}
+        />
+      </Box>
+      <Text
+        size="xs"
+        c={textColor}
+        fw={600}
+        mt={6}
+        style={{ fontVariantNumeric: 'tabular-nums' }}
+      >
+        {cp > 0 ? '+' : ''}{cp.toFixed(1)}
+      </Text>
+    </Box>
   );
 }
