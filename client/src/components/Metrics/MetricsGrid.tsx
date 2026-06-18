@@ -1,4 +1,4 @@
-import { SimpleGrid, Text, Paper, Group, Badge } from '@mantine/core';
+import { SimpleGrid, Text, Paper, Badge } from '@mantine/core';
 import { IconActivity } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 import type { CycleInfo } from '../../types';
