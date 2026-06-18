@@ -1,7 +1,8 @@
-import { ScrollArea, Text, Group, Paper } from '@mantine/core';
+import { ScrollArea, Text } from '@mantine/core';
 import { IconChessKnight } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 import { useCallback } from 'react';
+import SectionCard from '../Layout/SectionCard';
 
 export default function MoveList() {
   const { state, navigateToMove, setAutoFollow } = useGame();
@@ -14,7 +15,6 @@ export default function MoveList() {
     [navigateToMove, setAutoFollow, state.allMoves.length]
   );
 
-  // Group moves into pairs for display
   const pairs: { num: number; white?: string; black?: string }[] = [];
   for (let i = 0; i < state.allMoves.length; i += 2) {
     const pair: { num: number; white?: string; black?: string } = {
@@ -28,14 +28,8 @@ export default function MoveList() {
   }
 
   return (
-    <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
-      <Group gap="xs" mb="xs">
-        <IconChessKnight size={16} color="#8B949E" />
-        <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-          Moves
-        </Text>
-      </Group>
-      <ScrollArea h={200}>
+    <SectionCard icon={<IconChessKnight size={16} color="#8B949E" />} title="Moves">
+      <ScrollArea h={200} scrollbarSize={5}>
         <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 13 }}>
           {pairs.length === 0 && (
             <Text size="sm" c="dimmed">No moves yet</Text>
@@ -46,14 +40,14 @@ export default function MoveList() {
               <div
                 className={`move-entry${state.currentViewIndex === pi * 2 ? ' active' : ''}`}
                 onClick={() => handleMoveClick(pi * 2)}
-                style={{ flex: 1, cursor: 'pointer' }}
+                style={{ flex: 1, cursor: 'pointer', padding: '2px 6px', borderRadius: 3 }}
               >
                 {pair.white || ''}
               </div>
               <div
                 className={`move-entry${state.currentViewIndex === pi * 2 + 1 ? ' active' : ''}`}
                 onClick={() => pair.black ? handleMoveClick(pi * 2 + 1) : undefined}
-                style={{ flex: 1, cursor: pair.black ? 'pointer' : 'default' }}
+                style={{ flex: 1, cursor: pair.black ? 'pointer' : 'default', padding: '2px 6px', borderRadius: 3 }}
               >
                 {pair.black || ''}
               </div>
@@ -61,6 +55,6 @@ export default function MoveList() {
           ))}
         </div>
       </ScrollArea>
-    </Paper>
+    </SectionCard>
   );
 }

@@ -2,6 +2,7 @@ import { Modal, ActionIcon, Group, Paper } from '@mantine/core';
 import { IconMinimize } from '@tabler/icons-react';
 import { Chessboard } from 'react-chessboard';
 import { useGame } from '../../GameContext';
+import { BOARD_COLORS, DEFAULT_FEN } from '../../utils/board';
 import PlayerInfoBar from '../Board/PlayerInfoBar';
 import BoardNav from '../Board/BoardNav';
 import EvalBar from '../Board/EvalBar';
@@ -12,7 +13,7 @@ export default function FullscreenOverlay() {
 
   const pos = state.fenCache.length > 0
     ? state.fenCache[Math.min(state.currentViewIndex, state.fenCache.length - 1)]
-    : 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
+    : DEFAULT_FEN;
 
   return (
     <Modal
@@ -61,8 +62,8 @@ export default function FullscreenOverlay() {
                 showAnimations: true,
                 allowDragging: false,
                 boardStyle: { borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.4)' },
-                darkSquareStyle: { backgroundColor: '#625b4d' },
-                lightSquareStyle: { backgroundColor: '#b7b09c' },
+                darkSquareStyle: { backgroundColor: BOARD_COLORS.dark },
+                lightSquareStyle: { backgroundColor: BOARD_COLORS.light },
               }}
             />
           </Paper>

@@ -1,6 +1,7 @@
 import { Chessboard } from 'react-chessboard';
-import { Paper, Text, Badge } from '@mantine/core';
+import { Paper, Text, Badge, Group } from '@mantine/core';
 import { useGame } from '../../GameContext';
+import { BOARD_COLORS, DEFAULT_FEN } from '../../utils/board';
 
 interface Props {
   gameId: number;
@@ -36,13 +37,13 @@ export default function SideBoard({ gameId }: Props) {
       <div>
         <Chessboard
           options={{
-            position: fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR',
+            position: fen || DEFAULT_FEN,
             animationDurationInMs: 200,
             showAnimations: true,
             allowDragging: false,
             boardStyle: { borderRadius: '2px' },
-            darkSquareStyle: { backgroundColor: '#625b4d' },
-            lightSquareStyle: { backgroundColor: '#b7b09c' },
+            darkSquareStyle: { backgroundColor: BOARD_COLORS.dark },
+            lightSquareStyle: { backgroundColor: BOARD_COLORS.light },
           }}
         />
       </div>

@@ -2,6 +2,7 @@ import { ScrollArea, Text, Group, Paper, Badge } from '@mantine/core';
 import { IconHistory } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 import { useCallback } from 'react';
+import SectionCard from '../Layout/SectionCard';
 
 export default function RecentGames() {
   const { state, navigateToMove, setAutoFollow } = useGame();
@@ -16,15 +17,8 @@ export default function RecentGames() {
   );
 
   return (
-    <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
-      <Group gap="xs" mb="xs">
-        <IconHistory size={16} color="#8B949E" />
-        <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-          Recent Games
-        </Text>
-      </Group>
-
-      <ScrollArea h={200}>
+    <SectionCard icon={<IconHistory size={16} color="#8B949E" />} title="Recent Games">
+      <ScrollArea h={200} scrollbarSize={5}>
         {games.length === 0 ? (
           <Text size="sm" c="dimmed">No finished games yet</Text>
         ) : (
@@ -54,6 +48,6 @@ export default function RecentGames() {
           ))
         )}
       </ScrollArea>
-    </Paper>
+    </SectionCard>
   );
 }

@@ -1,8 +1,7 @@
 import { useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { useGame } from '../../GameContext';
-
-const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
+import { BOARD_COLORS, DEFAULT_FEN } from '../../utils/board';
 
 export default function LiveBoard() {
   const { state } = useGame();
@@ -14,7 +13,7 @@ export default function LiveBoard() {
         return state.fenCache[idx];
       }
     }
-    return STARTING_FEN;
+    return DEFAULT_FEN;
   }, [state.fenCache, state.currentViewIndex]);
 
   return (
@@ -30,8 +29,8 @@ export default function LiveBoard() {
             borderRadius: '4px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
           },
-          darkSquareStyle: { backgroundColor: '#625b4d' },
-          lightSquareStyle: { backgroundColor: '#b7b09c' },
+          darkSquareStyle: { backgroundColor: BOARD_COLORS.dark },
+          lightSquareStyle: { backgroundColor: BOARD_COLORS.light },
         }}
       />
     </div>

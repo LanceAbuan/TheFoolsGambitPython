@@ -1,7 +1,8 @@
-import { Table, Text, Group, Paper, Badge } from '@mantine/core';
+import { Table, Text, Badge } from '@mantine/core';
 import { IconChartBar } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 import { MOVE_COLORS, MOVE_LABELS } from '../../types';
+import SectionCard from '../Layout/SectionCard';
 
 export default function AnalysisTable() {
   const { state } = useGame();
@@ -9,14 +10,7 @@ export default function AnalysisTable() {
   const rows = analysis?.move_analysis;
 
   return (
-    <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
-      <Group gap="xs" mb="xs">
-        <IconChartBar size={16} color="#8B949E" />
-        <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-          Analysis
-        </Text>
-      </Group>
-
+    <SectionCard icon={<IconChartBar size={16} color="#8B949E" />} title="Analysis">
       {!rows || !rows.length ? (
         <Text size="sm" c="dimmed">
           {state.isAnalyzing ? 'Analyzing...' : 'Waiting for position...'}
@@ -54,6 +48,6 @@ export default function AnalysisTable() {
           </Table.Tbody>
         </Table>
       )}
-    </Paper>
+    </SectionCard>
   );
 }

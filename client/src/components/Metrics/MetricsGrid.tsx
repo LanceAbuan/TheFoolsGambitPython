@@ -2,13 +2,9 @@ import { SimpleGrid, Text, Paper, Group, Badge } from '@mantine/core';
 import { IconActivity } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 import type { CycleInfo } from '../../types';
+import SectionCard from '../Layout/SectionCard';
 
-interface MetricCardProps {
-  label: string;
-  value: string;
-}
-
-function MetricCard({ label, value }: MetricCardProps) {
+function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <Paper p="sm" radius="sm" style={{ background: '#0D1117', border: '1px solid #30363D' }}>
       <Text size="xs" c="#6E7681" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
@@ -31,7 +27,6 @@ function cycleLabel(c: CycleInfo, status: string): { line1: string; line2?: stri
   if (status === 'stockfish') {
     return { line1: 'Calibrating ELO', line2: 'vs Stockfish' };
   }
-  // idle
   return { line1: `${c.games_per_cycle} games + ${c.steps_per_cycle} steps`, line2: 'Waiting for start...' };
 }
 
@@ -41,15 +36,9 @@ export default function MetricsGrid() {
 
   if (!s) {
     return (
-      <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
-        <Group gap="xs" mb="xs">
-          <IconActivity size={16} color="#8B949E" />
-          <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-            Metrics
-          </Text>
-        </Group>
+      <SectionCard icon={<IconActivity size={16} color="#8B949E" />} title="Metrics">
         <Text size="sm" c="dimmed">No data</Text>
-      </Paper>
+      </SectionCard>
     );
   }
 
@@ -70,18 +59,18 @@ export default function MetricsGrid() {
 
   const cycleData = c ? cycleLabel(c, s.status) : null;
 
+  const statusColor = s.status === 'running' || s.status === 'playing' ? 'green' : 'gray';
+
   return (
-    <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #30363D' }}>
-      <Group gap="xs" mb="sm">
-        <IconActivity size={16} color="#8B949E" />
-        <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-          Metrics
-        </Text>
-        <Badge size="sm" color={s.status === 'running' || s.status === 'playing' ? 'green' : 'gray'} variant="filled" ml="auto">
+    <SectionCard
+      icon={<IconActivity size={16} color="#8B949E" />}
+      title="Metrics"
+      rightSection={
+        <Badge size="sm" color={statusColor} variant="filled">
           {s.status}
         </Badge>
-      </Group>
-
+      }
+    >
       <SimpleGrid cols={2} spacing="xs">
         {metrics.map((m) => (
           <MetricCard key={m.label} label={m.label} value={m.value} />
@@ -89,12 +78,7 @@ export default function MetricsGrid() {
       </SimpleGrid>
 
       {c && cycleData && (
-        <Paper
-          p="sm"
-          radius="sm"
-          mt="sm"
-          style={{ background: '#0D1117', border: '1px solid #30363D' }}
-        >
+        <Paper p="sm" radius="sm" mt="sm" style={{ background: '#0D1117', border: '1px solid #30363D' }}>
           <Text size="xs" c="#6E7681" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
             Cycle
           </Text>
@@ -106,6 +90,6 @@ export default function MetricsGrid() {
           )}
         </Paper>
       )}
-    </Paper>
+    </SectionCard>
   );
 }
