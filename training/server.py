@@ -628,7 +628,14 @@ def train_start():
                                 "step": t.step,
                                 "policy_loss": t.policy_loss,
                                 "value_loss": t.value_loss,
-                                "estimated_elo": t.estimate_elo()
+                                "estimated_elo": t.estimate_elo(),
+                                "cycle": {
+                                    "games_this_cycle": _games_this_cycle,
+                                    "games_per_cycle": _games_per_cycle,
+                                    "steps_this_cycle": _steps_this_cycle,
+                                    "steps_per_cycle": _steps_per_cycle,
+                                    "min_buffer_for_train": MIN_BATCH_SIZE,
+                                },
                             },
                         })
                     except queue.Full:
@@ -657,6 +664,13 @@ def train_start():
                                     "step": result['step'],
                                     "loss": result['loss'],
                                     "buffer_size": result.get('buffer_size', 0),
+                                    "cycle": {
+                                        "games_this_cycle": _games_this_cycle,
+                                        "games_per_cycle": _games_per_cycle,
+                                        "steps_this_cycle": _steps_this_cycle,
+                                        "steps_per_cycle": _steps_per_cycle,
+                                        "min_buffer_for_train": MIN_BATCH_SIZE,
+                                    },
                                 },
                             })
                         except queue.Full:
@@ -671,6 +685,13 @@ def train_start():
                             "status": "idle",
                             "games_played": t.games_played,
                             "step": t.step,
+                            "cycle": {
+                                "games_this_cycle": _games_this_cycle,
+                                "games_per_cycle": _games_per_cycle,
+                                "steps_this_cycle": _steps_this_cycle,
+                                "steps_per_cycle": _steps_per_cycle,
+                                "min_buffer_for_train": MIN_BATCH_SIZE,
+                            },
                         },
                     })
                 except queue.Full:
