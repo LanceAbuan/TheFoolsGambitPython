@@ -1,5 +1,5 @@
 import { Group, Text, Badge, Paper, ScrollArea, ActionIcon, Tooltip } from '@mantine/core';
-import { IconPlus, IconEye } from '@tabler/icons-react';
+import { IconEye } from '@tabler/icons-react';
 import { useGame } from '../GameContext';
 import LiveBoard from '../components/Board/LiveBoard';
 import EvalBar from '../components/Board/EvalBar';
@@ -274,11 +274,6 @@ export default function GamesView() {
           <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
             Games
           </Text>
-          <Tooltip label="New Game">
-            <ActionIcon variant="subtle" color="green" size="sm">
-              <IconPlus size={14} />
-            </ActionIcon>
-          </Tooltip>
         </Group>
 
         <ScrollArea flex={1} scrollbarSize={5}>
