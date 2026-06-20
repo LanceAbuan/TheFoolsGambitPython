@@ -1,7 +1,7 @@
 import { Group, Text, Paper, Badge, Progress, SimpleGrid } from '@mantine/core';
 import { useGame } from '../GameContext';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
-import type { TrainingStatus, SystemResources } from '../types';
+import type { TrainingStatus, SystemResources, OpeningEntry, ImprovementEntry } from '../types';
 
 function MetricCard({ label, value, data }: { label: string; value: string; data?: { t: number; v: number }[] }) {
   const chartData = data?.map((d, i) => ({ x: i, y: d.v })) || [];
@@ -18,13 +18,7 @@ function MetricCard({ label, value, data }: { label: string; value: string; data
         <div style={{ height: 30, marginTop: 4 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData}>
-              <Line
-                type="monotone"
-                dataKey="y"
-                stroke="#58a6ff"
-                strokeWidth={1}
-                dot={false}
-              />
+              <Line type="monotone" dataKey="y" stroke="#58a6ff" strokeWidth={1} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -62,11 +56,7 @@ function TrainingStatusCard({ s }: { s: TrainingStatus | null }) {
             {gamesPlayed} / {gamesPerCycle}
           </Text>
         </Group>
-        <Progress
-          value={(gamesPlayed / gamesPerCycle) * 100}
-          color="green"
-          size="sm"
-        />
+        <Progress value={(gamesPlayed / gamesPerCycle) * 100} color="green" size="sm" />
 
         <Group justify="space-between" mt={4}>
           <Text size="sm" c="#8B949E">Cycle Progress</Text>
@@ -97,8 +87,9 @@ function PerformanceCard({ s }: { s: TrainingStatus | null }) {
   const elo = s?.estimated_elo;
   const sfResults = (s as any)?.sf_calibration_results || [];
   const recentWins = sfResults.filter((r: number) => r === 1.0).length;
+  const recentDraws = sfResults.filter((r: number) => r === 0.5).length;
   const recentGames = sfResults.length;
-  const winRate = recentGames > 0 ? ((recentWins / recentGames) * 100).toFixed(1) : '—';
+  const winRate = recentGames > 0 ? (((recentWins + recentDraws * 0.5) / recentGames) * 100).toFixed(1) : '—';
 
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
@@ -109,39 +100,51 @@ function PerformanceCard({ s }: { s: TrainingStatus | null }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
           <Text size="xs" c="#6E7681">ELO (estimated)</Text>
-          <Group gap="xs" align="baseline">
-            <Text size="2xl" fw={700} c="#C9D1D9">
-              {elo ?? '—'}
-            </Text>
-          </Group>
+          <Text size="2xl" fw={700} c="#C9D1D9">{elo ?? '—'}</Text>
         </div>
 
         <div>
           <Text size="xs" c="#6E7681">Win Rate (vs Stockfish, last {recentGames})</Text>
-          <Group gap="xs" align="baseline">
-            <Text size="xl" fw={700} c="#C9D1D9">{winRate}%</Text>
-          </Group>
+          <Text size="xl" fw={700} c="#C9D1D9">{winRate}%</Text>
         </div>
 
         <div>
           <Text size="xs" c="#6E7681">Total Games Played</Text>
-          <Group gap="xs" align="baseline">
-            <Text size="xl" fw={700} c="#C9D1D9">{s?.games_played ?? 0}</Text>
-          </Group>
+          <Text size="xl" fw={700} c="#C9D1D9">{s?.games_played ?? 0}</Text>
         </div>
       </div>
     </Paper>
   );
 }
 
-function TopOpeningsCard() {
-  // Placeholder — would need backend tracking of opening names
+function TopOpeningsCard({ openings }: { openings: OpeningEntry[] }) {
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
       <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px', marginBottom: 12 }}>
         Top Openings
       </Text>
-      <Text size="sm" c="#6E7681">No opening data yet</Text>
+
+      {openings.length === 0 ? (
+        <Text size="sm" c="#6E7681">No games played yet</Text>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Group gap="xs" c="#6E7681" mb={4}>
+            <Text size="xs" style={{ flex: 1 }}></Text>
+            <Text size="xs" style={{ width: 40, textAlign: 'right' }}>Games</Text>
+            <Text size="xs" style={{ width: 50, textAlign: 'right' }}>NN Win</Text>
+          </Group>
+          {openings.map((o, i) => (
+            <Group key={i} gap="xs">
+              <Text size="sm" c="#6E7681" style={{ width: 16 }}>{i + 1}.</Text>
+              <Text size="sm" c="#C9D1D9" style={{ flex: 1 }}>{o.name}</Text>
+              <Text size="sm" c="#8B949E" style={{ width: 40, textAlign: 'right' }}>{o.count}</Text>
+              <Badge size="sm" color={o.nn_win_rate >= 55 ? 'green' : o.nn_win_rate >= 45 ? 'gray' : 'red'} variant="filled" style={{ width: 50, justifyContent: 'center' }}>
+                {o.nn_win_rate}%
+              </Badge>
+            </Group>
+          ))}
+        </div>
+      )}
     </Paper>
   );
 }
@@ -232,7 +235,7 @@ function ThroughputCard({ s }: { s: TrainingStatus | null }) {
           <Text size="lg" fw={700} c="#C9D1D9">{t?.train_steps_per_sec ?? '—'}</Text>
         </div>
         <div>
-          <Text size="xs" c="#6E7681">Side Games</Text>
+          <Text size="xs" c="#6E7681">Side Games Done</Text>
           <Text size="lg" fw={700} c="#C9D1D9">{s?.side_games_completed ?? 0}</Text>
         </div>
       </SimpleGrid>
@@ -240,22 +243,46 @@ function ThroughputCard({ s }: { s: TrainingStatus | null }) {
   );
 }
 
-function RecentImprovementsCard() {
-  // Would need backend historical tracking of ELO/win rate changes
+function RecentImprovementsCard({ improvements }: { improvements: ImprovementEntry[] }) {
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
       <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px', marginBottom: 12 }}>
         Recent Improvements
       </Text>
-      <Text size="sm" c="#6E7681">No improvement data yet</Text>
+
+      {improvements.length === 0 ? (
+        <Text size="sm" c="#6E7681">No improvements recorded yet</Text>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {improvements.map((imp, i) => (
+            <Group key={i} justify="space-between">
+              <Text size="sm" c="#3fb950">{imp.text}</Text>
+              <Text size="xs" c="#6E7681">
+                {imp.timestamp ? formatTimeAgo(imp.timestamp) : ''}
+              </Text>
+            </Group>
+          ))}
+        </div>
+      )}
     </Paper>
   );
+}
+
+function formatTimeAgo(timestamp: number): string {
+  const diff = Date.now() / 1000 - timestamp;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 export default function TrainingView() {
   const { state } = useGame();
   const s = state.trainingStatus;
   const metricHistory = state.metricHistory;
+
+  const openings: OpeningEntry[] = s?.top_openings || [];
+  const improvements: ImprovementEntry[] = s?.recent_improvements || [];
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
@@ -275,35 +302,12 @@ export default function TrainingView() {
             Metrics
           </Text>
           <SimpleGrid cols={3} spacing="sm">
-            <MetricCard
-              label="Policy Loss"
-              value={s?.policy_loss != null ? s.policy_loss.toFixed(4) : '—'}
-              data={metricHistory.policy_loss}
-            />
-            <MetricCard
-              label="Value Loss"
-              value={s?.value_loss != null ? s.value_loss.toFixed(4) : '—'}
-              data={metricHistory.value_loss}
-            />
-            <MetricCard
-              label="Total Loss"
-              value={s?.loss != null ? s.loss.toFixed(4) : '—'}
-              data={metricHistory.loss}
-            />
-            <MetricCard
-              label="ELO"
-              value={s?.estimated_elo != null ? `~${s.estimated_elo}` : '—'}
-              data={metricHistory.elo}
-            />
-            <MetricCard
-              label="Learning Rate"
-              value={s?.learning_rate != null ? s.learning_rate.toExponential(1) : '—'}
-            />
-            <MetricCard
-              label="Buffer Size"
-              value={(s?.buffer_size ?? 0).toLocaleString()}
-              data={metricHistory.buffer_size}
-            />
+            <MetricCard label="Policy Loss" value={s?.policy_loss != null ? s.policy_loss.toFixed(4) : '—'} data={metricHistory.policy_loss} />
+            <MetricCard label="Value Loss" value={s?.value_loss != null ? s.value_loss.toFixed(4) : '—'} data={metricHistory.value_loss} />
+            <MetricCard label="Total Loss" value={s?.loss != null ? s.loss.toFixed(4) : '—'} data={metricHistory.loss} />
+            <MetricCard label="ELO" value={s?.estimated_elo != null ? `~${s.estimated_elo}` : '—'} data={metricHistory.elo} />
+            <MetricCard label="Learning Rate" value={s?.learning_rate != null ? s.learning_rate.toExponential(1) : '—'} />
+            <MetricCard label="Buffer Size" value={(s?.buffer_size ?? 0).toLocaleString()} data={metricHistory.buffer_size} />
           </SimpleGrid>
 
           <ResourcesCard resources={s?.resources} />
@@ -312,8 +316,8 @@ export default function TrainingView() {
 
         {/* Right column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <TopOpeningsCard />
-          <RecentImprovementsCard />
+          <TopOpeningsCard openings={openings} />
+          <RecentImprovementsCard improvements={improvements} />
         </div>
       </div>
     </div>

@@ -22,7 +22,7 @@ from .trainer import Trainer, LOCAL_MODEL_DIR, MIN_BATCH_SIZE
 from .tensorize import board_to_tensor
 from .stockfish_engine import StockfishPlayer
 from .critic_game import CriticGame
-from .persistence import EventLog, MetricHistory, get_system_resources
+from .persistence import EventLog, MetricHistory, EvalHistory, OpeningTracker, ImprovementTracker, get_system_resources
 
 training_bp = Blueprint('training', __name__)
 
@@ -35,6 +35,9 @@ sse_event_queue = queue.Queue(maxsize=5000)
 # ---- PERSISTENT STORAGE ----
 event_log = EventLog()
 metric_history = MetricHistory()
+eval_history = EvalHistory()
+opening_tracker = OpeningTracker()
+improvement_tracker = ImprovementTracker()
 
 # ---- BROADCAST MANAGER ----
 class StreamManager:
@@ -555,6 +558,18 @@ def train_status():
         log.warning(f'[STATUS] Failed to get resources: {e}')
         status['resources'] = None
 
+    # Add top openings
+    try:
+        status['top_openings'] = opening_tracker.get_top_openings(10)
+    except Exception:
+        status['top_openings'] = []
+
+    # Add recent improvements
+    try:
+        status['recent_improvements'] = improvement_tracker.get_recent(5)
+    except Exception:
+        status['recent_improvements'] = []
+
     return jsonify(status)
 
 
@@ -638,6 +653,36 @@ def train_start():
                 })
                 if len(recent_games) > 100:
                     recent_games.pop(0)
+
+                # Track opening for this game
+                try:
+                    opening_tracker.record_game(moves, result, result == '1-0')
+                except Exception as e:
+                    log.warning(f'[TRAINING] Opening tracking error: {e}')
+
+                # Check for improvements
+                try:
+                    prev_elo = t.estimate_elo()
+                    sf_results = t._sf_results
+                    total_sf = len(sf_results)
+                    wins_sf = sum(1 for r in sf_results[-10:] if r == 1.0)
+                    prev_win_rate = (wins_sf / max(total_sf, 1)) * 100
+                    prev_loss = t.loss
+
+                    # After game, check new values
+                    curr_elo = t.estimate_elo()
+                    curr_sf_results = t._sf_results
+                    curr_wins = sum(1 for r in curr_sf_results[-10:] if r == 1.0)
+                    curr_win_rate = (curr_wins / max(len(curr_sf_results), 1)) * 100
+                    curr_loss = t.loss
+
+                    improvement_tracker.check_and_record(
+                        prev_elo, curr_elo,
+                        prev_win_rate, curr_win_rate,
+                        prev_loss, curr_loss,
+                    )
+                except Exception as e:
+                    log.warning(f'[TRAINING] Improvement tracking error: {e}')
 
                 # Record game metrics to history
                 metric_history.record({
@@ -828,6 +873,7 @@ def train_analyze():
             'evaluation_normalized': cached['eval_norm'],
             'top_moves': cached['top_moves'],
             'move_analysis': cached['move_analysis'],
+            'depth': cached.get('depth', 10),
             'cached': True
         })
 
@@ -839,6 +885,7 @@ def train_analyze():
         'evaluation_normalized': result['eval_norm'],
         'top_moves': result['top_moves'],
         'move_analysis': result['move_analysis'],
+        'depth': result.get('depth', 10),
         'cached': False
     })
 
@@ -886,6 +933,26 @@ def train_resources():
     """Return current system resource usage."""
     resources = get_system_resources()
     return jsonify(resources)
+
+@training_bp.route('/api/train/eval-history')
+def train_eval_history():
+    """Return per-move evaluation history for charting."""
+    which = request.args.get('which', 'current')  # 'current' or 'last'
+    if which == 'last':
+        history = eval_history.get_last_game()
+    else:
+        history = eval_history.get_current_game()
+    return jsonify({"history": history})
+
+@training_bp.route('/api/train/openings')
+def train_openings():
+    """Return opening frequency statistics."""
+    return jsonify({"openings": opening_tracker.get_top_openings(20)})
+
+@training_bp.route('/api/train/improvements')
+def train_improvements():
+    """Return recent improvement records."""
+    return jsonify({"improvements": improvement_tracker.get_recent(20)})
 
 @training_bp.route('/api/train/reset', methods=['POST'])
 def train_reset():

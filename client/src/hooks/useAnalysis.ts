@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGame } from '../GameContext';
 import { api } from '../api';
+import type { AnalysisResult } from '../types';
 
 export function useAnalysis() {
   const { state, dispatch, getCurrentFen } = useGame();
@@ -15,11 +16,31 @@ export function useAnalysis() {
       try {
         const result = await api.analyze(fen);
         dispatch({ type: 'SET_ANALYSIS', fen, analysis: result });
+
+        // Record eval data point for the chart
+        const analysis = result as AnalysisResult;
+        const moveIndex = state.currentViewIndex;
+        const san = state.allMoves[moveIndex] || '';
+        if (san && analysis.evaluation != null) {
+          // Determine quality from best move in analysis
+          const bestMove = analysis.move_analysis?.[0];
+          const quality = bestMove?.quality || 'ok';
+          dispatch({
+            type: 'ADD_EVAL_POINT',
+            point: {
+              move_num: Math.floor(moveIndex / 2) + 1,
+              san,
+              eval_cp: analysis.evaluation,
+              eval_norm: analysis.evaluation_normalized,
+              quality,
+            },
+          });
+        }
       } catch {
         dispatch({ type: 'SET_IS_ANALYZING', analyzing: false });
       }
     },
-    [dispatch]
+    [dispatch, state.currentViewIndex, state.allMoves]
   );
 
   // Debounce analysis when FEN changes

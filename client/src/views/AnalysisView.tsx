@@ -12,13 +12,15 @@ function EngineEvaluation() {
   const { state } = useGame();
   const analysis = state.analysis as AnalysisResult | null;
   const evalScore = analysis ? (analysis.evaluation / 100) : 0;
-  const normalizedEval = analysis?.evaluation_normalized ?? 0;
-
-  // Generate dummy eval history for chart (in real app, this would come from state)
-  const evalHistory = state.allMoves.map((_: string, i: number) => ({
+  const depth = (analysis as any)?.depth ?? 10;
+  // Real eval history from tracked data points
+  const evalHistory = state.evalHistory.map((p, i) => ({
     move: i + 1,
-    eval: (Math.sin(i * 0.3) * 0.5 + normalizedEval * 0.5).toFixed(2),
+    eval: (p.eval_cp / 100).toFixed(2),
   }));
+
+  // If no eval history yet, show empty chart
+  const chartData = evalHistory.length > 0 ? evalHistory : [{ move: 1, eval: '0' }];
 
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
@@ -30,20 +32,20 @@ function EngineEvaluation() {
           {evalScore > 0 ? '+' : ''}{evalScore.toFixed(2)}
         </Text>
         <div style={{ textAlign: 'right' }}>
-          <Text size="xs" c="#6E7681">Depth 24</Text>
-          <Text size="xs" c="#6E7681">Stockfish 16</Text>
+          <Text size="xs" c="#6E7681">Depth {depth}</Text>
+          <Text size="xs" c="#6E7681">Stockfish</Text>
         </div>
       </Group>
       <Text size="sm" c="#8B949E" mt={4}>
         {evalScore > 0.1 ? 'White is better' : evalScore < -0.1 ? 'Black is better' : 'Equal position'}
       </Text>
 
-      {/* Mini eval chart */}
+      {/* Eval chart from real data */}
       <div style={{ height: 60, marginTop: 12 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={evalHistory}>
+          <LineChart data={chartData}>
             <XAxis dataKey="move" hide />
-            <YAxis hide domain={[-2, 2]} />
+            <YAxis hide domain={['dataMin - 0.5', 'dataMax + 0.5']} />
             <ReferenceLine y={0} stroke="#30363D" />
             <Line
               type="monotone"
@@ -73,8 +75,8 @@ function TopMoves() {
         <Text size="sm" c="#6E7681">No analysis available</Text>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {moves.map((move: { san: string; eval: string }, i: number) => {
-            const evalVal = parseFloat(move.eval) || 0;
+          {moves.map((move, i: number) => {
+            const evalVal = (parseFloat(move.eval) || 0) / 100;
             const winPct = Math.max(0, Math.min(100, 50 + evalVal * 10));
             return (
               <Group key={i} justify="space-between" gap="xs">
@@ -108,6 +110,11 @@ function AnalysisMetrics() {
   const blunder = rows.find((r: { quality: string }) => r.quality === 'blunder');
   const mistake = rows.find((r: { quality: string }) => r.quality === 'bad');
 
+  // Compute accuracy from move qualities
+  const totalMoves = rows.length;
+  const goodMoves = rows.filter((r: { quality: string }) => ['best', 'good', 'book'].includes(r.quality)).length;
+  const accuracy = totalMoves > 0 ? ((goodMoves / totalMoves) * 100).toFixed(1) : '—';
+
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
       <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px', marginBottom: 8 }}>
@@ -115,11 +122,8 @@ function AnalysisMetrics() {
       </Text>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div>
-          <Text size="xs" c="#6E7681">Accuracy</Text>
-          <Group gap="xs">
-            <Badge size="sm" color="blue" variant="filled">NN: 88.7</Badge>
-            <Badge size="sm" color="gray" variant="filled">SF: 92.1</Badge>
-          </Group>
+          <Text size="xs" c="#6E7681">Accuracy (this position)</Text>
+          <Badge size="sm" color="blue" variant="filled">{accuracy}%</Badge>
         </div>
         <div>
           <Text size="xs" c="#6E7681">Best Move</Text>
@@ -147,11 +151,13 @@ function AnalysisMetrics() {
 function EvalChart() {
   const { state } = useGame();
 
-  // Generate dummy eval history for chart
-  const evalHistory = state.allMoves.map((_: string, i: number) => ({
+  // Real eval history from tracked data points
+  const evalHistory = state.evalHistory.map((p, i) => ({
     move: i + 1,
-    eval: (Math.sin(i * 0.3) * 0.8 + Math.random() * 0.2).toFixed(2),
+    eval: parseFloat((p.eval_cp / 100).toFixed(2)),
   }));
+
+  const chartData = evalHistory.length > 0 ? evalHistory : [{ move: 1, eval: 0 }];
 
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
@@ -160,9 +166,9 @@ function EvalChart() {
       </Text>
       <div style={{ height: 120 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={evalHistory}>
+          <LineChart data={chartData}>
             <XAxis dataKey="move" stroke="#6E7681" tick={{ fontSize: 10 }} />
-            <YAxis stroke="#6E7681" tick={{ fontSize: 10 }} domain={[-2, 2]} />
+            <YAxis stroke="#6E7681" tick={{ fontSize: 10 }} domain={['dataMin - 0.5', 'dataMax + 0.5']} />
             <ReferenceLine y={0} stroke="#30363D" />
             <Line
               type="monotone"
@@ -179,23 +185,68 @@ function EvalChart() {
 }
 
 function OpeningInfo() {
+  const { state } = useGame();
+  const moves = state.allMoves;
+  const moveNum = Math.floor(state.currentViewIndex / 2) + 1;
+
+  // Client-side opening detection
+  const openingName = detectOpeningSimple(moves);
+
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
       <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px', marginBottom: 8 }}>
         Opening Info
       </Text>
-      <Text size="sm" fw={600} c="#C9D1D9">Sicilian Defense</Text>
-      <Text size="xs" c="#6E7681">Najdorf Variation</Text>
+      <Text size="sm" fw={600} c="#C9D1D9">{openingName}</Text>
       <Group justify="space-between" mt={8}>
-        <Text size="xs" c="#6E7681">Move 12</Text>
-        <Text size="xs" c="#6E7681">Popularity: 45%</Text>
+        <Text size="xs" c="#6E7681">Move {moveNum}</Text>
       </Group>
     </Paper>
   );
 }
 
+/** Simple client-side opening detection from SAN moves */
+function detectOpeningSimple(moves: string[]): string {
+  if (moves.length === 0) return 'Unknown';
+  const m = moves.slice(0, 4);
+  if (m[0] === 'e4') {
+    if (m[1] === 'c5') return 'Sicilian Defense';
+    if (m[1] === 'e5') {
+      if (m[2] === 'Nf3') return "King's Knight Opening";
+      return 'Open Game';
+    }
+    if (m[1] === 'e6') return 'French Defense';
+    if (m[1] === 'c6') return 'Caro-Kann Defense';
+    if (m[1] === 'd5') return 'Scandinavian Defense';
+    if (m[1] === 'Nf6') return "Alekhine's Defense";
+    if (m[1] === 'd6') return 'Pirc Defense';
+    if (m[1] === 'g6') return 'Modern Defense';
+    return "King's Pawn Opening";
+  }
+  if (m[0] === 'd4') {
+    if (m[1] === 'd5') {
+      if (m[2] === 'c4') return "Queen's Gambit";
+      return "Queen's Pawn Opening";
+    }
+    if (m[1] === 'Nf6') {
+      if (m[2] === 'c4' && m[3] === 'g6') return "King's Indian Defense";
+      if (m[2] === 'c4' && m[3] === 'e6') return 'Nimzo/Queen\'s Indian';
+      if (m[2] === 'c4' && m[3] === 'c5') return 'Benoni Defense';
+      return 'Indian Defense';
+    }
+    if (m[1] === 'f5') return 'Dutch Defense';
+    return "Queen's Pawn Opening";
+  }
+  if (m[0] === 'c4') return 'English Opening';
+  if (m[0] === 'Nf3') return 'Reti Opening';
+  if (m[0] === 'b3') return "Larsen's Opening";
+  if (m[0] === 'f4') return "Bird's Opening";
+  return 'Unknown Opening';
+}
+
 export default function AnalysisView() {
   const { state } = useGame();
+  const s = state.trainingStatus;
   const whiteToMove = state.allMoves.length % 2 === 0;
 
   return (
@@ -209,8 +260,8 @@ export default function AnalysisView() {
         </Group>
 
         <PlayerInfoBar
-          name="Self-Play (NN)"
-          detail="vs Self"
+          name="Neural Network"
+          detail={s?.status === 'critic' ? 'vs Stockfish' : 'vs Self'}
           isTurn={!whiteToMove}
           color="top"
         />
@@ -221,8 +272,8 @@ export default function AnalysisView() {
         </div>
 
         <PlayerInfoBar
-          name="Fool's Gambit AI"
-          detail="Training"
+          name={s?.status === 'critic' ? 'Stockfish' : 'Neural Network'}
+          detail={s?.status === 'critic' ? 'Engine' : `Step ${(s?.step ?? 0).toLocaleString()}`}
           isTurn={whiteToMove}
           color="bottom"
         />

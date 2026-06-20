@@ -36,6 +36,8 @@ export interface TrainingStatus {
   recent_games?: RecentGame[];
   resources?: SystemResources | null;
   throughput?: ThroughputData | null;
+  top_openings?: OpeningEntry[];
+  recent_improvements?: ImprovementEntry[];
 }
 
 export interface SystemResources {
@@ -60,6 +62,30 @@ export interface ThroughputData {
   games_per_hour: number;
   positions_per_sec: number;
   train_steps_per_sec: number;
+}
+
+export interface OpeningEntry {
+  name: string;
+  count: number;
+  nn_win_rate: number;
+  white_wins: number;
+  draws: number;
+  black_wins: number;
+}
+
+export interface ImprovementEntry {
+  text: string;
+  type: string;
+  delta: number;
+  timestamp: number;
+}
+
+export interface EvalDataPoint {
+  move_num: number;
+  san: string;
+  eval_cp: number;
+  eval_norm: number;
+  quality: string;
 }
 
 /** A finished game entry */
@@ -92,6 +118,7 @@ export interface AnalysisResult {
   evaluation: number;
   evaluation_normalized: number;
   move_analysis: AnalysisRow[];
+  depth?: number;
   cached?: boolean;
 }
 

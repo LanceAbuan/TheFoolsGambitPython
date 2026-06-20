@@ -168,6 +168,13 @@ export function useSSE() {
         api.getMetrics().then((data: Record<string, Array<{ t: number; v: number }>>) => {
           dispatch({ type: 'SET_METRIC_HISTORY', history: data });
         }).catch(() => {});
+
+        // Load eval history for charts
+        api.getEvalHistory('current').then((data: { history: Array<{ move_num: number; san: string; eval_cp: number; eval_norm: number; quality: string }> }) => {
+          if (data.history) {
+            dispatch({ type: 'SET_EVAL_HISTORY', history: data.history });
+          }
+        }).catch(() => {});
       });
 
       source.addEventListener('error', () => {

@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useState, type ReactNode, type Dispatch, useRef, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import type { SSEEvent, TrainingStatus } from './types';
+import type { EvalDataPoint } from './types';
 import type { TabId } from './components/Layout/TabBar';
 
 /* ── Metric history data point ── */
@@ -29,6 +30,7 @@ export interface GameState {
   // Persistent data
   historicalEvents: SSEEvent[];
   metricHistory: Record<string, MetricDataPoint[]>;
+  evalHistory: EvalDataPoint[];
 }
 
 const initialState: GameState = {
@@ -49,6 +51,7 @@ const initialState: GameState = {
   whatHappening: 'Waiting for data...',
   historicalEvents: [],
   metricHistory: {},
+  evalHistory: [],
 };
 
 /* ── Actions ── */
@@ -71,7 +74,9 @@ export type GameAction =
   | { type: 'CLOSE_FULLSCREEN' }
   | { type: 'SET_WHAT_HAPPENING'; text: string }
   | { type: 'SET_HISTORICAL_EVENTS'; events: SSEEvent[] }
-  | { type: 'SET_METRIC_HISTORY'; history: Record<string, MetricDataPoint[]> };
+  | { type: 'SET_METRIC_HISTORY'; history: Record<string, MetricDataPoint[]> }
+  | { type: 'SET_EVAL_HISTORY'; history: EvalDataPoint[] }
+  | { type: 'ADD_EVAL_POINT'; point: EvalDataPoint };
 
 function reducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -99,6 +104,8 @@ function reducer(state: GameState, action: GameAction): GameState {
     case 'SET_WHAT_HAPPENING': return { ...state, whatHappening: action.text };
     case 'SET_HISTORICAL_EVENTS': return { ...state, historicalEvents: action.events };
     case 'SET_METRIC_HISTORY': return { ...state, metricHistory: action.history };
+    case 'SET_EVAL_HISTORY': return { ...state, evalHistory: action.history };
+    case 'ADD_EVAL_POINT': return { ...state, evalHistory: [...state.evalHistory, action.point] };
     default: return state;
   }
 }

@@ -89,6 +89,10 @@ function InfoPanel() {
   const analysis = state.analysis as AnalysisResult | null;
   const currentMove = state.allMoves[state.currentViewIndex];
   const moveNum = Math.floor(state.currentViewIndex / 2) + 1;
+  const s = state.trainingStatus;
+
+  // Determine opening from move history
+  const openingName = (s as any)?.last_game_result ? detectOpeningSimple(state.allMoves) : 'Unknown';
 
   return (
     <div
@@ -117,7 +121,7 @@ function InfoPanel() {
           <Text size="sm" c="#6E7681">No moves yet</Text>
         )}
         {state.isAnalyzing && (
-          <Text size="xs" c="#58a6ff" mt={4}>Stockfish is thinking...</Text>
+          <Text size="xs" c="#58a6ff" mt={4}>Analyzing...</Text>
         )}
       </Paper>
 
@@ -131,6 +135,7 @@ function InfoPanel() {
             <Text size="xl" fw={700} c={analysis.evaluation > 0 ? '#3fb950' : analysis.evaluation < 0 ? '#f85149' : '#C9D1D9'}>
               {analysis.evaluation > 0 ? '+' : ''}{(analysis.evaluation / 100).toFixed(2)}
             </Text>
+            <Text size="xs" c="#6E7681">Depth {analysis.depth ?? '—'}</Text>
           </Group>
         ) : (
           <Text size="sm" c="#6E7681">—</Text>
@@ -150,7 +155,9 @@ function InfoPanel() {
         <Group gap="xs">
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#484F58' }} />
           <Text size="sm" c="#C9D1D9">Black</Text>
-          <Text size="xs" c="#6E7681">Stockfish 16</Text>
+          <Text size="xs" c="#6E7681">
+            {s?.status === 'critic' ? 'Stockfish' : 'Neural Network'}
+          </Text>
         </Group>
       </Paper>
 
@@ -159,24 +166,66 @@ function InfoPanel() {
         <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px', marginBottom: 8 }}>
           Opening
         </Text>
-        <Text size="sm" c="#C9D1D9">Sicilian Defense</Text>
-        <Text size="xs" c="#6E7681">Najdorf Variation</Text>
+        <Text size="sm" c="#C9D1D9">{openingName}</Text>
+        <Text size="xs" c="#6E7681">Move {moveNum}</Text>
       </Paper>
     </div>
   );
 }
 
+/** Simple client-side opening detection from SAN moves */
+function detectOpeningSimple(moves: string[]): string {
+  if (moves.length === 0) return 'Unknown';
+  const m = moves.slice(0, 4);
+  if (m[0] === 'e4') {
+    if (m[1] === 'c5') return 'Sicilian Defense';
+    if (m[1] === 'e5') {
+      if (m[2] === 'Nf3') return "King's Knight Opening";
+      if (m[2] === 'f4') return "King's Gambit";
+      return 'Open Game';
+    }
+    if (m[1] === 'e6') return 'French Defense';
+    if (m[1] === 'c6') return 'Caro-Kann Defense';
+    if (m[1] === 'd5') return 'Scandinavian Defense';
+    if (m[1] === 'Nf6') return "Alekhine's Defense";
+    if (m[1] === 'd6') return 'Pirc Defense';
+    if (m[1] === 'g6') return 'Modern Defense';
+    return "King's Pawn Opening";
+  }
+  if (m[0] === 'd4') {
+    if (m[1] === 'd5') {
+      if (m[2] === 'c4') return "Queen's Gambit";
+      return "Queen's Pawn Opening";
+    }
+    if (m[1] === 'Nf6') {
+      if (m[2] === 'c4' && m[3] === 'g6') return "King's Indian Defense";
+      if (m[2] === 'c4' && m[3] === 'e6') return 'Nimzo/Queen\'s Indian';
+      if (m[2] === 'c4' && m[3] === 'c5') return 'Benoni Defense';
+      return 'Indian Defense';
+    }
+    if (m[1] === 'f5') return 'Dutch Defense';
+    return "Queen's Pawn Opening";
+  }
+  if (m[0] === 'c4') return 'English Opening';
+  if (m[0] === 'Nf3') return 'Reti Opening';
+  if (m[0] === 'b3') return "Larsen's Opening";
+  if (m[0] === 'f4') return "Bird's Opening";
+  return 'Unknown Opening';
+}
+
 export default function GamesView() {
   const { state, navigateToMove, setAutoFollow } = useGame();
+  const s = state.trainingStatus;
   const whiteToMove = state.allMoves.length % 2 === 0;
+  const statusLabel = s?.status || 'idle';
 
   // Build game list from state
   const games: GameEntry[] = [
     {
       id: 0,
       name: 'Main Training Game',
-      subtitle: `vs Stockfish 16`,
-      status: state.allMoves.length > 0 ? 'running' : 'waiting',
+      subtitle: s?.status === 'critic' ? 'vs Stockfish' : 'NN vs NN',
+      status: state.allMoves.length > 0 ? (statusLabel === 'training' ? 'thinking' : 'running') : 'waiting',
       eval: (state.analysis as AnalysisResult | null)?.evaluation != null
         ? ((state.analysis as AnalysisResult).evaluation / 100)
         : undefined,
@@ -192,18 +241,18 @@ export default function GamesView() {
         id: i,
         name: `Self-Play #${i}`,
         subtitle: 'NN vs NN',
-        status: moveCount > 0 ? 'running' : 'waiting',
+        status: 'running',
       });
     }
   }
 
   // Add recent finished games
-  const recentGames = state.trainingStatus?.recent_games || [];
-  recentGames.slice(0, 5).forEach((g: { game_id?: number; length: number; result?: string }, i: number) => {
+  const recentGames = s?.recent_games || [];
+  recentGames.slice(0, 5).forEach((g: { game_id?: number; length?: number; moves?: string[]; result?: string }, i: number) => {
     games.push({
       id: 100 + i,
-      name: `Game ${g.game_id ?? i + 1}`,
-      subtitle: `${g.length} moves`,
+      name: g.result ? `Game ${g.game_id ?? i + 1}` : `Game ${i + 1}`,
+      subtitle: `${g.moves?.length ?? g.length ?? 0} moves${g.result ? ` • ${g.result}` : ''}`,
       status: 'finished',
     });
   });
@@ -269,15 +318,17 @@ export default function GamesView() {
           <Text fw={700} size="lg" c="#C9D1D9">
             Main Training Game
           </Text>
-          <Badge color="green" variant="filled" size="sm">
-            Running
+          <Badge color={statusLabel === 'running' || statusLabel === 'playing' || statusLabel === 'critic' || statusLabel === 'self-play' ? 'green' : statusLabel === 'training' ? 'blue' : 'gray'} variant="filled" size="sm">
+            {statusLabel}
           </Badge>
         </Group>
-        <Text size="xs" c="#6E7681" mb={12}>vs Stockfish 16</Text>
+        <Text size="xs" c="#6E7681" mb={12}>
+          {s?.status === 'critic' ? 'vs Stockfish' : 'NN vs NN'}
+        </Text>
 
         <PlayerInfoBar
-          name="Self-Play (NN)"
-          detail="vs Self"
+          name="Neural Network"
+          detail={s?.status === 'critic' ? 'vs Stockfish' : 'vs Self'}
           isTurn={!whiteToMove}
           color="top"
         />
@@ -288,8 +339,8 @@ export default function GamesView() {
         </div>
 
         <PlayerInfoBar
-          name="Fool's Gambit AI"
-          detail="Training"
+          name={s?.status === 'critic' ? 'Stockfish' : 'Neural Network'}
+          detail={s?.status === 'critic' ? 'Engine' : `Step ${(s?.step ?? 0).toLocaleString()}`}
           isTurn={whiteToMove}
           color="bottom"
         />

@@ -10,6 +10,7 @@ import EvalBar from '../Board/EvalBar';
 export default function FullscreenOverlay() {
   const { state, dispatch } = useGame();
   const close = () => dispatch({ type: 'CLOSE_FULLSCREEN' });
+  const s = state.trainingStatus;
 
   const pos = state.fenCache.length > 0
     ? state.fenCache[Math.min(state.currentViewIndex, state.fenCache.length - 1)]
@@ -42,8 +43,8 @@ export default function FullscreenOverlay() {
         <EvalBar />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 0 }}>
           <PlayerInfoBar
-            name="Self-Play (NN)"
-            detail="vs Self"
+            name="Neural Network"
+            detail={s?.status === 'critic' ? 'vs Stockfish' : 'vs Self'}
             isTurn={state.allMoves.length % 2 !== 0}
             color="top"
           />
@@ -68,8 +69,8 @@ export default function FullscreenOverlay() {
             />
           </Paper>
           <PlayerInfoBar
-            name="Fool's Gambit AI"
-            detail="Training"
+            name={s?.status === 'critic' ? 'Stockfish' : 'Neural Network'}
+            detail={s?.status === 'critic' ? 'Engine' : `Step ${(s?.step ?? 0).toLocaleString()}`}
             isTurn={state.allMoves.length % 2 === 0}
             color="bottom"
           />
