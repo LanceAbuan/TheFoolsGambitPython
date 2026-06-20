@@ -62,10 +62,8 @@ function Dashboard() {
               color="bottom"
             />
             <BoardNav />
-          </div>
 
-          {/* Side games column — 3×3 grid */}
-          <div className="side-games-column">
+            {/* Side games — 3×3 grid directly below main board */}
             <div className="side-boards-grid">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
                 <SideBoard key={id} gameId={id} />
