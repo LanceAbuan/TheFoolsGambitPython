@@ -48,22 +48,9 @@ body {
   min-width: 0;
 }
 
-.sidebar-column {
-  width: 320px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  position: sticky;
-  top: 66px; /* header 50px + padding 16px */
-  height: calc(100vh - 82px); /* header 50px + padding 16*2 = 82 */
-  overflow-y: auto;
-  padding-right: 6px;
-}
-
 /* ── Side games column (between board and sidebar) ── */
 .side-games-column {
-  width: 280px;
+  width: 450px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -109,21 +96,6 @@ body {
   color: #fff;
 }
 
-/* ── Custom slick scrollbar for sidebar ── */
-.sidebar-column::-webkit-scrollbar {
-  width: 4px;
-}
-.sidebar-column::-webkit-scrollbar-track {
-  background: transparent;
-}
-.sidebar-column::-webkit-scrollbar-thumb {
-  background: #30363D;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-.sidebar-column::-webkit-scrollbar-thumb:hover {
-  background: #3B82F6;
-}
 
 /* ── Global scrollbar styling ── */
 ::-webkit-scrollbar {
@@ -158,7 +130,6 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  max-width: 672px;
   width: 100%;
   margin-top: 16px;
   margin-bottom: 24px;
@@ -170,13 +141,6 @@ body {
     flex-direction: column;
     padding: 8px;
     min-height: 0;
-  }
-
-  .sidebar-column {
-    width: 100%;
-    height: auto;
-    position: static;
-    overflow-y: visible;
   }
 
   .side-games-column {

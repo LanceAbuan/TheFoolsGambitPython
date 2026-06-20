@@ -1,9 +1,13 @@
 import { Group, Title, Badge, ActionIcon, Tooltip, Text } from '@mantine/core';
-import { IconRotate, IconMaximize, IconBook } from '@tabler/icons-react';
+import { IconRotate, IconMaximize, IconBook, IconLayoutSidebarRight } from '@tabler/icons-react';
 import { useGame } from '../../GameContext';
 import { Link } from 'react-router-dom';
 
-export default function TopBar() {
+interface TopBarProps {
+  onToggleSidebar?: () => void;
+}
+
+export default function TopBar({ onToggleSidebar }: TopBarProps) {
   const { state, flipBoard, dispatch } = useGame();
   const handleFullscreen = () => dispatch({ type: 'TOGGLE_FULLSCREEN' });
 
@@ -65,6 +69,11 @@ export default function TopBar() {
         <Tooltip label="Fullscreen">
           <ActionIcon onClick={handleFullscreen} variant="subtle" color="gray" size="md">
             <IconMaximize size={18} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Toggle stats panel">
+          <ActionIcon onClick={onToggleSidebar} variant="subtle" color="gray" size="md">
+            <IconLayoutSidebarRight size={18} />
           </ActionIcon>
         </Tooltip>
       </Group>
