@@ -7,16 +7,16 @@ body {
   overflow-x: hidden;
 }
 
-/* ── Dashboard: full viewport, sidebar fixed right ── */
+/* ── Dashboard layout ── */
 .dashboard-layout {
   display: flex;
-  height: 100vh;
-  overflow: hidden;
-  padding: 16px;
   gap: 16px;
+  padding: 16px;
+  flex: 1;
+  min-height: 0;
 }
 
-/* ── Main column: header + board + side games ── */
+/* ── Main column: title + board + side games ── */
 .main-column {
   flex: 1;
   display: flex;
@@ -26,6 +26,14 @@ body {
   overflow-y: auto;
 }
 
+/* ── Game title centered above board ── */
+.game-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 /* ── Board + side games side by side ── */
 .board-and-sides {
   display: flex;
@@ -33,15 +41,6 @@ body {
   gap: 16px;
   width: 100%;
   justify-content: center;
-}
-
-/* ── Board area: player info + board + nav ── */
-.board-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
 }
 
 /* ── Board row (eval bar + board side by side) ── */
@@ -87,8 +86,12 @@ body {
   gap: 10px;
   overflow-y: auto;
   padding-right: 6px;
+  position: sticky;
+  top: 66px;
+  height: calc(100vh - 82px);
 }
 
+/* ── Sidebar scrollbar ── */
 .sidebar-column::-webkit-scrollbar {
   width: 4px;
 }
@@ -154,8 +157,7 @@ body {
   .dashboard-layout {
     flex-direction: column;
     padding: 8px;
-    height: auto;
-    min-height: 100vh;
+    min-height: 0;
   }
 
   .main-column {
@@ -180,6 +182,7 @@ body {
   .sidebar-column {
     width: 100%;
     height: auto;
+    position: static;
     overflow-y: visible;
   }
 }
