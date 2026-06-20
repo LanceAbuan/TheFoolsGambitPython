@@ -61,6 +61,37 @@ body {
   padding-right: 6px;
 }
 
+/* ── Side games column (between board and sidebar) ── */
+.side-games-column {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 50px;           /* align with board row */
+  position: sticky;
+  top: 66px;
+  height: calc(100vh - 82px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.side-games-column::-webkit-scrollbar {
+  width: 4px;
+}
+.side-games-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+.side-games-column::-webkit-scrollbar-thumb {
+  background: #30363D;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+.side-games-column::-webkit-scrollbar-thumb:hover {
+  background: #3B82F6;
+}
+
 /* ── Move entry highlights ── */
 .move-entry {
   cursor: pointer;
@@ -146,6 +177,14 @@ body {
     height: auto;
     position: static;
     overflow-y: visible;
+  }
+
+  .side-games-column {
+    width: 100%;
+    height: auto;
+    position: static;
+    overflow-y: visible;
+    padding-top: 0;
   }
 
   .board-row {
