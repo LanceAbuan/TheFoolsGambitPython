@@ -51,9 +51,16 @@ function Dashboard() {
               isTurn={!whiteToMove}
               color="top"
             />
-            <div className="board-row">
-              <EvalBar />
-              <LiveBoard />
+            <div className="board-and-sides">
+              <div className="board-row">
+                <EvalBar />
+                <LiveBoard />
+              </div>
+              <div className="side-boards-grid">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
+                  <SideBoard key={id} gameId={id} />
+                ))}
+              </div>
             </div>
             <PlayerInfoBar
               name="Fool's Gambit AI"
@@ -62,13 +69,6 @@ function Dashboard() {
               color="bottom"
             />
             <BoardNav />
-
-            {/* Side games — 3×3 grid directly below main board */}
-            <div className="side-boards-grid">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
-                <SideBoard key={id} gameId={id} />
-              ))}
-            </div>
           </div>
         </div>
       </AppShell.Main>

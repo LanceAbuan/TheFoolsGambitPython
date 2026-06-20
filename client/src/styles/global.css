@@ -48,6 +48,14 @@ body {
   min-width: 0;
 }
 
+/* ── Board + side games side by side ── */
+.board-and-sides {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  justify-content: center;
+}
 
 /* ── Move entry highlights ── */
 .move-entry {
@@ -95,14 +103,13 @@ body {
   max-width: 672px;
 }
 
-/* ── Side boards grid (directly below main board) ── */
+/* ── Side boards grid (next to main board) ── */
 .side-boards-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  width: 100%;
-  max-width: 480px;
-  margin: 16px auto 24px;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 450px;
 }
 
 /* ── Responsive ── */
@@ -113,13 +120,18 @@ body {
     min-height: 0;
   }
 
+  .board-and-sides {
+    flex-direction: column;
+    align-items: center;
+  }
+
   .board-row {
     max-width: 100%;
   }
 
   .side-boards-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    max-width: 100%;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    width: 100%;
   }
 }
