@@ -29,7 +29,11 @@ export default function TopBar({ onToggleSidebar }: TopBarProps) {
         borderBottom: '1px solid #30363D',
       }}
     >
-      <Group gap="sm">
+      {/* Left spacer to balance right controls */}
+      <div style={{ width: 180 }} />
+
+      {/* Center — title + status */}
+      <Group gap="sm" justify="center">
         <Title
           order={4}
           style={{
@@ -52,6 +56,7 @@ export default function TopBar({ onToggleSidebar }: TopBarProps) {
         )}
       </Group>
 
+      {/* Right controls */}
       <Group gap={2} wrap="nowrap">
         <Link to="/docs" style={{ textDecoration: 'none' }}>
           <Group gap={2} style={{ color: '#c9d1d9' }}>
