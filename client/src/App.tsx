@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { AppShell, Drawer } from '@mantine/core';
 import { useGame } from './GameContext';
 import { useSSE } from './hooks/useSSE';
 import { useStatus } from './hooks/useStatus';
@@ -22,81 +21,52 @@ import Docs from './pages/Docs';
 /** Main training dashboard */
 function Dashboard() {
   const { state } = useGame();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const whiteToMove = state.allMoves.length % 2 === 0;
 
   return (
-    <AppShell
-      header={{ height: 50 }}
-      styles={{
-        main: {
-          background: '#0D1117',
-          paddingTop: '50px',
-          paddingLeft: 0,
-          paddingRight: 0,
-        },
-      }}
-    >
-      <AppShell.Header>
-        <TopBar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
-      </AppShell.Header>
+    <div className="dashboard-layout">
+      <div className="main-column">
+        {/* Header scoped to main board area */}
+        <TopBar />
 
-      <AppShell.Main>
-        <div className="main-layout" style={{ padding: 16 }}>
-          {/* Center column */}
-          <div className="main-column">
-            <PlayerInfoBar
-              name="Self-Play (NN)"
-              detail="vs Self"
-              isTurn={!whiteToMove}
-              color="top"
-            />
-            <div className="board-and-sides">
-              <div className="board-row">
-                <EvalBar />
-                <LiveBoard />
-              </div>
-              <div className="side-boards-grid">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
-                  <SideBoard key={id} gameId={id} />
-                ))}
-              </div>
-            </div>
-            <PlayerInfoBar
-              name="Fool's Gambit AI"
-              detail="Training"
-              isTurn={whiteToMove}
-              color="bottom"
-            />
-            <BoardNav />
+        <PlayerInfoBar
+          name="Self-Play (NN)"
+          detail="vs Self"
+          isTurn={!whiteToMove}
+          color="top"
+        />
+
+        {/* Board + side games side by side */}
+        <div className="board-and-sides">
+          <div className="board-row">
+            <EvalBar />
+            <LiveBoard />
+          </div>
+          <div className="side-boards-grid">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
+              <SideBoard key={id} gameId={id} />
+            ))}
           </div>
         </div>
-      </AppShell.Main>
 
-      {/* Sidebar as collapsible Drawer */}
-      <Drawer
-        opened={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        position="right"
-        size={360}
-        title="Training Stats"
-        styles={{
-          title: { color: '#C9D1D9', fontWeight: 700, fontSize: '14px' },
-          header: { background: '#161B22', borderBottom: '1px solid #30363D' },
-          content: { background: '#0D1117' },
-          body: { background: '#0D1117' },
-          close: { color: '#8B949E' },
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <MoveList />
-          <SSEEventLog />
-          <AnalysisTable />
-          <MetricsGrid />
-          <RecentGames />
-        </div>
-      </Drawer>
-    </AppShell>
+        <PlayerInfoBar
+          name="Fool's Gambit AI"
+          detail="Training"
+          isTurn={whiteToMove}
+          color="bottom"
+        />
+        <BoardNav />
+      </div>
+
+      {/* Fixed sidebar */}
+      <div className="sidebar-column">
+        <MoveList />
+        <SSEEventLog />
+        <AnalysisTable />
+        <MetricsGrid />
+        <RecentGames />
+      </div>
+    </div>
   );
 }
 

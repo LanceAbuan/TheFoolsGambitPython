@@ -7,6 +7,43 @@ body {
   overflow-x: hidden;
 }
 
+/* ── Dashboard: full viewport, sidebar fixed right ── */
+.dashboard-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  padding: 16px;
+  gap: 16px;
+}
+
+/* ── Main column: header + board + side games ── */
+.main-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* ── Board + side games side by side ── */
+.board-and-sides {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Board area: player info + board + nav ── */
+.board-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
 /* ── Board row (eval bar + board side by side) ── */
 .board-row {
   display: flex;
@@ -32,29 +69,39 @@ body {
   max-width: 672px;
 }
 
-/* ── Main layout ── */
-.main-layout {
-  display: flex;
-  gap: 16px;
-  flex: 1;
-  min-height: 0;
+/* ── Side boards grid (next to board) ── */
+.side-boards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex-shrink: 0;
+  width: 450px;
 }
 
-.main-column {
-  flex: 1;
+/* ── Sidebar column ── */
+.sidebar-column {
+  width: 320px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  min-width: 0;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
-/* ── Board + side games side by side ── */
-.board-and-sides {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  width: 100%;
-  justify-content: center;
+.sidebar-column::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-column::-webkit-scrollbar-thumb {
+  background: #30363D;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+.sidebar-column::-webkit-scrollbar-thumb:hover {
+  background: #3B82F6;
 }
 
 /* ── Move entry highlights ── */
@@ -73,7 +120,6 @@ body {
   background: #30363D;
   color: #fff;
 }
-
 
 /* ── Global scrollbar styling ── */
 ::-webkit-scrollbar {
@@ -103,21 +149,17 @@ body {
   max-width: 672px;
 }
 
-/* ── Side boards grid (next to main board) ── */
-.side-boards-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  flex-shrink: 0;
-  width: 450px;
-}
-
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .main-layout {
+  .dashboard-layout {
     flex-direction: column;
     padding: 8px;
-    min-height: 0;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .main-column {
+    overflow-y: visible;
   }
 
   .board-and-sides {
@@ -133,5 +175,11 @@ body {
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     width: 100%;
+  }
+
+  .sidebar-column {
+    width: 100%;
+    height: auto;
+    overflow-y: visible;
   }
 }
