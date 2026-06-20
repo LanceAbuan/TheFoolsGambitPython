@@ -20,8 +20,11 @@ export interface TrainingStatus {
   step: number;
   games_played: number;
   loss: number | null;
+  policy_loss?: number | null;
+  value_loss?: number | null;
   estimated_elo: number | null;
   buffer_size: number;
+  learning_rate?: number;
   side_games_completed?: number;
   cycle?: CycleInfo;
   current_game?: {
@@ -31,6 +34,32 @@ export interface TrainingStatus {
     fen?: string;
   };
   recent_games?: RecentGame[];
+  resources?: SystemResources | null;
+  throughput?: ThroughputData | null;
+}
+
+export interface SystemResources {
+  cpu_percent: number;
+  cpu_count: number;
+  ram: {
+    total_gb: number;
+    used_gb: number;
+    percent: number;
+  };
+  gpu?: {
+    name: string;
+    memory_total_gb: number;
+    memory_used_gb: number;
+    memory_reserved_gb: number;
+    memory_percent: number;
+    utilization_percent?: number;
+  };
+}
+
+export interface ThroughputData {
+  games_per_hour: number;
+  positions_per_sec: number;
+  train_steps_per_sec: number;
 }
 
 /** A finished game entry */

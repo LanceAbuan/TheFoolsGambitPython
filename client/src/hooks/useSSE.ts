@@ -150,6 +150,24 @@ export function useSSE() {
           // Seed side games (skips ones already in sync)
           seedSideGames(status);
         }).catch(() => {});
+
+        // Load persistent historical events
+        api.getEvents(500).then((data: { events: Array<{ type: string; data: unknown; timestamp: number }> }) => {
+          if (data.events) {
+            const historical: SSEEvent[] = data.events.map((ev, i) => ({
+              id: -(data.events.length - i),  // negative IDs so they don't clash with live events
+              type: ev.type || 'unknown',
+              data: ev.data || {},
+              timestamp: ev.timestamp ? ev.timestamp * 1000 : Date.now(),
+            }));
+            dispatch({ type: 'SET_HISTORICAL_EVENTS', events: historical });
+          }
+        }).catch(() => {});
+
+        // Load metric history for sparklines
+        api.getMetrics().then((data: Record<string, Array<{ t: number; v: number }>>) => {
+          dispatch({ type: 'SET_METRIC_HISTORY', history: data });
+        }).catch(() => {});
       });
 
       source.addEventListener('error', () => {

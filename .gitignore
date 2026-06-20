@@ -13,6 +13,8 @@ model_dir/
 nohup.out
 # Eval cache (regenerated from Stockfish)
 eval_cache.json
+# Persistent event/metric data
+data/
 # Log files
 *.log
 # Client build output

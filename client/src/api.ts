@@ -61,4 +61,20 @@ export const api = {
   /** Get recent games list */
   getGames: () =>
     fetch(`${API_BASE}/api/train/games`).then((r) => r.json()),
+
+  /** Get persistent historical events */
+  getEvents: (limit = 500) =>
+    fetch(`${API_BASE}/api/train/events?limit=${limit}`).then((r) => r.json()),
+
+  /** Get metric history for sparkline charts */
+  getMetrics: (key?: string, limit = 100) => {
+    const params = new URLSearchParams();
+    if (key) params.set('key', key);
+    params.set('limit', String(limit));
+    return fetch(`${API_BASE}/api/train/metrics?${params}`).then((r) => r.json());
+  },
+
+  /** Get system resource usage */
+  getResources: () =>
+    fetch(`${API_BASE}/api/train/resources`).then((r) => r.json()),
 };

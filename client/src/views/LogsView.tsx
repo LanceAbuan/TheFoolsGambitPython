@@ -82,17 +82,25 @@ export default function LogsView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isPaused, setIsPaused] = useState(false);
 
-  // Convert SSE events to log entries
+  // Merge historical events and live events, dedup by id
   const logs: LogEntry[] = useMemo(() => {
-    return state.sseEvents.map((ev: { id: number; type: string; data: unknown; timestamp: number }) => ({
-      id: ev.id,
-      time: new Date(ev.timestamp).toLocaleTimeString(),
-      level: getLevelFromType(ev.type),
-      category: getCategoryFromType(ev.type),
-      message: ev.type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
-      details: typeof ev.data === 'object' ? JSON.stringify(ev.data).slice(0, 150) : String(ev.data).slice(0, 150),
-    }));
-  }, [state.sseEvents]);
+    const allEvents = [...state.historicalEvents, ...state.sseEvents];
+    const seen = new Set<number>();
+    const unique: LogEntry[] = [];
+    for (const ev of allEvents) {
+      if (seen.has(ev.id)) continue;
+      seen.add(ev.id);
+      unique.push({
+        id: ev.id,
+        time: new Date(ev.timestamp).toLocaleTimeString(),
+        level: getLevelFromType(ev.type),
+        category: getCategoryFromType(ev.type),
+        message: ev.type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+        details: typeof ev.data === 'object' ? JSON.stringify(ev.data).slice(0, 150) : String(ev.data).slice(0, 150),
+      });
+    }
+    return unique;
+  }, [state.historicalEvents, state.sseEvents]);
 
   // Filter logs
   const filteredLogs = useMemo(() => {

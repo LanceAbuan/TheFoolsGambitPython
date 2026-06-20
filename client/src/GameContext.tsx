@@ -3,6 +3,12 @@ import { Chess } from 'chess.js';
 import type { SSEEvent, TrainingStatus } from './types';
 import type { TabId } from './components/Layout/TabBar';
 
+/* ── Metric history data point ── */
+export interface MetricDataPoint {
+  t: number;  // timestamp
+  v: number;  // value
+}
+
 /* ── State shape ── */
 export interface GameState {
   allMoves: string[];
@@ -20,6 +26,9 @@ export interface GameState {
   isAnalyzing: boolean;
   isFullscreen: boolean;
   whatHappening: string;
+  // Persistent data
+  historicalEvents: SSEEvent[];
+  metricHistory: Record<string, MetricDataPoint[]>;
 }
 
 const initialState: GameState = {
@@ -38,6 +47,8 @@ const initialState: GameState = {
   isAnalyzing: false,
   isFullscreen: false,
   whatHappening: 'Waiting for data...',
+  historicalEvents: [],
+  metricHistory: {},
 };
 
 /* ── Actions ── */
@@ -58,7 +69,9 @@ export type GameAction =
   | { type: 'SET_IS_ANALYZING'; analyzing: boolean }
   | { type: 'TOGGLE_FULLSCREEN' }
   | { type: 'CLOSE_FULLSCREEN' }
-  | { type: 'SET_WHAT_HAPPENING'; text: string };
+  | { type: 'SET_WHAT_HAPPENING'; text: string }
+  | { type: 'SET_HISTORICAL_EVENTS'; events: SSEEvent[] }
+  | { type: 'SET_METRIC_HISTORY'; history: Record<string, MetricDataPoint[]> };
 
 function reducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -84,6 +97,8 @@ function reducer(state: GameState, action: GameAction): GameState {
     case 'TOGGLE_FULLSCREEN': return { ...state, isFullscreen: !state.isFullscreen };
     case 'CLOSE_FULLSCREEN': return { ...state, isFullscreen: false };
     case 'SET_WHAT_HAPPENING': return { ...state, whatHappening: action.text };
+    case 'SET_HISTORICAL_EVENTS': return { ...state, historicalEvents: action.events };
+    case 'SET_METRIC_HISTORY': return { ...state, metricHistory: action.history };
     default: return state;
   }
 }
