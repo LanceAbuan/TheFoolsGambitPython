@@ -152,7 +152,88 @@ body {
   max-width: 672px;
 }
 
+/* ── View containers ── */
+.view-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Collapsible panel ── */
+.collapsible-panel {
+  position: relative;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #161B22;
+  border-right: 1px solid #30363D;
+}
+
+/* ── Tab content ── */
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 50px);
+}
+
+/* ── Paper card base ── */
+.paper-card {
+  background: #161B22;
+  border: 1px solid #21262D;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* ── Metric card ── */
+.metric-card {
+  background: #0D1117;
+  border: 1px solid #21262D;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+/* ── Log level badges ── */
+.log-level-info {
+  background: #58a6ff;
+  color: #fff;
+}
+
+.log-level-warning {
+  background: #d6b81e;
+  color: #000;
+}
+
+.log-level-error {
+  background: #f85149;
+  color: #fff;
+}
+
+/* ── Progress bar colors ── */
+.progress-green {
+  background: #3fb950;
+}
+
+.progress-blue {
+  background: #58a6ff;
+}
+
+.progress-yellow {
+  background: #d6b81e;
+}
+
+.progress-red {
+  background: #f85149;
+}
+
 /* ── Responsive ── */
+@media (max-width: 1200px) {
+  .training-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
 @media (max-width: 768px) {
   .dashboard-layout {
     flex-direction: column;
@@ -184,5 +265,20 @@ body {
     height: auto;
     position: static;
     overflow-y: visible;
+  }
+
+  /* Mobile view adjustments */
+  .view-container {
+    flex-direction: column;
+  }
+
+  .collapsible-panel {
+    width: 100% !important;
+    border-right: none;
+    border-bottom: 1px solid #30363D;
+  }
+
+  .training-grid {
+    grid-template-columns: 1fr !important;
   }
 }

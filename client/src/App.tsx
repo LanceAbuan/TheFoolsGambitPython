@@ -1,28 +1,36 @@
 import { useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { AppShell, Text, Badge } from '@mantine/core';
+import { AppShell } from '@mantine/core';
 import { useGame } from './GameContext';
 import { useSSE } from './hooks/useSSE';
 import { useStatus } from './hooks/useStatus';
 import { useAnalysis } from './hooks/useAnalysis';
-import TopBar from './components/Layout/TopBar';
-import PlayerInfoBar from './components/Board/PlayerInfoBar';
-import LiveBoard from './components/Board/LiveBoard';
-import BoardNav from './components/Board/BoardNav';
-import EvalBar from './components/Board/EvalBar';
-import MoveList from './components/Analysis/MoveList';
-import AnalysisTable from './components/Analysis/AnalysisTable';
-import MetricsGrid from './components/Metrics/MetricsGrid';
-import SSEEventLog from './components/SSE/SSEEventLog';
-import RecentGames from './components/Games/RecentGames';
-import SideBoard from './components/Games/SideBoard';
+import TabBar from './components/Layout/TabBar';
+import GamesView from './views/GamesView';
+import AnalysisView from './views/AnalysisView';
+import TrainingView from './views/TrainingView';
+import LogsView from './views/LogsView';
 import FullscreenOverlay from './components/Fullscreen/FullscreenOverlay';
 import Docs from './pages/Docs';
 
 /** Main training dashboard */
 function Dashboard() {
-  const { state } = useGame();
-  const whiteToMove = state.allMoves.length % 2 === 0;
+  const { activeTab, setActiveTab } = useGame();
+
+  const renderView = () => {
+    switch (activeTab) {
+      case 'games':
+        return <GamesView />;
+      case 'analysis':
+        return <AnalysisView />;
+      case 'training':
+        return <TrainingView />;
+      case 'logs':
+        return <LogsView />;
+      default:
+        return <GamesView />;
+    }
+  };
 
   return (
     <AppShell
@@ -37,59 +45,12 @@ function Dashboard() {
       }}
     >
       <AppShell.Header>
-        <TopBar />
+        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
       </AppShell.Header>
 
       <AppShell.Main>
-        <div className="dashboard-layout">
-          <div className="main-column">
-            {/* Game title centered over board */}
-            <div className="game-title-row">
-              <Text fw={700} size="lg" c="#C9D1D9">
-                Fool's Gambit
-              </Text>
-              <Badge color="blue" variant="light" size="sm">
-                Training
-              </Badge>
-            </div>
-
-            <PlayerInfoBar
-              name="Self-Play (NN)"
-              detail="vs Self"
-              isTurn={!whiteToMove}
-              color="top"
-            />
-
-            {/* Board + side games side by side */}
-            <div className="board-and-sides">
-              <div className="board-row">
-                <EvalBar />
-                <LiveBoard />
-              </div>
-              <div className="side-boards-grid">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((id) => (
-                  <SideBoard key={id} gameId={id} />
-                ))}
-              </div>
-            </div>
-
-            <PlayerInfoBar
-              name="Fool's Gambit AI"
-              detail="Training"
-              isTurn={whiteToMove}
-              color="bottom"
-            />
-            <BoardNav />
-          </div>
-
-          {/* Fixed sidebar */}
-          <div className="sidebar-column">
-            <MoveList />
-            <SSEEventLog />
-            <AnalysisTable />
-            <MetricsGrid />
-            <RecentGames />
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 50px)' }}>
+          {renderView()}
         </div>
       </AppShell.Main>
     </AppShell>

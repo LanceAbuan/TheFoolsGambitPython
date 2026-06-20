@@ -1,6 +1,7 @@
-import { createContext, useContext, useReducer, type ReactNode, type Dispatch, useRef, useCallback } from 'react';
+import { createContext, useContext, useReducer, useState, type ReactNode, type Dispatch, useRef, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import type { SSEEvent, TrainingStatus } from './types';
+import type { TabId } from './components/Layout/TabBar';
 
 /* ── State shape ── */
 export interface GameState {
@@ -97,12 +98,15 @@ interface GameContextType {
   navigateToMove: (index: number) => void;
   setAutoFollow: (follow: boolean) => void;
   flipBoard: () => void;
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [activeTab, setActiveTab] = useState<TabId>('games');
   const mainGameRef = useRef<Chess | null>(null);
   const sideGameRefs = useRef<Record<number, Chess | null>>({});
 
@@ -127,7 +131,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <GameContext.Provider value={{ state, dispatch, mainGameRef, sideGameRefs, getCurrentFen, navigateToMove, setAutoFollow, flipBoard }}>
+    <GameContext.Provider value={{ state, dispatch, mainGameRef, sideGameRefs, getCurrentFen, navigateToMove, setAutoFollow, flipBoard, activeTab, setActiveTab }}>
       {children}
     </GameContext.Provider>
   );
