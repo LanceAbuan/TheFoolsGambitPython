@@ -151,6 +151,19 @@ export const theme = createTheme({
       chessLight: '#b7b09c',
       sectionHeaderBorder: '#30363D',
       accentBlue: '#58a6ff',
+      // Tab colors
+      tabActive: '#58a6ff',
+      tabInactive: '#8B949E',
+      tabHover: 'rgba(88, 166, 255, 0.08)',
+      // Status colors
+      statusRunning: '#3fb950',
+      statusThinking: '#d6b81e',
+      statusFinished: '#8B949E',
+      statusWaiting: '#58a6ff',
+      // Log level colors
+      logInfo: '#58a6ff',
+      logWarning: '#d6b81e',
+      logError: '#f85149',
     },
   },
 });

@@ -25,7 +25,8 @@ export default function TopBar() {
         borderBottom: '1px solid #30363D',
       }}
     >
-      <Group gap="sm">
+      {/* Left: title + status */}
+      <Group gap="sm" wrap="nowrap">
         <Title
           order={4}
           style={{
@@ -34,6 +35,7 @@ export default function TopBar() {
             background: 'linear-gradient(135deg, #58a6ff, #3fb950)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
+            whiteSpace: 'nowrap',
           }}
         >
           Fool's Gambit
@@ -42,13 +44,14 @@ export default function TopBar() {
           {state.sseStatus}
         </Badge>
         {state.whatHappening && (
-          <Text size="xs" c="#6E7681" truncate="end" style={{ maxWidth: 300 }}>
+          <Text size="xs" c="#6E7681" truncate="end" style={{ maxWidth: 400 }}>
             {state.whatHappening}
           </Text>
         )}
       </Group>
 
-      <Group gap={2} wrap="nowrap">
+      {/* Right: controls */}
+      <Group gap={4} wrap="nowrap">
         <Link to="/docs" style={{ textDecoration: 'none' }}>
           <Group gap={2} style={{ color: '#c9d1d9' }}>
             <ActionIcon variant="subtle" color="gray" size="md">

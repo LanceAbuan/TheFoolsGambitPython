@@ -22,6 +22,7 @@ from .trainer import Trainer, LOCAL_MODEL_DIR, MIN_BATCH_SIZE
 from .tensorize import board_to_tensor
 from .stockfish_engine import StockfishPlayer
 from .critic_game import CriticGame
+from .persistence import EventLog, MetricHistory, EvalHistory, OpeningTracker, ImprovementTracker, get_system_resources
 
 training_bp = Blueprint('training', __name__)
 
@@ -30,6 +31,13 @@ training_thread = None
 _lock = threading.Lock()
 recent_games = []
 sse_event_queue = queue.Queue(maxsize=5000)
+
+# ---- PERSISTENT STORAGE ----
+event_log = EventLog()
+metric_history = MetricHistory()
+eval_history = EvalHistory()
+opening_tracker = OpeningTracker()
+improvement_tracker = ImprovementTracker()
 
 # ---- BROADCAST MANAGER ----
 class StreamManager:
@@ -55,6 +63,15 @@ class StreamManager:
         while True:
             try:
                 event = self.source_queue.get(timeout=1.0)
+                # Store to persistent event log
+                try:
+                    event_log.add({
+                        'type': event.get('_sse_event', 'unknown'),
+                        'data': {k: v for k, v in event.items() if k not in ('_sse_event',)},
+                        'timestamp': event.get('timestamp', time.time()),
+                    })
+                except Exception:
+                    pass
                 # Extract optional SSE event name
                 sse_name = event.pop('_sse_event', None)
                 # Also strip internal-only keys before serialising
@@ -135,6 +152,13 @@ _games_this_cycle = 0
 _steps_this_cycle = 0
 _games_per_cycle = 10
 _steps_per_cycle = 20
+
+# ---- THROUGHPUT TRACKING ----
+_throughput_start_time = time.time()
+_throughput_games = 0
+_throughput_positions = 0
+_throughput_mcts_nodes = 0
+_throughput_train_steps = 0
 
 # ---- EVAL CACHE ----
 # LRU cache: FEN -> {eval_cp, eval_norm, top_moves, move_analysis, timestamp}
@@ -526,6 +550,26 @@ def train_status():
     }
 
     status['recent_games'] = recent_games[-20:]
+
+    # Add system resources
+    try:
+        status['resources'] = get_system_resources()
+    except Exception as e:
+        log.warning(f'[STATUS] Failed to get resources: {e}')
+        status['resources'] = None
+
+    # Add top openings
+    try:
+        status['top_openings'] = opening_tracker.get_top_openings(10)
+    except Exception:
+        status['top_openings'] = []
+
+    # Add recent improvements
+    try:
+        status['recent_improvements'] = improvement_tracker.get_recent(5)
+    except Exception:
+        status['recent_improvements'] = []
+
     return jsonify(status)
 
 
@@ -556,7 +600,9 @@ def train_start():
     def _training_loop():
         global training_thread, _games_this_cycle, _steps_this_cycle, _games_per_cycle, _steps_per_cycle
         global _side_at_last_train
+        global _throughput_games, _throughput_positions, _throughput_train_steps
         t.running = True
+        _throughput_start_time = time.time()
         # Train a few steps after each batch of 10 total games (1 main + 9 side)
         steps_per_batch = max(1, steps_per_cycle // games_per_cycle)
         try:
@@ -577,8 +623,9 @@ def train_start():
                 current_game_status = "playing"
 
                 def on_move_callback(moves):
-                    global current_game_moves
+                    global current_game_moves, _throughput_positions
                     current_game_moves = moves
+                    _throughput_positions += 1
                     try:
                         sse_event_queue.put_nowait({
                             "_sse_event": "game_progress",
@@ -594,6 +641,7 @@ def train_start():
                 game_data = t.play_game(on_move=on_move_callback)
                 result = game_data.get('result', '*')
                 moves = game_data.get('moves', [])
+                _throughput_games += 1
 
                 current_game_moves = moves
                 recent_games.append({
@@ -606,8 +654,53 @@ def train_start():
                 if len(recent_games) > 100:
                     recent_games.pop(0)
 
+                # Track opening for this game
+                try:
+                    opening_tracker.record_game(moves, result, result == '1-0')
+                except Exception as e:
+                    log.warning(f'[TRAINING] Opening tracking error: {e}')
+
+                # Check for improvements
+                try:
+                    prev_elo = t.estimate_elo()
+                    sf_results = t._sf_results
+                    total_sf = len(sf_results)
+                    wins_sf = sum(1 for r in sf_results[-10:] if r == 1.0)
+                    prev_win_rate = (wins_sf / max(total_sf, 1)) * 100
+                    prev_loss = t.loss
+
+                    # After game, check new values
+                    curr_elo = t.estimate_elo()
+                    curr_sf_results = t._sf_results
+                    curr_wins = sum(1 for r in curr_sf_results[-10:] if r == 1.0)
+                    curr_win_rate = (curr_wins / max(len(curr_sf_results), 1)) * 100
+                    curr_loss = t.loss
+
+                    improvement_tracker.check_and_record(
+                        prev_elo, curr_elo,
+                        prev_win_rate, curr_win_rate,
+                        prev_loss, curr_loss,
+                    )
+                except Exception as e:
+                    log.warning(f'[TRAINING] Improvement tracking error: {e}')
+
+                # Record game metrics to history
+                metric_history.record({
+                    'loss': t.loss,
+                    'policy_loss': t.policy_loss,
+                    'value_loss': t.value_loss,
+                    'elo': t.estimate_elo(),
+                    'buffer_size': len(t.buffer),
+                    'games_played': t.games_played,
+                })
+
                 # Push game-finished event to SSE
                 try:
+                    elapsed = time.time() - _throughput_start_time
+                    games_per_hour = (_throughput_games / elapsed * 3600) if elapsed > 0 else 0
+                    positions_per_sec = (_throughput_positions / elapsed) if elapsed > 0 else 0
+                    train_steps_per_sec = (_throughput_train_steps / elapsed) if elapsed > 0 else 0
+
                     sse_event_queue.put_nowait({
                         "_sse_event": "game_progress",
                         "game_id": 0,
@@ -624,10 +717,15 @@ def train_start():
                             "result": result,
                             "buffer_size": len(t.buffer),
                             "loss": t.loss,
-                            "step": t.step,
                             "policy_loss": t.policy_loss,
                             "value_loss": t.value_loss,
+                            "step": t.step,
                             "estimated_elo": t.estimate_elo(),
+                            "throughput": {
+                                "games_per_hour": round(games_per_hour, 1),
+                                "positions_per_sec": round(positions_per_sec, 0),
+                                "train_steps_per_sec": round(train_steps_per_sec, 1),
+                            },
                             "cycle": {
                                 "games_this_cycle": _games_this_cycle,
                                 "games_per_cycle": _games_per_cycle,
@@ -652,6 +750,16 @@ def train_start():
                         training_result = t.train_step()
                         if training_result:
                             _steps_this_cycle += 1
+                            _throughput_train_steps += 1
+                            # Record training metrics
+                            metric_history.record({
+                                'loss': training_result['loss'],
+                                'policy_loss': training_result.get('policy_loss'),
+                                'value_loss': training_result.get('value_loss'),
+                                'elo': t.estimate_elo(),
+                                'buffer_size': training_result.get('buffer_size', 0),
+                                'games_played': t.games_played,
+                            })
                             try:
                                 sse_event_queue.put_nowait({
                                     "_sse_event": "status_update",
@@ -659,7 +767,10 @@ def train_start():
                                         "status": "training",
                                         "step": training_result['step'],
                                         "loss": training_result['loss'],
+                                        "policy_loss": training_result.get('policy_loss'),
+                                        "value_loss": training_result.get('value_loss'),
                                         "buffer_size": training_result.get('buffer_size', 0),
+                                        "estimated_elo": t.estimate_elo(),
                                         "cycle": {
                                             "games_this_cycle": _games_this_cycle,
                                             "games_per_cycle": _games_per_cycle,
@@ -762,6 +873,7 @@ def train_analyze():
             'evaluation_normalized': cached['eval_norm'],
             'top_moves': cached['top_moves'],
             'move_analysis': cached['move_analysis'],
+            'depth': cached.get('depth', 10),
             'cached': True
         })
 
@@ -773,6 +885,7 @@ def train_analyze():
         'evaluation_normalized': result['eval_norm'],
         'top_moves': result['top_moves'],
         'move_analysis': result['move_analysis'],
+        'depth': result.get('depth', 10),
         'cached': False
     })
 
@@ -795,6 +908,51 @@ def download_model():
         return jsonify({"error": "No model available"}), 404
     from flask import send_file
     return send_file(model_path, mimetype='application/octet-stream')
+
+@training_bp.route('/api/train/events')
+def train_events():
+    """Return persistent historical events for the log viewer."""
+    limit = request.args.get('limit', 500, type=int)
+    events = event_log.get_all(limit=limit)
+    return jsonify({"events": events, "total": len(event_log.get_all())})
+
+@training_bp.route('/api/train/metrics')
+def train_metrics():
+    """Return metric history for sparkline charts."""
+    key = request.args.get('key', None)
+    limit = request.args.get('limit', 100, type=int)
+    if key:
+        history = metric_history.get_history(key, limit=limit)
+        return jsonify({key: history})
+    else:
+        all_history = metric_history.get_all()
+        return jsonify(all_history)
+
+@training_bp.route('/api/train/resources')
+def train_resources():
+    """Return current system resource usage."""
+    resources = get_system_resources()
+    return jsonify(resources)
+
+@training_bp.route('/api/train/eval-history')
+def train_eval_history():
+    """Return per-move evaluation history for charting."""
+    which = request.args.get('which', 'current')  # 'current' or 'last'
+    if which == 'last':
+        history = eval_history.get_last_game()
+    else:
+        history = eval_history.get_current_game()
+    return jsonify({"history": history})
+
+@training_bp.route('/api/train/openings')
+def train_openings():
+    """Return opening frequency statistics."""
+    return jsonify({"openings": opening_tracker.get_top_openings(20)})
+
+@training_bp.route('/api/train/improvements')
+def train_improvements():
+    """Return recent improvement records."""
+    return jsonify({"improvements": improvement_tracker.get_recent(20)})
 
 @training_bp.route('/api/train/reset', methods=['POST'])
 def train_reset():

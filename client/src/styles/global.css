@@ -7,6 +7,42 @@ body {
   overflow-x: hidden;
 }
 
+/* ── Dashboard layout ── */
+.dashboard-layout {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Main column: title + board + side games ── */
+.main-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/* ── Game title centered above board ── */
+.game-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+/* ── Board + side games side by side ── */
+.board-and-sides {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  justify-content: center;
+}
+
 /* ── Board row (eval bar + board side by side) ── */
 .board-row {
   display: flex;
@@ -32,33 +68,43 @@ body {
   max-width: 672px;
 }
 
-/* ── Main layout ── */
-.main-layout {
-  display: flex;
-  gap: 16px;
-  flex: 1;
-  min-height: 0;
+/* ── Side boards grid (next to board) ── */
+.side-boards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  flex-shrink: 0;
+  width: 450px;
 }
 
-.main-column {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-width: 0;
-}
-
+/* ── Sidebar column ── */
 .sidebar-column {
   width: 320px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  position: sticky;
-  top: 66px; /* header 50px + padding 16px */
-  height: calc(100vh - 82px); /* header 50px + padding 16*2 = 82 */
   overflow-y: auto;
   padding-right: 6px;
+  position: sticky;
+  top: 66px;
+  height: calc(100vh - 82px);
+}
+
+/* ── Sidebar scrollbar ── */
+.sidebar-column::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-column::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-column::-webkit-scrollbar-thumb {
+  background: #30363D;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+.sidebar-column::-webkit-scrollbar-thumb:hover {
+  background: #3B82F6;
 }
 
 /* ── Move entry highlights ── */
@@ -76,22 +122,6 @@ body {
 .move-entry.active {
   background: #30363D;
   color: #fff;
-}
-
-/* ── Custom slick scrollbar for sidebar ── */
-.sidebar-column::-webkit-scrollbar {
-  width: 4px;
-}
-.sidebar-column::-webkit-scrollbar-track {
-  background: transparent;
-}
-.sidebar-column::-webkit-scrollbar-thumb {
-  background: #30363D;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-.sidebar-column::-webkit-scrollbar-thumb:hover {
-  background: #3B82F6;
 }
 
 /* ── Global scrollbar styling ── */
@@ -122,23 +152,112 @@ body {
   max-width: 672px;
 }
 
-/* ── Side boards grid ── */
-.side-boards-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-  max-width: 672px;
-  width: 100%;
-  margin-top: 16px;
-  margin-bottom: 24px;
+/* ── View containers ── */
+.view-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Collapsible panel ── */
+.collapsible-panel {
+  position: relative;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #161B22;
+  border-right: 1px solid #30363D;
+}
+
+/* ── Tab content ── */
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 50px);
+}
+
+/* ── Paper card base ── */
+.paper-card {
+  background: #161B22;
+  border: 1px solid #21262D;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+/* ── Metric card ── */
+.metric-card {
+  background: #0D1117;
+  border: 1px solid #21262D;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+/* ── Log level badges ── */
+.log-level-info {
+  background: #58a6ff;
+  color: #fff;
+}
+
+.log-level-warning {
+  background: #d6b81e;
+  color: #000;
+}
+
+.log-level-error {
+  background: #f85149;
+  color: #fff;
+}
+
+/* ── Progress bar colors ── */
+.progress-green {
+  background: #3fb950;
+}
+
+.progress-blue {
+  background: #58a6ff;
+}
+
+.progress-yellow {
+  background: #d6b81e;
+}
+
+.progress-red {
+  background: #f85149;
 }
 
 /* ── Responsive ── */
+@media (max-width: 1200px) {
+  .training-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
 @media (max-width: 768px) {
-  .main-layout {
+  .dashboard-layout {
     flex-direction: column;
     padding: 8px;
     min-height: 0;
+  }
+
+  .main-column {
+    overflow-y: visible;
+  }
+
+  .board-and-sides {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .board-row {
+    max-width: 100%;
+  }
+
+  .side-boards-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    width: 100%;
   }
 
   .sidebar-column {
@@ -148,12 +267,18 @@ body {
     overflow-y: visible;
   }
 
-  .board-row {
-    max-width: 100%;
+  /* Mobile view adjustments */
+  .view-container {
+    flex-direction: column;
   }
 
-  .side-boards-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+  .collapsible-panel {
+    width: 100% !important;
+    border-right: none;
+    border-bottom: 1px solid #30363D;
+  }
+
+  .training-grid {
+    grid-template-columns: 1fr !important;
   }
 }

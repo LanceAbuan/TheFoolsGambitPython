@@ -1,4 +1,4 @@
-import type { TrainingStatus, EvalResult, AnalysisResult } from './types';
+import type { TrainingStatus, EvalResult, AnalysisResult, EvalDataPoint } from './types';
 
 const API_BASE = (() => {
   const loc = window.location.hostname;
@@ -61,4 +61,32 @@ export const api = {
   /** Get recent games list */
   getGames: () =>
     fetch(`${API_BASE}/api/train/games`).then((r) => r.json()),
+
+  /** Get persistent historical events */
+  getEvents: (limit = 500) =>
+    fetch(`${API_BASE}/api/train/events?limit=${limit}`).then((r) => r.json()),
+
+  /** Get metric history for sparkline charts */
+  getMetrics: (key?: string, limit = 100) => {
+    const params = new URLSearchParams();
+    if (key) params.set('key', key);
+    params.set('limit', String(limit));
+    return fetch(`${API_BASE}/api/train/metrics?${params}`).then((r) => r.json());
+  },
+
+  /** Get system resource usage */
+  getResources: () =>
+    fetch(`${API_BASE}/api/train/resources`).then((r) => r.json()),
+
+  /** Get per-move evaluation history for charts */
+  getEvalHistory: (which: 'current' | 'last' = 'current') =>
+    fetch(`${API_BASE}/api/train/eval-history?which=${which}`).then((r) => r.json()) as Promise<{ history: EvalDataPoint[] }>,
+
+  /** Get opening frequency statistics */
+  getOpenings: () =>
+    fetch(`${API_BASE}/api/train/openings`).then((r) => r.json()),
+
+  /** Get recent improvement records */
+  getImprovements: () =>
+    fetch(`${API_BASE}/api/train/improvements`).then((r) => r.json()),
 };

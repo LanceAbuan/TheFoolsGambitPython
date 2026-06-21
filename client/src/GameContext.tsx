@@ -1,6 +1,14 @@
-import { createContext, useContext, useReducer, type ReactNode, type Dispatch, useRef, useCallback } from 'react';
+import { createContext, useContext, useReducer, useState, type ReactNode, type Dispatch, useRef, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import type { SSEEvent, TrainingStatus } from './types';
+import type { EvalDataPoint } from './types';
+import type { TabId } from './components/Layout/TabBar';
+
+/* ── Metric history data point ── */
+export interface MetricDataPoint {
+  t: number;  // timestamp
+  v: number;  // value
+}
 
 /* ── State shape ── */
 export interface GameState {
@@ -19,6 +27,10 @@ export interface GameState {
   isAnalyzing: boolean;
   isFullscreen: boolean;
   whatHappening: string;
+  // Persistent data
+  historicalEvents: SSEEvent[];
+  metricHistory: Record<string, MetricDataPoint[]>;
+  evalHistory: EvalDataPoint[];
 }
 
 const initialState: GameState = {
@@ -37,6 +49,9 @@ const initialState: GameState = {
   isAnalyzing: false,
   isFullscreen: false,
   whatHappening: 'Waiting for data...',
+  historicalEvents: [],
+  metricHistory: {},
+  evalHistory: [],
 };
 
 /* ── Actions ── */
@@ -57,7 +72,11 @@ export type GameAction =
   | { type: 'SET_IS_ANALYZING'; analyzing: boolean }
   | { type: 'TOGGLE_FULLSCREEN' }
   | { type: 'CLOSE_FULLSCREEN' }
-  | { type: 'SET_WHAT_HAPPENING'; text: string };
+  | { type: 'SET_WHAT_HAPPENING'; text: string }
+  | { type: 'SET_HISTORICAL_EVENTS'; events: SSEEvent[] }
+  | { type: 'SET_METRIC_HISTORY'; history: Record<string, MetricDataPoint[]> }
+  | { type: 'SET_EVAL_HISTORY'; history: EvalDataPoint[] }
+  | { type: 'ADD_EVAL_POINT'; point: EvalDataPoint };
 
 function reducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
@@ -83,6 +102,10 @@ function reducer(state: GameState, action: GameAction): GameState {
     case 'TOGGLE_FULLSCREEN': return { ...state, isFullscreen: !state.isFullscreen };
     case 'CLOSE_FULLSCREEN': return { ...state, isFullscreen: false };
     case 'SET_WHAT_HAPPENING': return { ...state, whatHappening: action.text };
+    case 'SET_HISTORICAL_EVENTS': return { ...state, historicalEvents: action.events };
+    case 'SET_METRIC_HISTORY': return { ...state, metricHistory: action.history };
+    case 'SET_EVAL_HISTORY': return { ...state, evalHistory: action.history };
+    case 'ADD_EVAL_POINT': return { ...state, evalHistory: [...state.evalHistory, action.point] };
     default: return state;
   }
 }
@@ -97,12 +120,15 @@ interface GameContextType {
   navigateToMove: (index: number) => void;
   setAutoFollow: (follow: boolean) => void;
   flipBoard: () => void;
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [activeTab, setActiveTab] = useState<TabId>('games');
   const mainGameRef = useRef<Chess | null>(null);
   const sideGameRefs = useRef<Record<number, Chess | null>>({});
 
@@ -127,7 +153,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <GameContext.Provider value={{ state, dispatch, mainGameRef, sideGameRefs, getCurrentFen, navigateToMove, setAutoFollow, flipBoard }}>
+    <GameContext.Provider value={{ state, dispatch, mainGameRef, sideGameRefs, getCurrentFen, navigateToMove, setAutoFollow, flipBoard, activeTab, setActiveTab }}>
       {children}
     </GameContext.Provider>
   );
