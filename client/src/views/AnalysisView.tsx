@@ -1,10 +1,11 @@
-import { Group, Text, Paper, Badge } from '@mantine/core';
+import { Group, Text, Paper, Badge, Button } from '@mantine/core';
 import { useGame } from '../GameContext';
 import LiveBoard from '../components/Board/LiveBoard';
 import EvalBar from '../components/Board/EvalBar';
 import PlayerInfoBar from '../components/Board/PlayerInfoBar';
 import BoardNav from '../components/Board/BoardNav';
 import MoveList from '../components/Analysis/MoveList';
+import { detectOpening } from '../utils/board';
 import type { AnalysisResult } from '../types';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine } from 'recharts';
 
@@ -190,7 +191,12 @@ function OpeningInfo() {
   const moveNum = Math.floor(state.currentViewIndex / 2) + 1;
 
   // Client-side opening detection
-  const openingName = detectOpeningSimple(moves);
+  const openingName = detectOpening(moves);
+
+  // Derive popularity from opening frequency in training
+  const openings = state.trainingStatus?.top_openings || [];
+  const match = openings.find((o: { name: string }) => o.name === openingName);
+  const popularity = match ? Math.round((match.count / Math.max(1, state.trainingStatus?.games_played ?? 1)) * 100) : 0;
 
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
@@ -201,47 +207,29 @@ function OpeningInfo() {
       <Group justify="space-between" mt={8}>
         <Text size="xs" c="#6E7681">Move {moveNum}</Text>
       </Group>
+      {popularity > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <Group justify="space-between">
+            <Text size="xs" c="#6E7681">Popularity</Text>
+            <Text size="xs" fw={600} c="#C9D1D9">{popularity}%</Text>
+          </Group>
+          <div style={{ height: 4, background: '#21262D', borderRadius: 2, marginTop: 4 }}>
+            <div style={{ height: '100%', width: `${Math.min(100, popularity)}%`, background: '#58a6ff', borderRadius: 2 }} />
+          </div>
+        </div>
+      )}
+      <Button
+        variant="subtle"
+        size="xs"
+        color="blue"
+        fullWidth
+        mt={8}
+        style={{ border: '1px solid #30363D' }}
+      >
+        VIEW TREE
+      </Button>
     </Paper>
   );
-}
-
-/** Simple client-side opening detection from SAN moves */
-function detectOpeningSimple(moves: string[]): string {
-  if (moves.length === 0) return 'Unknown';
-  const m = moves.slice(0, 4);
-  if (m[0] === 'e4') {
-    if (m[1] === 'c5') return 'Sicilian Defense';
-    if (m[1] === 'e5') {
-      if (m[2] === 'Nf3') return "King's Knight Opening";
-      return 'Open Game';
-    }
-    if (m[1] === 'e6') return 'French Defense';
-    if (m[1] === 'c6') return 'Caro-Kann Defense';
-    if (m[1] === 'd5') return 'Scandinavian Defense';
-    if (m[1] === 'Nf6') return "Alekhine's Defense";
-    if (m[1] === 'd6') return 'Pirc Defense';
-    if (m[1] === 'g6') return 'Modern Defense';
-    return "King's Pawn Opening";
-  }
-  if (m[0] === 'd4') {
-    if (m[1] === 'd5') {
-      if (m[2] === 'c4') return "Queen's Gambit";
-      return "Queen's Pawn Opening";
-    }
-    if (m[1] === 'Nf6') {
-      if (m[2] === 'c4' && m[3] === 'g6') return "King's Indian Defense";
-      if (m[2] === 'c4' && m[3] === 'e6') return 'Nimzo/Queen\'s Indian';
-      if (m[2] === 'c4' && m[3] === 'c5') return 'Benoni Defense';
-      return 'Indian Defense';
-    }
-    if (m[1] === 'f5') return 'Dutch Defense';
-    return "Queen's Pawn Opening";
-  }
-  if (m[0] === 'c4') return 'English Opening';
-  if (m[0] === 'Nf3') return 'Reti Opening';
-  if (m[0] === 'b3') return "Larsen's Opening";
-  if (m[0] === 'f4') return "Bird's Opening";
-  return 'Unknown Opening';
 }
 
 export default function AnalysisView() {
@@ -251,7 +239,7 @@ export default function AnalysisView() {
 
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-      {/* Left: Board */}
+      {/* Center: Board + Analysis metrics below */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '16px 0', overflow: 'auto' }}>
         <Group gap="xs" mb={8}>
           <Text fw={700} size="lg" c="#C9D1D9">
@@ -279,9 +267,14 @@ export default function AnalysisView() {
         />
 
         <BoardNav />
+
+        {/* Analysis metrics below the board */}
+        <div style={{ width: '100%', maxWidth: 672, marginTop: 12 }}>
+          <AnalysisMetrics />
+        </div>
       </div>
 
-      {/* Right: Analysis panels */}
+      {/* Right: Info panels */}
       <div
         style={{
           width: 320,
@@ -295,7 +288,6 @@ export default function AnalysisView() {
         }}
       >
         <EngineEvaluation />
-        <TopMoves />
 
         <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
           <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px', marginBottom: 8 }}>
@@ -304,7 +296,7 @@ export default function AnalysisView() {
           <MoveList />
         </Paper>
 
-        <AnalysisMetrics />
+        <TopMoves />
         <EvalChart />
         <OpeningInfo />
       </div>

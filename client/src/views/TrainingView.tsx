@@ -35,8 +35,16 @@ function TrainingStatusCard({ s }: { s: TrainingStatus | null }) {
 
   const gamesPlayed = s?.games_played ?? 0;
   const gamesPerCycle = s?.cycle?.games_per_cycle ?? 10;
-  const stepsThisCycle = s?.cycle?.steps_this_cycle ?? 0;
-  const stepsPerCycle = s?.cycle?.steps_per_cycle ?? 20;
+
+  // Estimated time remaining based on throughput
+  const gamesPerHour = s?.throughput?.games_per_hour ?? 0;
+  const remainingGames = Math.max(0, gamesPerCycle - (s?.cycle?.games_this_cycle ?? 0));
+  const estimatedHours = gamesPerHour > 0 ? remainingGames / gamesPerHour : 0;
+  const estimatedTimeStr = estimatedHours > 0
+    ? estimatedHours >= 1
+      ? `${Math.floor(estimatedHours)}h ${Math.round((estimatedHours % 1) * 60)}m`
+      : `${Math.round(estimatedHours * 60)}m`
+    : '—';
 
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
@@ -59,10 +67,8 @@ function TrainingStatusCard({ s }: { s: TrainingStatus | null }) {
         <Progress value={(gamesPlayed / gamesPerCycle) * 100} color="green" size="sm" />
 
         <Group justify="space-between" mt={4}>
-          <Text size="sm" c="#8B949E">Cycle Progress</Text>
-          <Text size="sm" fw={600} c="#C9D1D9">
-            Step {stepsThisCycle} / {stepsPerCycle}
-          </Text>
+          <Text size="sm" c="#8B949E">Est. Time Remaining</Text>
+          <Text size="sm" fw={600} c="#C9D1D9">{estimatedTimeStr}</Text>
         </Group>
 
         <Group justify="space-between">
@@ -91,6 +97,12 @@ function PerformanceCard({ s }: { s: TrainingStatus | null }) {
   const recentGames = sfResults.length;
   const winRate = recentGames > 0 ? (((recentWins + recentDraws * 0.5) / recentGames) * 100).toFixed(1) : '—';
 
+  // Compute average game length from recent games
+  const recentGameList = s?.recent_games || [];
+  const avgGameLength = recentGameList.length > 0
+    ? (recentGameList.reduce((sum: number, g: { length?: number; moves?: string[] }) => sum + (g.length ?? g.moves?.length ?? 0), 0) / recentGameList.length).toFixed(1)
+    : '—';
+
   return (
     <Paper p="md" radius="md" style={{ background: '#161B22', border: '1px solid #21262D' }}>
       <Text size="xs" fw={700} c="#8B949E" tt="uppercase" style={{ letterSpacing: '0.5px', marginBottom: 12 }}>
@@ -109,8 +121,8 @@ function PerformanceCard({ s }: { s: TrainingStatus | null }) {
         </div>
 
         <div>
-          <Text size="xs" c="#6E7681">Total Games Played</Text>
-          <Text size="xl" fw={700} c="#C9D1D9">{s?.games_played ?? 0}</Text>
+          <Text size="xs" c="#6E7681">Average Game Length</Text>
+          <Text size="xl" fw={700} c="#C9D1D9">{avgGameLength}</Text>
         </div>
       </div>
     </Paper>
