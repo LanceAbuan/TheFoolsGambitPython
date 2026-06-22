@@ -19,6 +19,8 @@ export interface GameState {
   fenCache: string[];
   sideFens: Record<number, string>;
   sideMoveCounts: Record<number, number>;
+  selectedGameId: number;                   // 0 = main game, 1-9 = side games
+  sideFenCaches: Record<number, string[]>;  // Full FEN history per side game
   sseStatus: string;
   sseEvents: SSEEvent[];
   trainingStatus: TrainingStatus | null;
@@ -41,6 +43,8 @@ const initialState: GameState = {
   fenCache: [],
   sideFens: {},
   sideMoveCounts: {},
+  selectedGameId: 0,
+  sideFenCaches: {},
   sseStatus: 'Disconnected',
   sseEvents: [],
   trainingStatus: null,
@@ -65,6 +69,9 @@ export type GameAction =
   | { type: 'SET_FEN_CACHE'; cache: string[] }
   | { type: 'ADD_FEN'; fen: string }
   | { type: 'SET_SIDE_FEN'; gameId: number; fen: string; moveCount: number }
+  | { type: 'SELECT_GAME'; gameId: number }
+  | { type: 'ADD_SIDE_FEN'; gameId: number; fen: string }
+  | { type: 'SET_SIDE_FEN_CACHE'; gameId: number; cache: string[] }
   | { type: 'SET_SSE_STATUS'; status: string }
   | { type: 'ADD_SSE_EVENT'; event: SSEEvent }
   | { type: 'SET_TRAINING_STATUS'; status: TrainingStatus }
@@ -94,6 +101,27 @@ function reducer(state: GameState, action: GameAction): GameState {
         sideFens: { ...state.sideFens, [action.gameId]: action.fen },
         sideMoveCounts: { ...state.sideMoveCounts, [action.gameId]: action.moveCount },
       };
+    case 'SELECT_GAME':
+      return {
+        ...state,
+        selectedGameId: action.gameId,
+        currentViewIndex: action.gameId === 0
+          ? state.allMoves.length  // Jump to latest move for main game
+          : (state.sideFenCaches[action.gameId]?.length ?? 0),  // Jump to latest for side game
+        autoFollow: true,
+      };
+    case 'ADD_SIDE_FEN': {
+      const existing = state.sideFenCaches[action.gameId] || [];
+      return {
+        ...state,
+        sideFenCaches: { ...state.sideFenCaches, [action.gameId]: [...existing, action.fen] },
+      };
+    }
+    case 'SET_SIDE_FEN_CACHE':
+      return {
+        ...state,
+        sideFenCaches: { ...state.sideFenCaches, [action.gameId]: action.cache },
+      };
     case 'SET_SSE_STATUS': return { ...state, sseStatus: action.status };
     case 'ADD_SSE_EVENT': return { ...state, sseEvents: [...state.sseEvents.slice(-499), action.event] };
     case 'SET_TRAINING_STATUS': return { ...state, trainingStatus: action.status };
@@ -120,6 +148,7 @@ interface GameContextType {
   navigateToMove: (index: number) => void;
   setAutoFollow: (follow: boolean) => void;
   flipBoard: () => void;
+  selectGame: (gameId: number) => void;
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
 }
@@ -133,12 +162,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const sideGameRefs = useRef<Record<number, Chess | null>>({});
 
   const getCurrentFen = useCallback((): string => {
-    if (state.fenCache.length > 0 && state.currentViewIndex < state.fenCache.length) {
-      return state.fenCache[state.currentViewIndex] || 'start';
+    const gid = state.selectedGameId;
+    if (gid === 0) {
+      // Main game — use fenCache
+      if (state.fenCache.length > 0 && state.currentViewIndex < state.fenCache.length) {
+        return state.fenCache[state.currentViewIndex] || 'start';
+      }
+      if (mainGameRef.current) return mainGameRef.current.fen();
+      return 'start';
     }
-    if (mainGameRef.current) return mainGameRef.current.fen();
-    return 'start';
-  }, [state.fenCache, state.currentViewIndex]);
+    // Side game — use sideFenCaches
+    const cache = state.sideFenCaches[gid];
+    if (cache && cache.length > 0) {
+      const idx = Math.min(state.currentViewIndex, cache.length - 1);
+      return cache[idx];
+    }
+    return state.sideFens[gid] || 'start';
+  }, [state.selectedGameId, state.fenCache, state.currentViewIndex, state.sideFenCaches, state.sideFens]);
 
   const navigateToMove = useCallback((index: number) => {
     dispatch({ type: 'SET_VIEW_INDEX', index });
@@ -152,8 +192,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'FLIP_BOARD' });
   }, []);
 
+  const selectGame = useCallback((gameId: number) => {
+    dispatch({ type: 'SELECT_GAME', gameId });
+  }, []);
+
   return (
-    <GameContext.Provider value={{ state, dispatch, mainGameRef, sideGameRefs, getCurrentFen, navigateToMove, setAutoFollow, flipBoard, activeTab, setActiveTab }}>
+    <GameContext.Provider value={{ state, dispatch, mainGameRef, sideGameRefs, getCurrentFen, navigateToMove, setAutoFollow, flipBoard, selectGame, activeTab, setActiveTab }}>
       {children}
     </GameContext.Provider>
   );

@@ -19,6 +19,13 @@ export default function BoardNav() {
   const navRef = useRef(navigateToMove);
   navRef.current = navigateToMove;
 
+  // Compute total moves based on selected game
+  const selectedGameId = state.selectedGameId;
+  const isMainGame = selectedGameId === 0;
+  const totalMoves = isMainGame
+    ? state.allMoves.length
+    : (state.sideFenCaches[selectedGameId]?.length ?? 0) - 1; // -1 because cache includes start position
+
   const goToStart = useCallback(() => {
     navigateToMove(0);
     setAutoFollow(false);
@@ -30,14 +37,14 @@ export default function BoardNav() {
   }, [navigateToMove, state.currentViewIndex, setAutoFollow]);
 
   const goForward = useCallback(() => {
-    navigateToMove(Math.min(state.allMoves.length, state.currentViewIndex + 1));
+    navigateToMove(Math.min(totalMoves, state.currentViewIndex + 1));
     setAutoFollow(false);
-  }, [navigateToMove, state.allMoves.length, state.currentViewIndex, setAutoFollow]);
+  }, [navigateToMove, state.currentViewIndex, totalMoves, setAutoFollow]);
 
   const goToEnd = useCallback(() => {
-    navigateToMove(state.allMoves.length);
+    navigateToMove(totalMoves);
     setAutoFollow(true);
-  }, [navigateToMove, state.allMoves.length, setAutoFollow]);
+  }, [navigateToMove, totalMoves, setAutoFollow]);
 
   const togglePlay = useCallback(() => {
     if (playRef.current !== null) {
@@ -48,7 +55,10 @@ export default function BoardNav() {
       setIsPlaying(true);
       playRef.current = setInterval(() => {
         const s = stateRef.current;
-        if (s.currentViewIndex >= s.allMoves.length) {
+        const sid = s.selectedGameId;
+        const isMain = sid === 0;
+        const tm = isMain ? s.allMoves.length : (s.sideFenCaches[sid]?.length ?? 0) - 1;
+        if (s.currentViewIndex >= tm) {
           if (playRef.current !== null) clearInterval(playRef.current);
           playRef.current = null;
           setIsPlaying(false);
@@ -64,6 +74,26 @@ export default function BoardNav() {
       if (playRef.current !== null) clearInterval(playRef.current);
     };
   }, []);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        navigateToMove(Math.max(0, stateRef.current.currentViewIndex - 1));
+        setAutoFollow(false);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const s = stateRef.current;
+        const sid = s.selectedGameId;
+        const isMain = sid === 0;
+        const tm = isMain ? s.allMoves.length : (s.sideFenCaches[sid]?.length ?? 0) - 1;
+        navigateToMove(Math.min(tm, s.currentViewIndex + 1));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigateToMove, setAutoFollow]);
 
   return (
     <Paper
@@ -99,7 +129,7 @@ export default function BoardNav() {
           <IconPlayerTrackNext size={16} />
         </ActionIcon>
         <Text size="sm" c="#6E7681" ml="xs" style={{ fontVariantNumeric: 'tabular-nums', minWidth: 80, textAlign: 'center' }}>
-          Move {state.currentViewIndex}/{state.allMoves.length}
+          Move {state.currentViewIndex}/{totalMoves}
         </Text>
       </Group>
     </Paper>

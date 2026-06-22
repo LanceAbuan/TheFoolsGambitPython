@@ -66,6 +66,7 @@ export function useSSE() {
       try {
         g.move(san);
         dispatch({ type: 'SET_SIDE_FEN', gameId: gid, fen: g.fen(), moveCount: g.moveNumber() });
+        dispatch({ type: 'ADD_SIDE_FEN', gameId: gid, fen: g.fen() });
       } catch (err) {
         console.warn(`[useSSE] invalid move for side game ${gid}: "${san}"`, err);
       }
@@ -78,6 +79,7 @@ export function useSSE() {
       const g = new Chess();
       sideGameRefs.current[gid] = g;
       dispatch({ type: 'SET_SIDE_FEN', gameId: gid, fen: g.fen(), moveCount: 0 });
+      dispatch({ type: 'SET_SIDE_FEN_CACHE', gameId: gid, cache: [g.fen()] });
     },
     [dispatch, sideGameRefs]
   );
@@ -85,11 +87,16 @@ export function useSSE() {
   const rebuildSideGame = useCallback(
     (gid: number, moves: string[]) => {
       const g = new Chess();
+      const cache: string[] = [g.fen()]; // Start with initial position
       for (const m of moves) {
-        try { g.move(m); } catch { break; }
+        try {
+          g.move(m);
+          cache.push(g.fen());
+        } catch { break; }
       }
       sideGameRefs.current[gid] = g;
       dispatch({ type: 'SET_SIDE_FEN', gameId: gid, fen: g.fen(), moveCount: g.moveNumber() });
+      dispatch({ type: 'SET_SIDE_FEN_CACHE', gameId: gid, cache });
     },
     [dispatch, sideGameRefs]
   );

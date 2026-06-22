@@ -1,26 +1,15 @@
-import { useCallback } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { useGame } from '../../GameContext';
-import { BOARD_COLORS, DEFAULT_FEN } from '../../utils/board';
+import { BOARD_COLORS } from '../../utils/board';
 
 export default function LiveBoard() {
-  const { state } = useGame();
-
-  const getPosition = useCallback((): string => {
-    if (state.fenCache.length > 0) {
-      const idx = Math.min(state.currentViewIndex, state.fenCache.length - 1);
-      if (state.fenCache[idx] && state.fenCache[idx] !== '') {
-        return state.fenCache[idx];
-      }
-    }
-    return DEFAULT_FEN;
-  }, [state.fenCache, state.currentViewIndex]);
+  const { state, getCurrentFen } = useGame();
 
   return (
     <div id="live-board">
       <Chessboard
         options={{
-          position: getPosition(),
+          position: getCurrentFen(),
           boardOrientation: state.boardOrientation,
           animationDurationInMs: 300,
           showAnimations: true,

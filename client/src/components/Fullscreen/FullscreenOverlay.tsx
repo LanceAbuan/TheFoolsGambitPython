@@ -2,19 +2,20 @@ import { Modal, ActionIcon, Group, Paper } from '@mantine/core';
 import { IconMinimize } from '@tabler/icons-react';
 import { Chessboard } from 'react-chessboard';
 import { useGame } from '../../GameContext';
-import { BOARD_COLORS, DEFAULT_FEN } from '../../utils/board';
+import { BOARD_COLORS } from '../../utils/board';
 import PlayerInfoBar from '../Board/PlayerInfoBar';
 import BoardNav from '../Board/BoardNav';
 import EvalBar from '../Board/EvalBar';
 
 export default function FullscreenOverlay() {
-  const { state, dispatch } = useGame();
+  const { state, dispatch, getCurrentFen } = useGame();
   const close = () => dispatch({ type: 'CLOSE_FULLSCREEN' });
   const s = state.trainingStatus;
 
-  const pos = state.fenCache.length > 0
-    ? state.fenCache[Math.min(state.currentViewIndex, state.fenCache.length - 1)]
-    : DEFAULT_FEN;
+  const isMainGame = state.selectedGameId === 0;
+  const whiteToMove = isMainGame
+    ? state.allMoves.length % 2 === 0
+    : (state.sideMoveCounts[state.selectedGameId] || 0) % 2 === 0;
 
   return (
     <Modal
@@ -44,8 +45,8 @@ export default function FullscreenOverlay() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 0 }}>
           <PlayerInfoBar
             name="Neural Network"
-            detail={s?.status === 'critic' ? 'vs Stockfish' : 'vs Self'}
-            isTurn={state.allMoves.length % 2 !== 0}
+            detail={isMainGame && s?.status === 'critic' ? 'vs Stockfish' : 'vs Self'}
+            isTurn={whiteToMove}
             color="top"
           />
           <Paper
@@ -57,7 +58,7 @@ export default function FullscreenOverlay() {
           >
             <Chessboard
               options={{
-                position: pos,
+                position: getCurrentFen(),
                 boardOrientation: state.boardOrientation,
                 animationDurationInMs: 300,
                 showAnimations: true,
@@ -69,9 +70,9 @@ export default function FullscreenOverlay() {
             />
           </Paper>
           <PlayerInfoBar
-            name={s?.status === 'critic' ? 'Stockfish' : 'Neural Network'}
-            detail={s?.status === 'critic' ? 'Engine' : `Step ${(s?.step ?? 0).toLocaleString()}`}
-            isTurn={state.allMoves.length % 2 === 0}
+            name={isMainGame && s?.status === 'critic' ? 'Stockfish' : 'Neural Network'}
+            detail={isMainGame && s?.status === 'critic' ? 'Engine' : `Step ${(s?.step ?? 0).toLocaleString()}`}
+            isTurn={!whiteToMove}
             color="bottom"
           />
           <div className="fullscreen-bar">
