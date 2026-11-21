@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from . import engine
+from . import engine, journal
 from .api.train import metrics_snapshot
 
 router = APIRouter()
@@ -139,6 +139,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 await _snapshot(ws, topic, "state", session.snapshot())
             elif topic == "train":
                 await _snapshot(ws, topic, "metrics", metrics_snapshot())
+                # FS-6: catch-up journal history (last 50 lines) right after the snapshot.
+                for payload in journal.backlog():
+                    await _snapshot(ws, topic, "log", payload)
             else:  # lobby
                 await _snapshot(ws, topic, "lobby", {"active_games": lobby_state()})
     except WebSocketDisconnect:

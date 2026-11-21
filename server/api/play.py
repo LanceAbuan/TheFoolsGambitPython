@@ -18,7 +18,7 @@ Strength = Literal["wandering", "curious", "enlightened"]
 
 class NewGameIn(BaseModel):
     color: Literal["white", "black", "random"] = "white"
-    opponent: Literal["fool", "stockfish"] = "fool"
+    opponent: Literal["fool", "stockfish", "nn"] = "fool"
     strength: Strength = "curious"
 
 

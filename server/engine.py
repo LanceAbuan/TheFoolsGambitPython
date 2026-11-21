@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 import chess
 import chess.engine
 
-from . import stockfish
+from . import model_server, stockfish
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ class Session:
     winner: str | None = None
     reason: str | None = None
     created_at: float = field(default_factory=time.time)
+    last_activity: float = field(default_factory=time.time)  # TTL-reaper clock (FS-9)
     sf: chess.engine.SimpleEngine | None = field(default=None, repr=False, compare=False)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
@@ -177,6 +178,7 @@ def _push(session: Session, move: chess.Move) -> str:
     session.sans.append(san)
     session.ucis.append(move.uci())
     session.fens.append(session.board.fen())
+    session.last_activity = time.time()
     return san
 
 
@@ -191,6 +193,12 @@ def _opponent_move_sync(session: Session) -> chess.Move | None:
         return None
     if session.opponent == "fool":
         return _fool_move(session.board)
+    if session.opponent == "nn":
+        try:
+            return model_server.best_move(session)
+        except Exception:
+            log.exception("nn model failed for game %s; falling back to the Fool", session.id)
+            return _fool_move(session.board)
     if session.opponent == "stockfish":
         try:
             return stockfish.best_move(session)
@@ -215,7 +223,11 @@ async def _opponent_turn(session: Session) -> None:
 
 
 def create_game(color: str, opponent: str, strength: str = "curious") -> Session:
-    """Create a session; raises EngineUnavailable (503) for stockfish with no binary.
+    """Create a session; raises EngineUnavailable (503) for unavailable opponents.
+
+    - ``stockfish``: 503 when no UCI binary resolves.
+    - ``nn``: 503 when no trained champion exists in any ``runs/<regime>/``
+      ("no trained model yet - run scripts/train.py").
 
     The opponent's opening reply (human plays Black) is applied by the caller
     via :func:`opening_reply`, keeping the blocking UCI round-trip off the
@@ -223,6 +235,8 @@ def create_game(color: str, opponent: str, strength: str = "curious") -> Session
     """
     if opponent == "stockfish" and stockfish.resolve_binary() is None:
         raise EngineUnavailable("stockfish binary not found")
+    if opponent == "nn" and not model_server.available():
+        raise EngineUnavailable("no trained model yet - run scripts/train.py")
     orientation = color if color != "random" else random.choice(["white", "black"])
     session = Session(
         id=uuid.uuid4().hex[:12],
@@ -293,6 +307,7 @@ async def undo(session: Session) -> None:
             session.sans.pop()
             session.ucis.pop()
             session.fens.pop()
+        session.last_activity = time.time()
 
 
 async def resign(session: Session) -> None:

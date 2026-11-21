@@ -1,9 +1,11 @@
-"""SQLite persistence (WAL mode). Games archive + full move history.
+"""SQLite persistence (WAL mode). Games archive + full move history + arena ledger.
 
 Sync access guarded by a lock; async endpoints call in via `asyncio.to_thread`.
 """
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 import threading
 import time
@@ -12,6 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from . import config
+
+log = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS games (
@@ -34,6 +38,20 @@ CREATE TABLE IF NOT EXISTS moves (
   fen_after TEXT NOT NULL,
   PRIMARY KEY (game_id, ply)
 );
+CREATE TABLE IF NOT EXISTS arena_games (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL DEFAULT '',
+  regime TEXT NOT NULL DEFAULT '',
+  ckpt TEXT NOT NULL,
+  opponent TEXT NOT NULL DEFAULT '',
+  games INTEGER NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  draws INTEGER NOT NULL DEFAULT 0,
+  elo REAL NOT NULL DEFAULT 800.0,
+  ts REAL NOT NULL
+);
+-- FS-2 dedupe key: one ledger row per (checkpoint, ts), making backfill idempotent.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_arena_games_dedupe ON arena_games(ckpt, ts);
 """
 
 _conn: sqlite3.Connection | None = None
@@ -146,3 +164,89 @@ def reset_for_tests() -> None:
         if _conn is not None:
             _conn.close()
             _conn = None
+
+
+# ---------------------------------------------------------------------------
+# Arena ledger (FS-2): SQLite mirror of data/arena.jsonl + per-regime Elo.
+# ---------------------------------------------------------------------------
+
+def backfill_arena(path: Path | None = None) -> int:
+    """Idempotent startup import of the training JSONL ledger into ``arena_games``.
+
+    Every readable line is inserted with ``INSERT OR IGNORE`` against the
+    UNIQUE ``(ckpt, ts)`` index, so re-running after a restart (double boot)
+    inserts nothing. Returns the number of rows actually added.
+    """
+    source = path or config.ARENA_LEDGER_PATH
+    if not source.is_file():
+        return 0
+    rows: list[tuple[str, str, str, str, int, int, int, float, float]] = []
+    for line in source.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            log.warning("arena backfill: skipping corrupt line in %s", source)
+            continue
+        if not isinstance(entry, dict) or "checkpoint" not in entry or "ts" not in entry:
+            log.warning("arena backfill: skipping malformed entry in %s", source)
+            continue
+        rows.append(
+            (
+                str(entry.get("run_id", "")),
+                str(entry.get("regime", "")),
+                str(entry.get("checkpoint", "")),
+                str(entry.get("opponent", "")),
+                int(entry.get("games", 0) or 0),
+                int(entry.get("wins", 0) or 0),
+                int(entry.get("draws", 0) or 0),
+                float(entry.get("elo", 800.0) or 800.0),
+                float(entry.get("ts", 0.0) or 0.0),
+            )
+        )
+
+    def _op(conn: sqlite3.Connection) -> int:
+        cursor = conn.executemany(
+            "INSERT OR IGNORE INTO arena_games"
+            " (run_id, regime, ckpt, opponent, games, wins, draws, elo, ts)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        return max(cursor.rowcount, 0)
+
+    added = tx(_op)
+    if added:
+        log.info("arena backfill: %d new row(s) from %s", added, source)
+    return added
+
+
+def list_arena_games(limit: int) -> list[dict[str, Any]]:
+    """Arena ledger rows (newest first) served by ``GET /api/games?kind=arena``."""
+    rows: list[dict[str, Any]] = []
+
+    def _op(conn: sqlite3.Connection) -> None:
+        cursor = conn.execute(
+            "SELECT run_id, regime, ckpt, opponent, games, wins, draws, elo, ts"
+            " FROM arena_games ORDER BY ts DESC, id DESC LIMIT ?",
+            (limit,),
+        )
+        rows.extend(dict(row) | {"kind": "arena"} for row in cursor)
+
+    tx(_op)
+    return rows
+
+
+def elo_by_regime() -> dict[str, dict[str, float]]:
+    """Per-regime checkpoint Elo map (latest recorded elo per checkpoint)."""
+
+    def _op(conn: sqlite3.Connection) -> dict[str, dict[str, float]]:
+        out: dict[str, dict[str, float]] = {}
+        for row in conn.execute(
+            "SELECT regime, ckpt, elo, ts, id FROM arena_games ORDER BY ts, id"
+        ):
+            out.setdefault(row["regime"], {})[row["ckpt"]] = float(row["elo"])
+        return out
+
+    return tx(_op)

@@ -11,7 +11,11 @@ router = APIRouter()
 
 @router.get("/games")
 def list_games(kind: str | None = None, limit: int = 50) -> dict:
-    return {"games": db.list_games(kind, max(1, min(limit, 200)))}
+    capped = max(1, min(limit, 200))
+    if kind == "arena":
+        # FS-2: arena ledger rows live in their own table (different shape than play games).
+        return {"games": db.list_arena_games(capped)}
+    return {"games": db.list_games(kind, capped)}
 
 
 @router.get("/games/{gid}/pgn", response_class=PlainTextResponse)
