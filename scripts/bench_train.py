@@ -6,6 +6,7 @@ Reports for the tiny config on the current device:
   - games/hour (extrapolated from a capped smoke-style game)
   - FS-4 parallel sweep: sims/sec + games/hour for parallel_games in {1,8,16,32}
     (p=1 is the slice-1 sequential path; p>1 shares the queued evaluator)
+  - FS-6b streaming guard: games/hour with per-move journal streaming on vs off
   - GPU availability + name (one-shot CUDA smoke, no long runs)
 """
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import chess
+import numpy as np
 import torch
 
 from training.evaluator import QueuedNNEvaluator
@@ -161,6 +163,62 @@ def bench_parallel_games_per_hour(
     return games_per_hour, elapsed
 
 
+def bench_streaming_overhead(
+    model: GambitNet, parallel_games: int, max_plies: int, sims: int
+) -> dict[str, float]:
+    """FS-6b perf guard: pN games/hour with live streaming ON vs OFF.
+
+    Both runs go through the same `parallel_self_play` path with the SAME
+    seeded rng and root noise off — so both batches play byte-identical games
+    and the games/hour delta isolates the per-move journal cost (game-length
+    variance would otherwise swamp it). ON additionally journals one event per
+    ply + one game_end per game into a temp journal.
+    """
+    import tempfile
+
+    from training.journal import TrainingJournal
+    from training.selfplay import StreamContext
+
+    config = SelfPlayConfig(
+        search=SearchConfig(num_simulations=sims, root_noise=False),
+        max_plies=max_plies,
+        temperature_plies=max_plies,
+    )
+    stats: dict[str, float] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        journal_path = Path(tmp) / "stream-bench.jsonl"
+        for mode, enabled in (("off", False), ("on", True)):
+            journal = TrainingJournal(journal_path)
+            stream = StreamContext(journal=journal, run_id="bench", regime="bench", enabled=enabled)
+            evaluator: object = (
+                QueuedNNEvaluator(model) if parallel_games > 1 else BatchNNEvaluator(model)
+            )
+            play_rng = np.random.default_rng(0)  # identical games in both modes
+            try:
+                start = time.perf_counter()
+                games = parallel_self_play(  # type: ignore[arg-type]
+                    evaluator,
+                    parallel_games,
+                    config,
+                    parallel_games=parallel_games,
+                    rng=play_rng,
+                    stream=stream,
+                )
+                elapsed = time.perf_counter() - start
+            finally:
+                if isinstance(evaluator, QueuedNNEvaluator):
+                    evaluator.close()
+                journal.close()  # release the handle so the tmp dir can be removed
+            stats[f"games_per_hour_{mode}"] = (
+                len(games) / elapsed * 3600.0 if elapsed > 0 else float("inf")
+            )
+            stats[f"plies_{mode}"] = float(sum(game.ply_count for game in games))
+            events = len(journal.read())
+            stats[f"events_{mode}"] = float(events)
+            stats[f"events_per_sec_{mode}"] = events / elapsed if elapsed > 0 else 0.0
+    return stats
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="training bench (tiny config, current device)")
     parser.add_argument("--batch", type=int, default=256)
@@ -213,6 +271,19 @@ def main() -> int:
         print(
             f"parallel={level:>2}: {speedup_sims:5.2f}x sims/sec vs p=1 | "
             f"{speedup_gph:5.2f}x games/hour vs p=1"
+        )
+
+    # --- FS-6b perf guard: live move streaming ON vs OFF (p8 + p16) ---
+    print("--- FS-6b streaming on/off (games/hour through the per-move journal) ---")
+    for level in (8, min(16, max(levels)) if levels else 16):
+        stats = bench_streaming_overhead(model, level, min(args.plies, 24), sims=2)
+        gph_off, gph_on = stats["games_per_hour_off"], stats["games_per_hour_on"]
+        overhead = (gph_off - gph_on) / gph_off * 100.0 if gph_off > 0 else 0.0
+        print(
+            f"p={level:>2}: off {gph_off:8.1f} games/h | on {gph_on:8.1f} games/h | "
+            f"overhead {overhead:5.1f}% | identical games? plies off={stats['plies_off']:.0f} "
+            f"on={stats['plies_on']:.0f} | {stats['events_on']:.0f} events "
+            f"({stats['events_per_sec_on']:.1f} events/sec)"
         )
     if cuda:
         # One-shot GPU smoke: device verdict + a single synced pass, no long runs.

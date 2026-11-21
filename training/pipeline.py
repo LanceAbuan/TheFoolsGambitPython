@@ -56,6 +56,7 @@ from .selfplay import (
     SearchConfig,
     SelfPlayConfig,
     SelfPlayResult,
+    StreamContext,
 )
 from .trainer import TrainingBuffer
 
@@ -83,6 +84,7 @@ class TrainingProfile:
     seed: int | None = 0
     snapshot_every_iteration: bool = False  # smoke: gate every iteration
     parallel_games: int | None = None  # None -> RegimeConfig.parallel_games
+    stream_games: bool | None = None  # None -> RegimeConfig.stream_moves (FS-6b)
 
 
 SMOKE_PROFILE = TrainingProfile(
@@ -325,6 +327,15 @@ def run_training(
     effective_parallel = (
         profile.parallel_games if profile.parallel_games is not None else regime.parallel_games
     )
+    effective_stream = (
+        profile.stream_games if profile.stream_games is not None else regime.stream_moves
+    )
+    # FS-6b: game ids are unique across the WHOLE run — iteration i owns the
+    # slot block [i*N, (i+1)*N), built fresh per loop pass below, so journal
+    # events from different iterations (and across a resume) never interleave
+    # in one slot on the client's board grid.
+    if effective_stream:
+        log.info("[STREAM] live move streaming on (journal %s)", journal.path)
     queued_evaluator: QueuedNNEvaluator | None = None
     provider = build_data_provider(regime)
     try:
@@ -347,6 +358,13 @@ def run_training(
             elapsed_minutes = (time.monotonic() - started) / 60.0
             progress = (iteration + 1) / max(profile.iterations, 1)
             collect_started = time.monotonic()
+            stream_context = StreamContext(
+                journal=journal,
+                run_id=resolved_run_id,
+                regime=regime.name,
+                enabled=effective_stream,
+                game_offset=iteration * profile.games_per_iteration,
+            )
             games_this_iter: list[SelfPlayResult] = provider.collect(
                 evaluator,
                 profile.games_per_iteration,
@@ -355,6 +373,7 @@ def run_training(
                 elapsed_minutes=elapsed_minutes,
                 progress=progress,
                 rng=play_rng,  # FS-5: the run's play stream, restored on resume
+                stream=stream_context,  # FS-6b: live per-move journal events
             )
             collect_seconds = time.monotonic() - collect_started
             collect_seconds_total += collect_seconds
@@ -576,6 +595,7 @@ def run_training(
         if queued_evaluator is not None:
             queued_evaluator.close()
         provider.close()
+        journal.close()  # FS-6b: release the persistent stream handle
 
     summary.elapsed_seconds = time.monotonic() - started
     summary.iterations_completed = profile.iterations - iteration_start

@@ -13,10 +13,10 @@ import logging
 import queue
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
-from typing import Protocol
+from dataclasses import dataclass, field, replace
+from typing import Any, Protocol
 
 import chess
 import chess.pgn
@@ -571,6 +571,89 @@ class Evaluator(Protocol):
         ...  # pragma: no cover
 
 
+class EventSink(Protocol):
+    """Structural slice of ``TrainingJournal`` the game generators write to.
+
+    Declared here (not imported) so selfplay stays decoupled from the journal
+    module and tests can inject fakes.
+    """
+
+    def append(self, event: Mapping[str, Any]) -> None:
+        """Append one structured event (thread-safe)."""
+        ...  # pragma: no cover
+
+
+@dataclass(frozen=True)
+class GameStream:
+    """Per-game live-stream writer (FS-6b).
+
+    One ``live`` event per ply (move + resulting FEN) and one ``game_end``
+    when the game finishes, so the server can push them over WS and the
+    client can render/clear a board slot. Appends go through the journal's
+    lock, which serializes concurrent game threads into whole lines.
+    """
+
+    journal: EventSink
+    run_id: str
+    regime: str
+    game: int
+
+    def move(self, ply: int, move_uci: str, fen: str) -> None:
+        """Stream one played move (ply is 1-based, fen is AFTER the move)."""
+        self.journal.append(
+            {
+                "kind": "live",
+                "run_id": self.run_id,
+                "regime": self.regime,
+                "game": self.game,
+                "ply": ply,
+                "move": move_uci,
+                "fen": fen,
+                "ts": time.time(),
+            }
+        )
+
+    def end(self, result: str, plies: int) -> None:
+        """Stream game completion so the UI can clear the slot."""
+        self.journal.append(
+            {
+                "kind": "game_end",
+                "run_id": self.run_id,
+                "regime": self.regime,
+                "game": self.game,
+                "result": result,
+                "plies": plies,
+                "ts": time.time(),
+            }
+        )
+
+
+@dataclass(frozen=True)
+class StreamContext:
+    """Run-level live-streaming config handed down through providers (FS-6b).
+
+    ``game_offset`` lets a provider run several game batches in one iteration
+    (e.g. sf-games: self-play games 0..k-1, then SF games k..k+m-1) without
+    colliding board slots in the client grid.
+    """
+
+    journal: EventSink | None = None
+    run_id: str = ""
+    regime: str = ""
+    enabled: bool = True
+    game_offset: int = 0
+
+    def for_game(self, game_index: int) -> GameStream | None:
+        """Per-game writer; None when streaming is off (zero events)."""
+        if self.journal is None or not self.enabled:
+            return None
+        return GameStream(self.journal, self.run_id, self.regime, self.game_offset + game_index)
+
+    def shifted(self, count: int) -> "StreamContext":
+        """A context whose game indices continue after `count` earlier games."""
+        return replace(self, game_offset=self.game_offset + count)
+
+
 class BatchNNEvaluator:
     """Synchronous micro-batched NN evaluator (CPU or CUDA).
 
@@ -849,12 +932,14 @@ def self_play_game(
     evaluator: Evaluator,
     config: SelfPlayConfig = SelfPlayConfig(),
     rng: np.random.Generator | None = None,
+    stream: GameStream | None = None,
 ) -> SelfPlayResult:
     """Play one self-play game and return labelled training examples.
 
     Labels follow AlphaZero: policy target = normalized visit counts, value
     target = game outcome from the mover's perspective. Terminal values inside
-    the search use the §10-correct side-to-move sign.
+    the search use the §10-correct side-to-move sign. With `stream`, every ply
+    is journaled as a ``live`` event and the finish as ``game_end`` (FS-6b).
     """
     search = MCTSSearch(evaluator, config.search)
     board = chess.Board()
@@ -892,11 +977,15 @@ def self_play_game(
 
         prev_board = board.copy()
         board.push(move)
+        if stream is not None:
+            stream.move(len(sans), move.uci(), board.fen())
 
     outcome, result_str = game_outcome(board, resigned_side)
 
     examples = finalize_game_examples(pending, outcome)
     pgn = build_pgn(sans, result_str)
+    if stream is not None:
+        stream.end(result_str, len(sans))
 
     return SelfPlayResult(
         examples=examples,
@@ -914,6 +1003,7 @@ def parallel_self_play(
     config: SelfPlayConfig = SelfPlayConfig(),
     parallel_games: int = 1,
     rng: np.random.Generator | None = None,
+    stream: StreamContext | None = None,
 ) -> list[SelfPlayResult]:
     """Play `num_games` self-play games, up to `parallel_games` concurrently.
 
@@ -922,13 +1012,24 @@ def parallel_self_play(
     merges their per-position requests into single forwards. Results keep game
     order regardless of completion order. A game that crashes is logged and
     skipped; if every game fails the error propagates.
+
+    `stream` (FS-6b) journals a ``live`` event per ply and one ``game_end``
+    per finished game; game indices are `stream.game_offset` + local index.
     """
     if num_games < 0:
         raise ValueError("num_games must be >= 0")
     if parallel_games < 1:
         raise ValueError("parallel_games must be >= 1")
     if parallel_games <= 1 or num_games <= 1:
-        return [self_play_game(evaluator, config, rng) for _ in range(num_games)]
+        return [
+            self_play_game(
+                evaluator,
+                config,
+                rng,
+                stream=stream.for_game(index) if stream is not None else None,
+            )
+            for index in range(num_games)
+        ]
 
     game_rngs: list[np.random.Generator | None]
     if rng is not None:
@@ -941,7 +1042,12 @@ def parallel_self_play(
 
     def _play(index: int) -> None:
         try:
-            results[index] = self_play_game(evaluator, config, game_rngs[index])
+            results[index] = self_play_game(
+                evaluator,
+                config,
+                game_rngs[index],
+                stream=stream.for_game(index) if stream is not None else None,
+            )
         except Exception as exc:
             failures.append((index, exc))
             log.exception("[SELFPLAY] parallel game %d failed", index)

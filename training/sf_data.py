@@ -32,6 +32,7 @@ import numpy as np
 from .encoder import encode_move, encode_state, legal_move_map
 from .selfplay import (
     Evaluator,
+    GameStream,
     MCTSSearch,
     SelfPlayConfig,
     SelfPlayResult,
@@ -94,8 +95,13 @@ def play_nn_vs_sf(
     config: SelfPlayConfig,
     skill: int,
     rng: np.random.Generator | None = None,
+    stream: GameStream | None = None,
 ) -> SelfPlayResult:
-    """One NN-vs-Stockfish training game; examples recorded for NN plies only."""
+    """One NN-vs-Stockfish training game; examples recorded for NN plies only.
+
+    With `stream` (FS-6b) every ply of BOTH sides is journaled live so the
+    client sees the whole game; ``game_end`` fires at the finish.
+    """
     search = MCTSSearch(nn_evaluator, config.search)
     board = chess.Board()
     prev_board: chess.Board | None = None
@@ -147,9 +153,13 @@ def play_nn_vs_sf(
         sans.append(board.san(move))
         prev_board = board.copy()
         board.push(move)
+        if stream is not None:
+            stream.move(len(sans), move.uci(), board.fen())
 
     outcome, result_str = game_outcome(board, resigned_side)
     examples = finalize_game_examples(pending, outcome)
+    if stream is not None:
+        stream.end(result_str, len(sans))
     return SelfPlayResult(
         examples=examples,
         moves=sans,
@@ -166,6 +176,7 @@ def distill_game(
     engine: SFEngine,
     config: SelfPlayConfig,
     rng: np.random.Generator | None = None,
+    stream: GameStream | None = None,
 ) -> SelfPlayResult:
     """Self-play positions, Stockfish teacher labels (`sf-distill` regime).
 
@@ -222,8 +233,12 @@ def distill_game(
         sans.append(board.san(move))
         prev_board = board.copy()
         board.push(move)
+        if stream is not None:
+            stream.move(len(sans), move.uci(), board.fen())
 
     outcome, result_str = game_outcome(board)
+    if stream is not None:
+        stream.end(result_str, len(sans))
     examples = []
     for planes, policy, color, value_override in pending:
         outcome_label = outcome if color == chess.WHITE else -outcome

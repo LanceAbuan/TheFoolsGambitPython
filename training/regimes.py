@@ -33,7 +33,13 @@ from typing import Protocol
 
 import numpy as np
 
-from .selfplay import Evaluator, SelfPlayConfig, SelfPlayResult, parallel_self_play
+from .selfplay import (
+    Evaluator,
+    SelfPlayConfig,
+    SelfPlayResult,
+    StreamContext,
+    parallel_self_play,
+)
 from .sf_data import (
     SFEngine,
     alternate_colors,
@@ -75,6 +81,9 @@ class RegimeConfig:
     sf_depth: int = 10
     # hybrid: minutes of sf-distill before the chain switches to pure self-play.
     warmstart_minutes: float = 30.0
+    # FS-6b: journal a live event per played move + game_end per finished game
+    # (the site's live board grid). Disable for headless/bulk runs.
+    stream_moves: bool = True
     # FS-5: per-regime HF repo ("<owner>/gambit-<regime>", §5.2 provenance).
     hf_repo: str | None = None
 
@@ -272,6 +281,7 @@ class DataProvider(Protocol):
         elapsed_minutes: float = 0.0,
         progress: float = 0.0,
         rng: np.random.Generator | None = None,
+        stream: StreamContext | None = None,
     ) -> list[SelfPlayResult]:
         ...  # pragma: no cover
 
@@ -336,10 +346,11 @@ class SelfPlayProvider:
         elapsed_minutes: float = 0.0,
         progress: float = 0.0,
         rng: np.random.Generator | None = None,
+        stream: StreamContext | None = None,
     ) -> list[SelfPlayResult]:
         del elapsed_minutes, progress  # pure self-play has no schedule hooks
         return parallel_self_play(
-            evaluator, num_games, config, parallel_games=parallel_games, rng=rng
+            evaluator, num_games, config, parallel_games=parallel_games, rng=rng, stream=stream
         )
 
     def close(self) -> None:
@@ -410,22 +421,27 @@ class SFGamesProvider(_StockfishBackedProvider):
         elapsed_minutes: float = 0.0,
         progress: float = 0.0,
         rng: np.random.Generator | None = None,
+        stream: StreamContext | None = None,
     ) -> list[SelfPlayResult]:
         del elapsed_minutes  # unused: the skill ladder runs on `progress`
         skill = sf_skill_for_progress(self.regime.sf_skill_start, self.regime.sf_skill_end, progress)
         num_sf_games = skill_share_plan(num_games, self.regime.sf_games_share)
+        num_self_play = num_games - num_sf_games
         results: list[SelfPlayResult] = []
 
         self_play_results = parallel_self_play(
             evaluator,
-            num_games - num_sf_games,
+            num_self_play,
             config,
             parallel_games=parallel_games,
             rng=rng,
+            stream=stream,
         )
         results.extend(self_play_results)
 
         if num_sf_games > 0:
+            # SF games continue the slot numbering after the self-play games.
+            sf_stream = stream.shifted(num_self_play) if stream is not None else None
             engine = self._engine_for(skill)
             if engine is None:
                 log.warning(
@@ -434,7 +450,12 @@ class SFGamesProvider(_StockfishBackedProvider):
                     num_sf_games,
                 )
                 sf_results: list[SelfPlayResult] = parallel_self_play(
-                    evaluator, num_sf_games, config, parallel_games=parallel_games, rng=rng
+                    evaluator,
+                    num_sf_games,
+                    config,
+                    parallel_games=parallel_games,
+                    rng=rng,
+                    stream=sf_stream,
                 )
             else:
                 sf_game_rngs = _game_rngs(rng, num_sf_games)
@@ -446,6 +467,7 @@ class SFGamesProvider(_StockfishBackedProvider):
                         config,
                         skill=skill,
                         rng=sf_game_rngs[sf_index],
+                        stream=sf_stream.for_game(sf_index) if sf_stream is not None else None,
                     )
                     for sf_index in range(num_sf_games)
                 ]
@@ -483,6 +505,7 @@ class SFDistillProvider(_StockfishBackedProvider):
         elapsed_minutes: float = 0.0,
         progress: float = 0.0,
         rng: np.random.Generator | None = None,
+        stream: StreamContext | None = None,
     ) -> list[SelfPlayResult]:
         del elapsed_minutes, progress  # distill labels do not depend on run progress
         engine = self._engine_for(None)  # full strength for teaching moves
@@ -492,11 +515,17 @@ class SFDistillProvider(_StockfishBackedProvider):
                 self.regime_name,
             )
             return parallel_self_play(
-                evaluator, num_games, config, parallel_games=parallel_games, rng=rng
+                evaluator, num_games, config, parallel_games=parallel_games, rng=rng, stream=stream
             )
         game_rngs = _game_rngs(rng, num_games)
         return _map_games(
-            lambda index: distill_game(evaluator, engine, config, rng=game_rngs[index]),
+            lambda index: distill_game(
+                evaluator,
+                engine,
+                config,
+                rng=game_rngs[index],
+                stream=stream.for_game(index) if stream is not None else None,
+            ),
             num_games,
             parallel_games,
         )
@@ -527,6 +556,7 @@ class HybridProvider(_StockfishBackedProvider):
         elapsed_minutes: float = 0.0,
         progress: float = 0.0,
         rng: np.random.Generator | None = None,
+        stream: StreamContext | None = None,
     ) -> list[SelfPlayResult]:
         if elapsed_minutes < self.regime.warmstart_minutes:
             log.info(
@@ -537,7 +567,7 @@ class HybridProvider(_StockfishBackedProvider):
             return self._distill.collect(
                 evaluator, num_games, config,
                 parallel_games=parallel_games, elapsed_minutes=elapsed_minutes,
-                progress=progress, rng=rng,
+                progress=progress, rng=rng, stream=stream,
             )
         log.info(
             "[PROVIDER] hybrid self-play phase (>= %.1f min)",
@@ -546,7 +576,7 @@ class HybridProvider(_StockfishBackedProvider):
         return self._selfplay.collect(
             evaluator, num_games, config,
             parallel_games=parallel_games, elapsed_minutes=elapsed_minutes,
-            progress=progress, rng=rng,
+            progress=progress, rng=rng, stream=stream,
         )
 
     def close(self) -> None:
@@ -572,10 +602,11 @@ class FinetuneProvider:
         elapsed_minutes: float = 0.0,
         progress: float = 0.0,
         rng: np.random.Generator | None = None,
+        stream: StreamContext | None = None,
     ) -> list[SelfPlayResult]:
         del elapsed_minutes, progress  # data stream is plain self-play
         return parallel_self_play(
-            evaluator, num_games, config, parallel_games=parallel_games, rng=rng
+            evaluator, num_games, config, parallel_games=parallel_games, rng=rng, stream=stream
         )
 
     def close(self) -> None:
@@ -599,7 +630,9 @@ class StubDataProvider:
         elapsed_minutes: float = 0.0,
         progress: float = 0.0,
         rng: np.random.Generator | None = None,
+        stream: StreamContext | None = None,
     ) -> list[SelfPlayResult]:
+        del stream  # stub emits nothing
         raise NotImplementedError(
             f"regime '{self.regime_name}' (data_source='{self.data_source}') has no data "
             "provider wired; known sources: selfplay, sf-games, sf-distill, hybrid, finetune"

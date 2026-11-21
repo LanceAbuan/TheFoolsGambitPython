@@ -180,6 +180,34 @@ class TestSFGamesProvider:
         assert all(r.opponent == "stockfish-skill-2" for r in results)
         provider.close()
 
+    def test_collect_streams_with_unique_slots(self, tmp_path):
+        """FS-6b: SF + self-play games share one iteration's slot space."""
+        from pathlib import Path as _Path
+
+        from training.journal import TrainingJournal
+        from training.selfplay import StreamContext
+
+        journal = TrainingJournal(_Path(tmp_path) / "provider-stream.jsonl")
+        stream = StreamContext(journal=journal, run_id="prov", regime="sf-games")
+        provider, _engine = make_provider(SFGamesProvider, "sf-games")
+        results = provider.collect(make_evaluator(), 4, TINY_CONFIG, stream=stream)
+        provider.close()
+
+        events = journal.read()
+        live = [e for e in events if e["kind"] == "live"]
+        ends = [e for e in events if e["kind"] == "game_end"]
+        assert live and len(ends) == len(results)
+        slots = {e["game"] for e in events}
+        # Slots are unique per game within the iteration: one per finished game.
+        assert len(slots) == len(results)
+        # Every slot's live events replay as one coherent game.
+        for slot in slots:
+            moves = [e["move"] for e in live if e["game"] == slot]
+            board = chess.Board()
+            for uci in moves:
+                board.push_uci(uci)
+            assert board.is_valid()
+
 
 class TestSFDistillProvider:
     def test_distill_targets_are_sf_one_hot_and_eval(self):

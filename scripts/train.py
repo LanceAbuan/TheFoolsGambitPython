@@ -38,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=None, help="override RNG seed")
     parser.add_argument("--parallel-games", type=int, default=None,
                         help="override concurrent self-play games (1-32, FS-4)")
+    parser.add_argument("--no-stream-games", action="store_true",
+                        help="disable live per-move journal streaming (FS-6b, headless/bulk)")
     parser.add_argument("--resume", nargs="?", const=True, default=None, metavar="RUN_ID",
                         help="resume a run: --resume RUN_ID, or --resume with --run-id")
     return parser
@@ -61,6 +63,8 @@ def build_profile(args: argparse.Namespace) -> TrainingProfile:
         overrides["seed"] = args.seed
     if args.parallel_games is not None:
         overrides["parallel_games"] = args.parallel_games
+    if args.no_stream_games:
+        overrides["stream_games"] = False
     return TrainingProfile(
         name=base.name,
         model=model,
@@ -76,6 +80,7 @@ def build_profile(args: argparse.Namespace) -> TrainingProfile:
         seed=overrides.get("seed", base.seed),  # type: ignore[arg-type]
         snapshot_every_iteration=base.snapshot_every_iteration,
         parallel_games=overrides.get("parallel_games", base.parallel_games),  # type: ignore[arg-type]
+        stream_games=overrides.get("stream_games", base.stream_games),  # type: ignore[arg-type]
     )
 
 

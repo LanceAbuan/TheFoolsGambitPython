@@ -18,6 +18,7 @@ import pytest
 import torch
 
 from training.hf import resolve_hf_token, upload_checkpoint
+from training.journal import TrainingJournal
 from training.model import MODEL_TINY, GambitNet
 from training.pipeline import TrainingProfile, run_training
 from training.regimes import create_run, get_regime
@@ -168,6 +169,27 @@ class TestKillAndResume:
         assert final_state["iterations_completed"] == 2
         # The replay buffer carried over and kept growing (never restarted).
         assert len(final_state["buffer_examples"]) > buffer_size_after_iter0
+
+    def test_streamed_game_slots_unique_across_resume(self, tmp_path):
+        """FS-6b: a resumed session continues the slot blocks, never reusing
+        ids from the original session's journal events."""
+        runs = tmp_path / "runs"
+        data = tmp_path / "data"
+
+        run_training(tiny_profile(iterations=1), run_id="streamed",
+                     base_dir=runs, data_dir=data)
+        run_training(tiny_profile(), run_id="streamed",
+                     base_dir=runs, data_dir=data, resume=True)
+
+        events = TrainingJournal(data / "train_log.jsonl").read()
+        per_kind: dict[str, list[int]] = {}
+        for event in events:
+            if event["kind"] in ("live", "game_end"):
+                per_kind.setdefault(event["kind"], []).append(event["game"])
+        # Session 1 = iteration 0 -> slots {0, 1}; resumed session = iteration
+        # 1 -> slots {2, 3}. Every slot distinct across the whole journal.
+        assert set(per_kind["game_end"]) == {0, 1, 2, 3}
+        assert set(per_kind["live"]) == {0, 1, 2, 3}
 
     def test_resumed_loss_matches_fresh_run(self, tmp_path, monkeypatch):
         """Exact rebuild: kill/resume reaches the same loss as one clean run.
