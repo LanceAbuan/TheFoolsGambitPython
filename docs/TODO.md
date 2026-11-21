@@ -12,6 +12,12 @@ functionality end-to-end → list **every** defect and improvement found → add
 repeat. When the loop converges (clean sweep), switch to optimization: benchmark training
 algorithms/configs (sims/sec, games/hour, strength per wall-clock hour) and log results here + §13.
 
+**Enforcement:** OpenCode automation `standing-review-loop` (`aut_1fcc6d34a0010FX5Pxly82OALk`) fires
+this loop every 6 hours as a fresh orchestrator session — created **paused**, with a dirty-tree safety
+gate in its prompt. Resume it once the main list below is done:
+`opencode.cmd api post /api/experimental/automation/aut_1fcc6d34a0010FX5Pxly82OALk/resume`
+(or the `automation_resume` tool). Keep its prompt in sync with the orchestrator runbook.
+
 ## Now / Next
 
 - [ ] **Responsive audit & fixes** — odd screen sizes look broken (user report). Test every view

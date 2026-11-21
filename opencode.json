@@ -4,5 +4,8 @@
     "build": {
       "prompt": "{file:./.opencode/build-prompt.md}"
     }
+  },
+  "experimental": {
+    "automations": true
   }
 }

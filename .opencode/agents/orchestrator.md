@@ -57,3 +57,5 @@ No milestone is "done" until this loop has run. It is a session workflow, not a 
 6. **File:** add each item to `docs/TODO.md` (defects → Now/Next; ideas → polish/optimization).
 7. **Fix:** work the list. Fix → re-verify in the browser → tick off.
 8. **Repeat** from 1. When the loop converges on a clean sweep, switch to **optimization**: benchmark training algorithms/configs (sims/sec, games/hour, strength per wall-clock hour), record results in §13 + TODO, adopt winners.
+
+A scheduled OpenCode automation (`standing-review-loop`, id in docs/TODO.md) fires this loop every 6 hours as a fresh orchestrator session; it is created **paused** and resumes once the main TODO list is done. If you change the loop here, update the automation's prompt to match.
