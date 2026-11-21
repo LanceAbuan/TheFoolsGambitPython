@@ -13,11 +13,13 @@ from ..ws import hub, lobby_state
 
 router = APIRouter()
 
+Strength = Literal["wandering", "curious", "enlightened"]
+
 
 class NewGameIn(BaseModel):
     color: Literal["white", "black", "random"] = "white"
     opponent: Literal["fool", "stockfish"] = "fool"
-    strength: str = "curious"
+    strength: Strength = "curious"
 
 
 class MoveIn(BaseModel):
@@ -41,7 +43,11 @@ async def _persist(session: Session) -> None:
 
 @router.post("/play/new")
 async def new_game(body: NewGameIn) -> dict:
-    session = engine.create_game(body.color, body.opponent)
+    try:
+        session = engine.create_game(body.color, body.opponent, body.strength)
+        await engine.opening_reply(session)
+    except engine.GameError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from None
     await _persist(session)
     snap = session.snapshot()
     await hub.send(f"game:{session.id}", "state", snap)
@@ -58,7 +64,7 @@ async def game_state(gid: str) -> dict:
 async def move(gid: str, body: MoveIn) -> dict:
     session = _load(gid)
     try:
-        engine.apply_player_move(session, body.from_sq, body.to_sq, body.promotion)
+        await engine.player_move(session, body.from_sq, body.to_sq, body.promotion)
     except engine.GameError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from None
     await _persist(session)
@@ -81,7 +87,7 @@ async def move(gid: str, body: MoveIn) -> dict:
 async def undo(gid: str) -> dict:
     session = _load(gid)
     try:
-        engine.undo(session)
+        await engine.undo(session)
     except engine.GameError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from None
     await _persist(session)
@@ -94,7 +100,7 @@ async def undo(gid: str) -> dict:
 async def resign(gid: str) -> dict:
     session = _load(gid)
     try:
-        engine.resign(session)
+        await engine.resign(session)
     except engine.GameError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from None
     await _persist(session)

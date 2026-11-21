@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -17,12 +17,19 @@ _TOPIC = re.compile(r"^(lobby|train|game:[A-Za-z0-9]+)$")
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def lobby_state() -> list[dict[str, Any]]:
+    """Active games for the Watch tab. ``opponent``/``strength`` added in WP-A slice 2."""
     return [
-        {"game_id": s.id, "orientation": s.orientation, "status": s.status}
+        {
+            "game_id": s.id,
+            "orientation": s.orientation,
+            "status": s.status,
+            "opponent": s.opponent,
+            "strength": s.strength,
+        }
         for s in engine.all_sessions()
     ]
 
@@ -48,6 +55,21 @@ class Hub:
                     self._subs.pop(topic, None)
                     self._seq.pop(topic, None)
 
+    async def reserve_seq(self, topic: str) -> int:
+        """Allocate the next per-topic sequence number.
+
+        Subscribe-time snapshots share the feed's counter so a client replaying
+        its last seen seq sees one monotonic stream per topic.
+        """
+        async with self._lock:
+            seq = self._seq.get(topic, 0) + 1
+            self._seq[topic] = seq
+            return seq
+
+    def subscriber_count(self, topic: str) -> int:
+        """Live connections on ``topic``. Event-loop-thread use only."""
+        return len(self._subs.get(topic, ()))
+
     async def send(self, topic: str, mtype: str, payload: dict[str, Any]) -> None:
         async with self._lock:
             connections = list(self._subs.get(topic, ()))
@@ -65,7 +87,7 @@ class Hub:
         for ws in connections:
             try:
                 await ws.send_json(message)
-            except Exception:  # dead connection — drop it
+            except Exception:  # noqa: BLE001 — a dying WS raises any transport error; drop it, keep fanning out
                 await self.unsubscribe(topic, ws)
 
 
@@ -78,11 +100,21 @@ async def _reject(ws: WebSocket, message: str) -> None:
     )
 
 
+async def _snapshot(ws: WebSocket, topic: str, mtype: str, payload: dict[str, Any]) -> None:
+    """Per-connection catch-up snapshot; consumes a seq from the topic's stream."""
+    await ws.send_json(
+        {"seq": await hub.reserve_seq(topic), "topic": topic, "type": mtype, "payload": payload, "ts": _now()}
+    )
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     """Subscribe protocol: {"seq": n, "type": "subscribe", "topic": "lobby"|"train"|"game:{id}"}.
 
-    Heartbeats are protocol-level pings (uvicorn default 20s interval).
+    Subscribe-time snapshots (state/metrics/lobby) are sent immediately, then
+    the hub feeds live events. The train topic additionally receives a metrics
+    push every 10s from :mod:`server.telemetry` while subscribed. Heartbeats
+    are protocol-level pings (uvicorn default 20s interval).
     """
     await ws.accept()
     joined: set[str] = set()
@@ -104,35 +136,11 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 except engine.NotFound:
                     await _reject(ws, f"unknown game {topic}")
                     continue
-                await ws.send_json(
-                    {
-                        "seq": 1,
-                        "topic": topic,
-                        "type": "state",
-                        "payload": session.snapshot(),
-                        "ts": _now(),
-                    }
-                )
+                await _snapshot(ws, topic, "state", session.snapshot())
             elif topic == "train":
-                await ws.send_json(
-                    {
-                        "seq": 1,
-                        "topic": topic,
-                        "type": "metrics",
-                        "payload": metrics_snapshot(),
-                        "ts": _now(),
-                    }
-                )
+                await _snapshot(ws, topic, "metrics", metrics_snapshot())
             else:  # lobby
-                await ws.send_json(
-                    {
-                        "seq": 1,
-                        "topic": topic,
-                        "type": "lobby",
-                        "payload": {"active_games": lobby_state()},
-                        "ts": _now(),
-                    }
-                )
+                await _snapshot(ws, topic, "lobby", {"active_games": lobby_state()})
     except WebSocketDisconnect:
         pass
     finally:

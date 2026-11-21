@@ -1,11 +1,18 @@
-"""Live game sessions: python-chess rules + the demo Fool engine.
+"""Live game sessions: python-chess rules + pluggable opponents.
 
-The Fool is a stand-in (material-greedy, random tiebreaks) until WP-C lands the
-trained model behind the same interface. All HTTP-mapped failures raise
-GameError subclasses whose `status` maps to an HTTP code.
+Opponents: the demo Fool (material-greedy, random tiebreaks) and a UCI
+Stockfish subprocess (see :mod:`server.stockfish`, one process per active
+game, stopped on finish/resign/shutdown). All HTTP-mapped failures raise
+GameError subclasses whose ``status`` maps to an HTTP code.
+
+Every mutating handler (move/undo/resign/opening reply) runs under the
+session's asyncio lock; the blocking opponent search runs inside
+``asyncio.to_thread`` so a thinking UCI engine never blocks the event loop.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 import random
 import threading
 import time
@@ -13,8 +20,13 @@ import uuid
 from dataclasses import dataclass, field
 
 import chess
+import chess.engine
 
-MAX_UNDO_PLIES = 2  # a human undo pops the Fool's reply too
+from . import stockfish
+
+log = logging.getLogger(__name__)
+
+MAX_UNDO_PLIES = 2  # a human undo pops the opponent's reply too
 
 
 class GameError(Exception):
@@ -37,12 +49,19 @@ class Conflict(GameError):
     status = 409
 
 
+class EngineUnavailable(GameError):
+    """Opponent engine binary missing (e.g. no stockfish installed)."""
+
+    status = 503
+
+
 @dataclass
 class Session:
     id: str
     kind: str  # 'play' | 'selfplay'
     orientation: str  # the human's color: 'white' | 'black'
     opponent: str  # 'fool' | 'stockfish'
+    strength: str = "curious"  # wandering | curious | enlightened (stockfish only)
     sans: list[str] = field(default_factory=list)
     ucis: list[str] = field(default_factory=list)
     fens: list[str] = field(default_factory=list)
@@ -51,6 +70,8 @@ class Session:
     winner: str | None = None
     reason: str | None = None
     created_at: float = field(default_factory=time.time)
+    sf: chess.engine.SimpleEngine | None = field(default=None, repr=False, compare=False)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     @property
     def human_color(self) -> chess.Color:
@@ -159,30 +180,73 @@ def _push(session: Session, move: chess.Move) -> str:
     return san
 
 
-def create_game(color: str, opponent: str) -> Session:
+def _opponent_move_sync(session: Session) -> chess.Move | None:
+    """Blocking opponent move computation. Runs on a worker thread.
+
+    A crashed/missing Stockfish degrades to the Fool for that move (logged) so
+    a live game is never stranded; the dead process is deregistered and the
+    next move respawns if the binary is available again.
+    """
+    if session.board.is_game_over():
+        return None
+    if session.opponent == "fool":
+        return _fool_move(session.board)
+    if session.opponent == "stockfish":
+        try:
+            return stockfish.best_move(session)
+        except Exception:
+            log.exception("stockfish failed for game %s; falling back to the Fool", session.id)
+            stockfish.drop(session)
+            return _fool_move(session.board)
+    return None
+
+
+async def _opponent_turn(session: Session) -> None:
+    """Compute + apply the opponent's reply; stop the UCI process when the game ends.
+
+    Caller must hold ``session.lock`` and the game must be active.
+    """
+    reply = await asyncio.to_thread(_opponent_move_sync, session)
+    if reply is not None:
+        _push(session, reply)
+        _finish_if_over(session)
+    if session.status != "active":
+        await stockfish.stop(session)
+
+
+def create_game(color: str, opponent: str, strength: str = "curious") -> Session:
+    """Create a session; raises EngineUnavailable (503) for stockfish with no binary.
+
+    The opponent's opening reply (human plays Black) is applied by the caller
+    via :func:`opening_reply`, keeping the blocking UCI round-trip off the
+    event loop and out of this sync function.
+    """
+    if opponent == "stockfish" and stockfish.resolve_binary() is None:
+        raise EngineUnavailable("stockfish binary not found")
     orientation = color if color != "random" else random.choice(["white", "black"])
     session = Session(
-        id=uuid.uuid4().hex[:12], kind="play", orientation=orientation, opponent=opponent
+        id=uuid.uuid4().hex[:12],
+        kind="play",
+        orientation=orientation,
+        opponent=opponent,
+        strength=strength,
     )
-    if session.human_color is chess.BLACK and opponent == "fool":
-        reply = _fool_move(session.board)
-        assert reply is not None  # startpos always has moves
-        _push(session, reply)
-    _finish_if_over(session)
     with _lock:
         _sessions[session.id] = session
     return session
 
 
-def get_session(gid: str) -> Session:
-    session = _sessions.get(gid)
-    if session is None:
-        raise NotFound(f"game {gid} not found")
-    return session
+async def opening_reply(session: Session) -> str | None:
+    """Apply the opponent's opening reply when the human plays Black. Returns its SAN."""
+    async with session.lock:
+        if session.status != "active" or session.board.turn == session.human_color:
+            return None  # human moves first — nothing to open with
+        await _opponent_turn(session)
+        return session.sans[-1] if session.sans else None
 
 
-def apply_player_move(session: Session, from_sq: str, to_sq: str, promotion: str | None) -> str:
-    """Validate + apply the human move, then the Fool's reply. Returns the human's SAN."""
+def _apply_human_move(session: Session, from_sq: str, to_sq: str, promotion: str | None) -> str:
+    """Validate + apply the human's move. Caller must hold ``session.lock``."""
     if session.status != "active":
         raise Conflict("game is finished")
     if session.board.turn != session.human_color:
@@ -196,30 +260,63 @@ def apply_player_move(session: Session, from_sq: str, to_sq: str, promotion: str
         raise IllegalMove(f"illegal move {uci}") from exc
     san = _push(session, move)
     _finish_if_over(session)
-    if session.status == "active" and session.opponent == "fool":
-        reply = _fool_move(session.board)
-        if reply is not None:
-            _push(session, reply)
-            _finish_if_over(session)
     return san
 
 
-def undo(session: Session) -> None:
-    if session.status != "active":
-        raise Conflict("game is finished")
-    if not session.sans or session.board.turn != session.human_color:
-        return  # nothing of the human's to undo yet
-    pops = min(MAX_UNDO_PLIES, len(session.sans))
-    for _ in range(pops):
-        session.board.pop()
-        session.sans.pop()
-        session.ucis.pop()
-        session.fens.pop()
+async def player_move(session: Session, from_sq: str, to_sq: str, promotion: str | None) -> str:
+    """Validate + apply the human move, then the opponent's reply. Returns the human's SAN."""
+    async with session.lock:
+        san = _apply_human_move(session, from_sq, to_sq, promotion)
+        await _opponent_turn(session)
+        return san
 
 
-def resign(session: Session) -> None:
-    if session.status != "active":
-        raise Conflict("game is finished")
-    session.status = "finished"
-    session.winner = "black" if session.human_color is chess.WHITE else "white"
-    session.reason = "resign"
+async def undo(session: Session) -> None:
+    """Pop the human's last move (+ the opponent's reply), landing on the human's turn.
+
+    The pop count is trimmed so the game is never stranded before the
+    opponent's opening reply (e.g. undoing with only the engine's 1st move on
+    the board is a no-op).
+    """
+    async with session.lock:
+        if session.status != "active":
+            raise Conflict("game is finished")
+        if not session.sans or session.board.turn != session.human_color:
+            return  # nothing of the human's to undo yet
+        total = len(session.sans)
+        pops = min(MAX_UNDO_PLIES, total)
+        human_to_move_after = 0 if session.human_color is chess.WHITE else 1
+        if (total - pops) % 2 != human_to_move_after:
+            pops -= 1
+        for _ in range(max(pops, 0)):
+            session.board.pop()
+            session.sans.pop()
+            session.ucis.pop()
+            session.fens.pop()
+
+
+async def resign(session: Session) -> None:
+    """The human resigns; the UCI opponent process (if any) is stopped."""
+    async with session.lock:
+        if session.status != "active":
+            raise Conflict("game is finished")
+        session.status = "finished"
+        session.winner = "black" if session.human_color is chess.WHITE else "white"
+        session.reason = "resign"
+        await stockfish.stop(session)
+
+
+async def shutdown_engines() -> int:
+    """Stop every live stockfish process (app shutdown). Returns the count stopped."""
+    stopped = 0
+    for session in all_sessions():
+        if await stockfish.stop(session):
+            stopped += 1
+    return stopped
+
+
+def get_session(gid: str) -> Session:
+    session = _sessions.get(gid)
+    if session is None:
+        raise NotFound(f"game {gid} not found")
+    return session
