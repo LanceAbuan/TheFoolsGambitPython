@@ -1,0 +1,321 @@
+# Fool's Gambit v2 — Full Overhaul Plan (living document)
+
+> **Version:** 2.0 · **Status:** Approved, awaiting execution · **Branch:** `feature/play-and-local-overhaul` (created, cleanup staged, nothing committed) · **Last updated:** 2026-11-20
+>
+> **This is a living document.** Every phase execution updates the status markers here and appends to the Changelog (§13). Nothing in the repo should diverge from this file without a changelog entry. Companion docs: [`ARCHITECTURE.md`](./ARCHITECTURE.md) (current system, to be rewritten at ship) · [`README.md`](../README.md).
+
+---
+
+## 1. The Mission (non-negotiable)
+
+Three things are fixed. Everything else — language, framework, engine, code — is negotiable and is judged against a single bar: **is this the optimal choice for the mission on this hardware?**
+
+1. **Train a chess bot** on the local RTX 3080.
+2. **Have a website** where anyone can watch it learn and play, live.
+3. **Host the model** so the owner can play against it — and send other people a link to play against it.
+
+Everything below is derived from those three lines.
+
+---
+
+## 2. Overhaul Verdicts (researched 2026-11-20)
+
+The user mandate: *overhaul anything that is not 100% optimal, including changing languages or tech stack.* Here is every component, judged honestly. "Optimal" = best trade-off of performance, correctness, maintainability, and time-to-mission for a one-person project on one Windows box with one 3080.
+
+| Component | Verdict | What replaces it / why |
+|---|---|---|
+| Pure-Python chess rules in the **training hot path** | **REPLACE** | New Rust extension **`gambit_core`** (PyO3 + `chess` crate): bitboard movegen, make/unmake, FEN, Zobrist, batched stepping, batched tensor encoding, perft. This is the "completely custom engine optimized for training." |
+| `python-chess` | **DEMOTE, keep** | Demoted to: website game layer (correctness-critical, perf-irrelevant), PGN I/O, and the **test oracle** for `gambit_core` (perft + randomized game-equality fuzzing). |
+| Flask + SSE server | **REPLACE** | **FastAPI + uvicorn + WebSockets.** Public play with spectators needs bidirectional realtime, typed messages, and async concurrency. SSE is one-directional and its Flask implementation is thread-based; WS is supported end-to-end through Cloudflare Tunnel. |
+| `react-chessboard` (MIT, v5.12.1, active) | **KEEP** | Lichess's chessground is the gold standard but is **GPL-3.0** — adopting it makes the whole frontend GPL. react-chessboard is MIT, actively maintained, already integrated. Premove support exists in the interaction model we need (click/drag + promotion dialog); premoves are a non-goal for vs-AI play. Trade-off logged in §12. |
+| Model head: flat 4096 (from×to) | **REPLACE** | AlphaZero-canonical **73×64 = 4672** policy planes (56 queen-like + 8 knight + 9 underpromotion planes per origin square). Underpromotions get real logits; encoding is the standard every reference implementation uses. |
+| Input encoder: 16 planes, no history | **REPLACE** | ~29 planes: 12 current pieces + 12 previous position + 4 castling + 1 en-passant. History gives repetition/draw awareness for ~zero cost. Encoder lives behind an interface so this stays a config knob, not a rewrite. |
+| Training bugs (MCTS sign, instant-resign, promotion collision) | **FIX + regression tests** | §10. Prior checkpoints are tainted by these bugs → **archive old HF artifacts as `v1-legacy`, retrain from scratch** with the fixed pipeline. |
+| `torch.compile` on Windows | **OPTIONAL, de-prioritized** | Research: only works via community `triton-windows` wheels with strict version pinning (torch 2.15 → triton 3.9) and the 260-char Windows path trap; measured gain on small ResNets ≈ **1.1–1.15x**. The real GPU wins are **TF32 + bf16 autocast + channels_last** (measured ≈ **2.3x** on comparable workloads). Compile is an optional flag behind env detection, never a dependency. |
+| Batched NN inference | **KEEP, harden** | The existing GPU-batched evaluator idea is right. Rebuild it as a dedicated **NNEvaluator service**: request queue, micro-batching (size cap + 4 ms window), fp16, pinned memory, optional CUDA Graphs for fixed shapes. This — not movegen — is the true throughput lever. |
+| Game storage: in-memory, 20-SAN truncation, no PGN | **REPLACE** | **SQLite** (`data/gambit.db`, WAL mode): games, moves, checkpoints tables; every human *and* training game archived with full PGN. |
+| Training metrics storage: JSON files | **KEEP (deliberate)** | Works, isolated, zero-risk. Consolidating into SQLite touches every dashboard endpoint for no user-visible gain. Logged in §12 as a conscious "not now." |
+| Stockfish wrapper | **KEEP, fix paths** | Windows binary in `tools/` (gitignored), path resolution: env → `tools/` → `PATH`. Local sparring partner + gate-eval ladder. **Never exposed to website visitors** (§9). |
+| Hugging Face Hub checkpointing | **KEEP, extend** | Still the model upload/registry. Add `scripts/publish.py` (tag, push, attach model card) — this is the "upload the model" half of the mission. |
+| Vercel/`vercel.json`/`Procfile`/serverless deploy | **DELETE** | Serverless cannot host GPU inference, WS, or training. Replaced by Cloudflare Tunnel (below) + optional VPS path (§8). |
+| React 19 + Mantine 9 + Vite + TypeScript | **KEEP** | Right tool, modern, already built. New views added; SSE hooks swapped for one WS client. |
+| SQLite for archive; Python for web/training; TS for UI | **KEEP** | §12 logs why each language stays: Python owns training (PyTorch is the irreplaceable asset) and the web layer; Rust owns only the hot path; TypeScript owns the UI. No other split pays for its coordination cost. |
+
+---
+
+## 3. Research Findings (with sources)
+
+| # | Finding | Source | Consequence |
+|---|---|---|---|
+| R1 | `torch.compile` CUDA on Windows requires community `triton-windows`; torch 2.15 pairs with Triton 3.9; known Windows path-length failure mode; ~1.1x on small ResNets | github.com/triton-lang/triton-windows · pytorch/pytorch#167062 · b1ackjack12.github.io benchmark (Aug 2026) | Perf plan: TF32+bf16+channels_last first (≈2.3x), compile optional flag only |
+| R2 | Rust `chess` crate (jordanbray): MIT, perft 5 ≈ 18.6 ms (faster than shakmaty 0.16's 24.1 ms on same bench), copy-on-make board, Zobrist built in | github.com/jordanbray/chess · docs.rs/crate/chess/latest | `gambit_core` uses `chess` crate; shakmaty rejected on GPL-3.0 license (§12) |
+| R3 | PyO3 requires Rust ≥ 1.85, supports CPython 3.13; `maturin` builds wheels; `uv` handles PEP 517 maturin backends | pyo3.rs guide | Build chain: `rustup` + MSVC Build Tools → `uv sync` compiles `gambit_core` |
+| R4 | chessground = GPL-3.0 ("combined work may be distributed only under the GPL"); react-chessboard = MIT, v5.12.1 released Aug 2026, 53k weekly downloads | github.com/lichess-org/chessground · npmjs.com/package/react-chessboard | Frontend stays MIT: react-chessboard |
+| R5 | Cloudflare named tunnels: **free on every plan**, custom hostname, WebSockets proxied, cloudflared installs as a Windows service; quick tunnels (`trycloudflare.com`) are dev-only (no SSE, 200-conn cap) — irrelevant since we move to WS | developers.cloudflare.com/tunnel · flaviocopes.com guide (Sep 2026) | Public hosting = named tunnel on `lanceabuan.tech`, zero cost, GPU stays local |
+| R6 | PyTorch 2.15.0 CUDA (cu132) supports Python 3.11–3.15, sm_86 verified | (prior session research, Nov 2026) | Locked: torch 2.15.0+cu132, Python 3.13 via uv |
+
+---
+
+## 4. Target Architecture
+
+```
+                    ┌─────────────────────────────────────────────────────┐
+                    │                FastAPI + uvicorn (:8000)             │
+                    │                                                     │
+   Browser ────WS──▶│  ws/: one typed channel per client                  │
+   (React 19)       │    subscribe: lobby | game:{id} | train             │
+                    │  api/:                                              │
+                    │    POST /api/play/new        (color, opponent,      │
+                    │     /{id}/move /undo /resign  strength preset)      │
+                    │    GET  /api/play/{id} /list                        │
+                    │    GET  /api/games?kind=...  (archive + live)       │
+                    │    GET  /api/checkpoints     POST /api/train/...    │
+                    │        │                                            │
+                    │  ┌─────▼───────────────────────────────┐            │
+                    │  │  Engine interface (unchanged shape) │            │
+                    │  │  NeuralNetEngine → MCTS(gambit_core │            │
+                    │  │     or python-chess, NNEvaluator)   │            │
+                    │  │  StockfishEngine (skill 1–20)       │            │
+                    │  │  RandomEngine                       │            │
+                    │  └─────┬───────────────────────────────┘            │
+                    │        │                                            │
+                    │  ┌─────▼──────────┐   ┌───────────────────────┐    │
+                    │  │  PlaySessions  │   │ Trainer (self-play +  │    │
+                    │  │  (GameManager) │   │ optimize + gate eval) │    │
+                    │  └─────┬──────────┘   └──────────┬────────────┘    │
+                    │        ▼                         ▼                 │
+                    │  ┌─────────────────────────────────────────┐       │
+                    │  │  SQLite data/gambit.db (WAL)            │       │
+                    │  │  games · moves · checkpoints            │       │
+                    │  └─────────────────────────────────────────┘       │
+                    │        │  everything publishes through              │
+                    │        ▼  the same lobby/game event bus           │
+                    └────────┼────────────────────────────────────────────┘
+                             ▼
+              Watch tab: training games AND human games, live
+
+   Optional (M4): same app in Docker with ONNX int8 inference on a $5 VPS
+   Public exposure: Cloudflare named tunnel → play.lanceabuan.tech → :8000
+```
+
+**The one architectural principle:** trainer and play API publish through the **same event bus**, so a visitor watching the site sees training games and human games identically. No duplicate streaming code paths, ever.
+
+### 4.1 `gambit_core` (Rust) contract
+
+| Function | Purpose |
+|---|---|
+| `from_fen / to_fen` | Position I/O |
+| `legal_moves(pos) -> [Move]` | Bitboard movegen |
+| `play(pos, move) -> pos` | Copy-on-make step |
+| `step_batch(fens, moves) -> [fens]` | Batched stepping for N parallel games in one FFI call |
+| `encode_batch(fens, history) -> ndarray (N,C,8,8)` | Tensor encoding **in Rust** (kills the per-square Python loop in `board_to_tensor`) |
+| `zobrist(pos) -> u64` | Transpositions / dedupe |
+| `outcome(pos) -> ...` | Checkmate/stalemate/insufficient material/50-move |
+| `perft(pos, depth)` | Used by the test suite against known perft numbers |
+
+`python-chess` remains the oracle: randomized differential fuzzing (thousands of positions, movegen equality) + standard perft suite.
+
+### 4.2 Database schema (initial)
+
+```sql
+games(id TEXT PK, kind TEXT CHECK(kind IN ('human','selfplay','eval')),
+      white_name, black_name, engine_id, checkpoint_tag,
+      result TEXT, termination TEXT, ply_count INT,
+      pgn TEXT, meta JSON, started_at REAL, ended_at REAL)
+moves(game_id TEXT, ply INT, uci TEXT, san TEXT,
+      eval_cp REAL, winprob REAL, think_ms INT,
+      PRIMARY KEY(game_id, ply))
+checkpoints(tag TEXT PK, path TEXT, hf_rev TEXT,
+      games_trained INT, elo_est REAL, is_current INT, created_at REAL)
+-- indexes: games(ended_at DESC), games(kind, ended_at DESC), FK moves→games
+```
+
+### 4.3 WebSocket protocol (typed JSON, sequence-numbered)
+
+```
+C→S {type:"subscribe", channel:"lobby"|"game:<id>"|"train"}
+C→S {type:"play/new", color, opponent:"nn"|"stockfish"|"random", strength}
+C→S {type:"play/move", game_id, uci}          # server-side legality only
+C→S {type:"play/undo"|"play/resign", game_id}
+S→C {type:"game_state", game_id, fen, moves:[...], turn, result?, last_move}
+S→C {type:"game_move", game_id, ply, uci, san, winprob}
+S→C {type:"game_over", game_id, result, termination}
+S→C {type:"lobby", games:[...]}               # live games for the Watch tab
+S→C {type:"train_metrics", step, loss, ...}
+-- reconnect: client sends last seq per channel; server resyncs state
+```
+
+---
+
+## 5. Performance Engineering (measure-first, with gates)
+
+No throughput claim ships without a measured baseline. `scripts/bench.py` reports **sims/sec, games/hour, NN batch latency, CPU vs GPU utilization**.
+
+| Lever | Expected | Gate |
+|---|---|---|
+| TF32 + bf16 autocast + channels_last | ≈2.3x NN step (research: 21.4→9.1 ms on comparable ResNet) | default ON from M2 |
+| NNEvaluator micro-batching (256-cap / 4 ms window), fp16, pinned memory | NN utilization from ~30% → 80%+ | default ON from M2 |
+| `gambit_core` movegen + Rust batch encoding (replaces per-square Python loop) | 10–30x on the CPU portion of a tree step | M3 acceptance: **≥3x end-to-end games/hour** vs measured M2 baseline, else document why |
+| Parallel self-play games (16–32) feeding one evaluator | near-linear until GPU saturates | tuned via bench |
+| `torch.compile` | ≈1.1x on small ResNets, Windows friction | optional flag, off by default |
+| CUDA Graphs (fixed batch shapes) | small; only if profiling shows launch overhead | stretch, M4 |
+
+**Honest ceiling:** AlphaZero-scale strength used thousands of TPUs for 9 hours. One 3080 with a 1–6M-param net yields a sane, tactically reasonable club-level-ish bot after days of training — not superhuman. The bench numbers make this measurable instead of hand-wavy.
+
+---
+
+## 6. Milestones
+
+### M0 — Toolchain & hygiene (half day)
+| Task | Done when |
+|---|---|
+| `pyproject.toml` + `uv sync` (Python 3.13 managed; chess 1.11.2, fastapi, uvicorn, pydantic v2, torch 2.15.0+cu132, numpy, psutil, huggingface_hub, stockfish, pytest, ruff) | `uv run python -c "import torch; torch.cuda.is_available()"` → True on the 3080 |
+| Stockfish Windows binary → `tools/`; path resolution env → `tools/` → PATH | wrapper evaluates a position on Windows |
+| Repo hygiene commit (staged deletions: dead `ai.py`/`engine.py`, nested old repo, logs, `vercel.json`, `Procfile`) | clean root; `.gitignore` covers `.venv/ tools/ data/` |
+| Install rustup + MSVC Build Tools (needed for M3; `winget` install, can run in background) | `cargo --version` works |
+
+### M1 — Playable core + website (the product, ~2–3 days)
+| Task | Done when |
+|---|---|
+| FastAPI app skeleton: lifespan, config, structured errors, CORS for dev | boots, serves client dist |
+| Engine interface + `RandomEngine`, `StockfishEngine` (skill ladder), `NeuralNetEngine` (wraps existing MCTS over python-chess, bugs fixed from §10 inlined here so M1 is correct even before M2) | each engine returns a legal move on arbitrary positions; unit-tested |
+| `PlaySession` + `GameManager` + play REST endpoints (`new/move/undo/resign/state/list`) | full lifecycle via API tests; illegal move → 4xx + reason; undo pops full move pair |
+| SQLite archive (`games`, `moves`); every finished game saved with full PGN | PGN round-trips through `chess.pgn`; survives restart |
+| WS layer: lobby + game channels, event bus shared by trainer; typed messages, seq + resync | a `/play` move appears in a WS subscriber's feed live |
+| Client: `PlayView` (setup → board → promotion dialog → move list → result → rematch), `WatchView` (live lobby + game view), `TrainingView` ported off SSE onto WS | full game as White and as Black; watch tab shows both |
+| Client dev proxy + built-dist serving both work | `npm run dev` and prod build both functional |
+| **Browser self-review pass 1** (§7): screenshots of every flow, reviewed, defects fixed | sign-off recorded in changelog |
+| Cloudflare named tunnel — **DEFERRED per user (2026-11-20): local hosting first.** Same app, exposure layer only; enabling later costs nothing | a phone on LTE can load the site and play the bot |
+
+### M2 — Training pipeline v2 (~2–3 days)
+| Task | Done when |
+|---|---|
+| Encoder v2 (29-plane, history) behind an interface; batch encoding vectorized | unit tests vs hand-built tensors |
+| Model v2: 4672-plane policy head, masked softmax, ResNet presets (tiny 6-block/64-f ≈ 1M, base 10-block/128-f ≈ 6M) | forward pass shapes verified; param counts logged |
+| Bug fixes + regression tests: MCTS terminal sign, 3-strike resign (default off for self-play; opt-in), promotion indexing | each bug has a failing-then-passing test |
+| `NNEvaluator` service: queue, micro-batch, fp16, TF32, channels_last | bench: batch latency + utilization numbers recorded |
+| Replay buffer: on-disk npz shards + sliding window; loader with pinned memory | `--profile smoke` (8×8 games, tiny net, 200 steps) runs end-to-end on GPU |
+| Self-play driver: temperature schedule (τ=1 first 30 plies → argmax), Dirichlet α=0.3 ε=0.25, games archived to SQLite with full PGN | games/hour baseline measured and written into this file |
+| Gate eval: candidate vs incumbent 200-game arena + Stockfish skill ladder + random; acceptance = ≥55% score | a gate decision is produced and logged |
+| `scripts/train.py --profile smoke|night` orchestration: loop self-play → sample → optimize → eval → checkpoint → HF push | a full loop completes unattended; dashboard reflects it live |
+
+### M3 — `gambit_core` (Rust, the custom training engine) (~2–4 days)
+| Task | Done when |
+|---|---|
+| Crate scaffold: PyO3 + `chess` crate, maturin build wired into `uv` | `uv sync` builds the extension on Windows |
+| FEN/movegen/play/Zobrist/outcome/perft bindings | perft(5) = 4,865,609 from startpos; matches known values |
+| Batched `step_batch` + `encode_batch` (returns NumPy arrays) | differential fuzz vs python-chess: ≥10k random positions, zero mismatch |
+| Integrate behind a `BoardBackend` interface: MCTS + self-play switch to `gambit_core`; python-chess stays for web/play/tests | all existing tests pass unchanged |
+| Bench vs M2 baseline | **≥3x games/hour** recorded in this file (or documented reason + decision) |
+| Stretch: tree itself in Rust with Python NN-eval callback via queue | only if profile shows Python tree-walk still dominates |
+
+### M4 — Public hardening & durability (~1–2 days)
+| Task | Done when |
+|---|---|
+| Security: `ADMIN_TOKEN` on train/reset/push endpoints; per-IP rate limits + concurrent-game cap on public surface; Stockfish never visitor-reachable; strict message validation on WS | unauth reset → 401; abuse tests pass |
+| ONNX int8 export (`scripts/export_onnx.py`) + Dockerfile (CPU ONNX Runtime, small-sims profile) + deploy doc for a cheap VPS | exported model plays legal games; image runs locally |
+| `scripts/publish.py`: tag checkpoint, push to HF Hub with model card | model card shows arch, training curves, Elo estimate |
+| CI rewrite: pytest + ruff + `cargo test` + client build; Vercel removed | CI green on PR |
+| README + ARCHITECTURE.md rewritten to match reality (play feature front and center, local quickstart, tunnel guide, honest Elo section) | docs match code |
+| Conventional commits, push, PR to `main` (per `.opencode/build-prompt.md`) | PR URL reported |
+
+### M5 — Live operations (continuous)
+Kick off a real multi-day training run; watch it on the site; tune cpuct/FPU/Dirichlet from observed behavior; keep the tunnel up; friends play the current checkpoint via the site. Every material change updates this document.
+
+---
+
+## 7. UI Self-Review Protocol (mandatory for every UI change)
+
+I do not claim a UI works unless I have watched it work:
+
+1. Boot server (+ client dev server when iterating); open the site in the in-app browser.
+2. Screenshot every surface: Play setup, in-game (both colors), promotion dialog, game-over/rematch, Watch lobby, live game view, Training metrics, Archive/replay.
+3. Read each screenshot back and audit it myself: layout breaks, unstyled Mantine, blank boards, wrong orientation, missing highlights, overflow.
+4. **Drive the flows myself:** start vs Stockfish skill 3 as White, play a real opening, promote a pawn, finish/resign, rematch; repeat as Black; open Watch in a second tab and confirm moves appear live.
+5. Check console + network: JS errors, failed fetches, WS reconnect spam.
+6. Fix → re-screenshot the affected flow → confirm visually. Screenshots are saved so the user can eyeball the same evidence.
+
+(I read images natively — the screenshot *is* the OCR step.)
+
+---
+
+## 8. Hosting the Model (mission line 3)
+
+| Path | Cost | Strength | Availability | When |
+|---|---|---|---|---|
+| **Cloudflare named tunnel → local 3080** | $0 (domain DNS on CF required) | Full (800+ sims) | While the PC is on | M1 — this is the primary |
+| **VPS + Docker + ONNX int8** | ~$5/mo | Reduced (64–128 sims, still playable) | 24/7 | M4 — optional durability |
+| HF Hub | $0 | (registry only) | — | already built; extended in M4 |
+
+The tunnel gives visitors the exact model the owner trained, at full strength, for free. The VPS path exists so the site survives the PC being off. Both serve the same app.
+
+**Do we need Docker/Linux? No.** Everything primary runs natively on Windows: CUDA training (PyTorch ships native Windows CUDA wheels — no WSL needed), `gambit_core` (compiles locally with MSVC via maturin), FastAPI/uvicorn, Stockfish, and cloudflared (installs as a Windows service). Docker appears **only** in the optional VPS path above, as packaging convenience: Linux VPSes are simply the cheapest 24/7 boxes, and a Docker image is the one-command way to ship the app there. Alternatives stay open (bare `uv` + systemd on the VPS, or a pricier Windows VPS). The model itself is platform-neutral — `.pt`/`.onnx` files on HF Hub; only the inference runtime differs per host. Linux *would* buy full official `torch.compile` support (§3 R1), but that lever is optional and worth ≈1.1x — not worth moving the primary environment off the GPU box where the 3080 lives. Note: GitHub Actions CI runners are Linux — that's free test infrastructure, unrelated to hosting.
+
+**User action items:** (1) move/confirm `lanceabuan.tech` DNS on Cloudflare; (2) approve installs: VS Build Tools, rustup, cloudflared.
+
+---
+
+## 9. Security Posture (because the site becomes public)
+
+- Destructive endpoints (`/api/train/reset`, HF push) require `ADMIN_TOKEN`; never routed through the tunnel.
+- Public surface = play/watch/archive read endpoints only; per-IP rate limits; cap concurrent games per IP.
+- Server-side legality on every move; WS messages schema-validated (pydantic); no eval of user strings; engine subprocesses are Stockfish-only, local-only.
+- CORS: localhost dev origins; the tunnel serves same-origin so no wildcard CORS in prod.
+
+---
+
+## 10. Known Bug Ledger (each fixed with a regression test)
+
+| Bug | Detail | Fix |
+|---|---|---|
+| MCTS sign | Terminal checkmate evaluates as a **win** for the mated side → poisons mate search + training labels | Terminal value from side-to-move perspective; test: mate-in-1 position → MCTS plays the mate |
+| Resign | Single eval below threshold → instant resign, corrupting game outcomes | 3 consecutive evals below −0.9 past ply 40; **default off** for self-play |
+| Promotion policy | All promotions share one 4096 logit | 73×64 encoding gives underpromotions real planes |
+| Game history | In-memory, truncated to 20 SAN, no PGN | SQLite archive, full PGN, all game kinds |
+| Stockfish path | Linux-only hardcode; also single shared instance w/o queue fairness | Windows resolution chain; keep lock, add health-check + auto-restart (exists) |
+
+---
+
+## 11. Decision Log (rejected alternatives — so we don't relitigate)
+
+| Decision | Alternatives considered | Why rejected |
+|---|---|---|
+| Rust via PyO3 for hot path only | Full-Rust backend; fully-GPU board simulation; adopt LC0 wholesale | Full-Rust: loses PyTorch ecosystem, months of work, mission-neutral. GPU board sim: research-grade complexity, poor debuggability, 3080 saturates via batching anyway. LC0: opaque pipeline, not "your" bot, huge build |
+| `chess` crate (MIT) | shakmaty (GPL-3.0, actively maintained, variants we don't need) | License cleanliness for a project that may be public; benchmarks equal or better for our needs |
+| FastAPI + WS | Flask + SSE (existing); Socket.IO | Bidirectional realtime for play; async concurrency for spectators; one modern async stack; WS passes cleanly through Cloudflare |
+| react-chessboard (MIT) | chessground (GPL-3.0) | Whole-frontend GPL contagion vs MIT; feature set sufficient for vs-AI play; revisit only if lichess-parity interactions become a hard requirement |
+| TF32/AMP-first, compile optional | torch.compile default-on | Windows Triton friction + 1.1x payoff isn't worth build fragility (§3 R1) |
+| SQLite for games; JSON metrics stay | Migrate metrics to SQLite too | Metrics storage works, is isolated, and consolidating it mid-flight risks dashboard endpoints for zero user-visible gain |
+| Retrain from scratch | Fine-tune existing HF checkpoints | Existing labels were produced by the sign/resign/promotion-buggy pipeline — the data itself is suspect; fresh start with fixed pipeline |
+
+---
+
+## 12. Docs & References
+
+| Topic | Reference |
+|---|---|
+| uv — env/Python management, PEP 517 builds | https://docs.astral.sh/uv/ |
+| python-chess — rules, PGN, legality (oracle + web layer) | https://python-chess.readthedocs.io/ |
+| PyTorch — CUDA, AMP, TF32, ONNX export | https://pytorch.org/docs/stable/ |
+| triton-windows — Windows torch.compile (optional path) | https://github.com/triton-lang/triton-windows |
+| PyO3 + maturin — Rust↔Python extension builds | https://pyo3.rs/ · https://www.maturin.rs/ |
+| `chess` Rust crate — bitboard movegen core | https://github.com/jordanbray/chess · https://docs.rs/chess |
+| AlphaZero (paper) — PUCT, Dirichlet, temperature, value targets | arXiv:1712.01815 |
+| LC0 — cpuct/FPU reference values, network input conventions | https://lczero.org/ |
+| FastAPI — async, WS, pydantic v2, testing | https://fastapi.tiangolo.com/ |
+| WebSockets + FastAPI WS test client | https://fastapi.tiangolo.com/advanced/websockets/ |
+| Cloudflare Tunnel — named tunnels, custom hostname, Windows service | https://developers.cloudflare.com/tunnel/ |
+| SQLite (WAL mode, concurrency) | https://www.sqlite.org/wal.html |
+| react-chessboard — board component, promotion, arrows | https://react-chessboard.com/ |
+| Mantine 9 — AppShell/components | https://mantine.dev/ |
+| pytest — fixtures, parametrization | https://docs.pytest.org/ |
+| Stockfish PyPI wrapper | https://pypi.org/project/stockfish/ |
+
+---
+
+## 13. Changelog (execution log)
+
+| Date | Change |
+|---|---|
+| 2026-11-20 | Plan v2 written: full-overhaul verdicts, Rust `gambit_core` added, FastAPI+WS replaces Flask+SSE, model v2 head, hosting strategy, research findings §3, decision log §11 |
+| 2026-11-20 | §8: "no Docker/Linux needed" clarification added. Per user: focus on **local hosting first** — Cloudflare tunnel (M1) and VPS path (M4) deferred; they are exposure layers on the same app, zero rework to enable later |
