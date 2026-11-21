@@ -36,12 +36,18 @@ Keep its prompt in sync with the orchestrator runbook.
 
 ## Work packages (per docs/UPGRADE_PLAN.md)
 
-- [~] **WP-A — Backend**: FastAPI + WebSocket + SQLite. Serves: live board streaming, training telemetry
-      (ELO, loss, win-rate), training journal feed, game persistence. Swap the UI's mock data slots
-      (Watch metrics, journal, ELO rating `—`) to real feeds. Self-play watcher process.
-      **Slice 1 LANDED** (`9a9c1d9`): play/new·move·undo·resign, archive + PGN, metrics, train stubs,
-      /ws hub, SQLite WAL, demo Fool engine — 65 tests green, latency baseline recorded (see Hygiene).
-      **Slice 2 IN FLIGHT** (backend-dev): Stockfish opponent (skill ladder) + WS train-topic telemetry.
+- [x] **WP-A — Backend**: FastAPI + WebSocket + SQLite. **LANDED** — slice 1 (`9a9c1d9`) + slice 2
+      (`2e12f19`): play/new·move·undo·resign, games archive + PGN, metrics, admin-gated train stubs,
+      /ws hub (monotonic seq, lobby/train/game topics), SQLite WAL, demo Fool engine, Stockfish 19
+      opponent (wandering/curious/enlightened skill ladder, one UCI process per game, graceful
+      lifecycle, degrades to Fool on engine crash), WS train telemetry (10s, idle w/o subscribers).
+      Live cross-slice check: SF turn 0.33s, spontaneous WS push verified. Slice-3 queue: TTL reaper.
+- [x] **WP-B — Client wiring**: **LANDED** (`258e84d`): typed REST + WS clients (seq counter,
+      reconnect backoff, auto-resubscribe), Play live mode with offline demo fallback
+      (OFFLINE · DEMO chip), Watch live metrics over WS with illustrative fallback, promotion
+      duplicate-key fix in Board.svelte. Browser-verified headless: 229 API calls all 200 —
+      ~30-move live game incl. promotion via picker, undo, resign, as-black with opener, reconnect.
+      svelte-check 0 errors.
 - [ ] **WP-C — Training**: self-play pipeline on the RTX 3080 (torch 2.15 cu132 pinned in pyproject),
       checkpoints to HF Hub, resumable runs, metrics emitted to backend/WS.
       **Arena gating per §5.1 is binding**: checkpoint ladder 5/10/15/20 min wall-clock, each checkpoint
@@ -50,6 +56,13 @@ Keep its prompt in sync with the orchestrator runbook.
       **Regime matrix per §5.2 is binding**: `scratch` / `sf-games` / `sf-distill` / `hybrid` / `finetune`,
       per-regime lineage (`runs/` + SQLite `runs` table + HF per-regime repos), cross-regime round-robin
       arena on one ledger.
+      **Slice 1 LANDED** (`3e3b925`): 29-plane encoder (73×64 policy, underpromotion planes),
+      GambitNet v2 (TINY 81k / SMALL / BASE), MCTS v2 (PUCT Q=−child.value_mean + Dirichlet),
+      §10 bugs fixed with failing-then-passing proof (terminal sign, instant resign, promotion
+      policy; mate-in-1 found at 96 sims), pipeline + `scripts/train.py` + `scripts/bench_train.py`,
+      108 new tests. Bench (3080, TINY): NN batch-256 **1.49 ms**, train step 4.77 ms, ~10.6k games/h est.
+      **Slice 2 next**: sf-* data providers (`NotImplementedError` stubs ready), queued GPU evaluator,
+      SQLite arena backfill.
 - [ ] **WP-D — Rust `gambit_core`**: fast movegen + perft harness via PyO3; replaces chess.js/chess
       hot paths for self-play speed.
 - [ ] **Deploy/hosting**: host the site so the user + friends can play (replace dead Vercel flow);
@@ -65,11 +78,12 @@ commits each slice as it lands, then pushes + opens the PR:
 - `training-dev` → WP-C slice 1: owns `training/`, new `scripts/train*.py`/`scripts/bench_train.py`, new `tests/test_training_*.py` — encoder, ResNet v2, MCTS (§10 sign-bug regression), regime configs (§5.2), checkpoint ladder + arena skeleton (§5.1), JSONL arena ledger + `data/metrics.json` writer, CPU smoke run + bench.
 
 **Integration queue (orchestrator, as each reports):**
-- [ ] Verify backend-dev: full pytest + ruff → commit `feat(backend): ...`
-- [ ] Verify client-dev: `npm run check` + `npm run build` → commit `feat(web): ...`
-- [ ] Verify training-dev: pytest + ruff + smoke artifacts exist → commit `feat(training): ...`
-- [ ] Cross-slice verify: full suite, boot `scripts/serve.py`, browser sweep Play+Watch **live** mode at 390/1440 px
-- [ ] §13 changelog rows + TODO checkboxes → push branch → `gh pr create` → report URL to user
+- [x] Verify backend-dev: full pytest + ruff → commit `feat(backend): ...` (`2e12f19`)
+- [x] Verify client-dev: `npm run check` + `npm run build` → commit `feat(web): ...` (`258e84d`)
+- [x] Verify training-dev: pytest + ruff + smoke artifacts exist → commit `feat(training): ...` (`3e3b925`)
+- [x] Cross-slice verify: 189/189 pytest, ruff clean, live boot — health / black-undo-noop /
+      SF turn 0.33s / WS spontaneous push all PASS
+- [x] §13 changelog rows + TODO checkboxes → push branch → `gh pr create` → report URL to user
 
 ## Client polish (post-port)
 
@@ -87,6 +101,9 @@ commits each slice as it lands, then pushes + opens the PR:
       streaming (WP-C), (c) 10 concurrent games. Targets: p95 move latency < 50 ms at 10 concurrent
       games; archive query < 100 ms at 10k games; zero WS message drops under load.
 
+- [ ] **Backend slice 3 (queued)** — TTL reaper for abandoned still-active games (a stockfish process
+      currently lives until app shutdown if its game is never finished); strength → real ELO once the
+      model trains (WP-C).
 - [ ] Remove `web/dist/` + stray build artifacts from working tree before commit (gitignored already).
 - [x] Stockfish binary — SF 19 installed to gitignored `tools/stockfish.exe` (UCI verified). Legacy
       `training/stockfish_engine.py` still defaults `STOCKFISH_PATH` to a dead WSL path — WP-C adapts.
