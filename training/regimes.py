@@ -86,6 +86,15 @@ class RegimeConfig:
     stream_moves: bool = True
     # FS-5: per-regime HF repo ("<owner>/gambit-<regime>", §5.2 provenance).
     hf_repo: str | None = None
+    # U1: root search policy for self-play - 'puct' (canonical) or 'gumbel'
+    # (Danihelka et al. 2022). A swappable config knob, never hardcoded (5.2).
+    search_kind: str = "puct"
+    gumbel_candidates: int = 16
+    # U2: KataGo playout cap randomization (Wu 2020) - default off.
+    playout_randomization: bool = False
+    playout_cap_full_prob: float = 0.25
+    playout_cap_fast_fraction: float = 0.25
+    playout_cap_start_ply: int = 10
 
     def __post_init__(self) -> None:
         if not MIN_PARALLEL_GAMES <= self.parallel_games <= MAX_PARALLEL_GAMES:
@@ -99,6 +108,17 @@ class RegimeConfig:
             raise ValueError("warmstart_minutes must be >= 0")
         if not 0 <= self.sf_skill_start <= 20 or not 0 <= self.sf_skill_end <= 20:
             raise ValueError("sf_skill_start/sf_skill_end must be SF Skill Levels in [0, 20]")
+        if self.search_kind not in ("puct", "gumbel"):
+            raise ValueError(f"search_kind must be 'puct' or 'gumbel', got {self.search_kind}")
+        if not 0.0 <= self.playout_cap_full_prob <= 1.0:
+            raise ValueError(
+                f"playout_cap_full_prob must be in [0, 1], got {self.playout_cap_full_prob}"
+            )
+        if self.playout_randomization and self.search_kind != "puct":
+            raise ValueError(
+                "playout_randomization requires search_kind='puct': KataGo cap semantics "
+                "presume PUCT visit-count targets; the gumbel interaction is unvalidated"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

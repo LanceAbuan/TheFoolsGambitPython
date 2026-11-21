@@ -9,7 +9,9 @@
 //!   `training/encoder.py` (`encode_batch(boards, prev_boards=None)`)
 //! - `legal_masks(fens) -> (N, 4672) float32` — bit-exact `legal_mask`
 //! - `legal_moves(fen)`, `make_move(fen, uci)`, `step_batch(fens, ucis)`,
-//!   `zobrist(fen)`, `outcome(fen)` — flat helpers for the later hot-path slice
+//!   `legal_move_pairs(fen)` (python-chess-ordered `(policy_index, uci)` pairs
+//!   — the M3 expansion fast path), `zobrist(fen)`, `outcome(fen)` — flat
+//!   helpers for the later hot-path slice
 //!
 //! python-chess remains the oracle; see `tests/test_gambit_core.py` for the
 //! differential fuzzing gates.
@@ -91,7 +93,7 @@ impl PyBoard {
 
     /// Count leaf nodes of the legal-move tree to `depth`.
     fn perft(&self, depth: u32) -> u64 {
-        position::perft(&self.pos.board(), depth)
+        position::perft(self.pos.board(), depth)
     }
 
     /// Encode this position into a (29, 8, 8) float32 tensor
@@ -185,6 +187,16 @@ fn legal_moves(fen: &str) -> PyResult<Vec<String>> {
     Ok(parse(fen)?.legal_moves_uci())
 }
 
+/// `legal_move_pairs(fen)` — `(policy_index, uci)` pairs for every legal move,
+/// in **python-chess `board.legal_moves` order** (see
+/// `Position::legal_moves_python_order`). The M3 self-play fast path builds
+/// `training.encoder.legal_move_map` from this in one FFI call; child order
+/// drives MCTS tie-breaks, so the order is part of the parity contract.
+#[pyfunction]
+fn legal_move_pairs(fen: &str) -> PyResult<Vec<(usize, String)>> {
+    position::Position::legal_move_pairs_fen(fen).map_err(PyValueError::new_err)
+}
+
 /// `make_move(fen, uci)` — apply a legal UCI move, return the new FEN.
 #[pyfunction]
 fn make_move(fen: &str, uci: &str) -> PyResult<String> {
@@ -237,6 +249,7 @@ fn gambit_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_batch, m)?)?;
     m.add_function(wrap_pyfunction!(legal_masks, m)?)?;
     m.add_function(wrap_pyfunction!(legal_moves, m)?)?;
+    m.add_function(wrap_pyfunction!(legal_move_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(make_move, m)?)?;
     m.add_function(wrap_pyfunction!(step_batch, m)?)?;
     m.add_function(wrap_pyfunction!(zobrist, m)?)?;

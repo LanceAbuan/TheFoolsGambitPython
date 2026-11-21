@@ -44,7 +44,11 @@ class LedgerEntry:
     games: int
     wins: int
     draws: int
-    elo: float
+    # None = no rating claim (audit F-5): a fresh checkpoint is an unrated
+    # candidate until it promotes. The SQLite mirror (server/db.py) defaults
+    # None to base because of its NOT NULL schema; the JSONL source of truth
+    # carries no claim.
+    elo: float | None
     kind: str = "arena"
     losses: int = 0
     promoted: bool = False
@@ -66,7 +70,8 @@ class ArenaLedger:
         line = json.dumps(entry.to_dict(), sort_keys=True)
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(line + "\n")
-        log.info("[LEDGER] %s: %s vs %s -> elo %.1f", self.path, entry.checkpoint, entry.opponent, entry.elo)
+        elo_text = "none" if entry.elo is None else f"{entry.elo:.1f}"
+        log.info("[LEDGER] %s: %s vs %s -> elo %s", self.path, entry.checkpoint, entry.opponent, elo_text)
 
     def read(self) -> list[dict[str, object]]:
         """All recorded entries in order; unreadable/corrupt lines are skipped."""

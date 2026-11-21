@@ -13,9 +13,10 @@
 //!
 //! Policy index = from_square_perspective * 73 + plane:
 //! - 0-55  queen-like: 8 directions (N, NE, E, SE, S, SW, W, NW) x 7 distances,
-//!         plane = dir * 7 + dist - 1
+//!   plane = dir * 7 + dist - 1
 //! - 56-63 knight jumps (fixed offset table)
 //! - 64-72 underpromotions: (file_delta + 1) * 3 + piece_idx (N, B, R)
+//!
 //! Queen promotions ride the queen-like planes; castling is the king's
 //! two-square move; en passant is the pawn's diagonal capture.
 
@@ -189,16 +190,17 @@ mod tests {
     fn startpos_planes() {
         let pos = Position::starting();
         let t = encode_planes(&pos);
+        let plane0: usize = 0; // silence clippy::erasing_op while keeping plane math readable
         // White to move: no flip. Pawns on rank 1 (perspective) => plane 0, rank 1.
         for file in 0..8 {
-            assert_eq!(t[(0 * 8 + 1) * 8 + file], 1.0);
+            assert_eq!(t[(plane0 * 8 + 1) * 8 + file], 1.0);
             assert_eq!(t[(6 * 8 + 6) * 8 + file], 1.0); // their pawns, plane 6, rank 6
         }
         // Knights: our plane 1 at b1/g1 => perspective (0,1) and (0,6).
-        assert_eq!(t[(1 * 8 + 0) * 8 + 1], 1.0);
-        assert_eq!(t[(1 * 8 + 0) * 8 + 6], 1.0);
-        // Kings on e1/e8.
-        assert_eq!(t[(5 * 8 + 0) * 8 + 4], 1.0);
+        assert_eq!(t[64 + 1], 1.0);
+        assert_eq!(t[64 + 6], 1.0);
+        // Kings on e1/e8 (plane * 64 + rank * 8 + file).
+        assert_eq!(t[5 * 64 + 4], 1.0);
         assert_eq!(t[(11 * 8 + 7) * 8 + 4], 1.0);
         // Castling: all four rights.
         assert_eq!(t[24 * 64], 1.0);
@@ -221,9 +223,10 @@ mod tests {
         let pos = Position::starting().make_move_uci("e2e4").unwrap();
         assert_eq!(pos.board().side_to_move(), Color::Black);
         let t = encode_planes(&pos);
+        let plane0: usize = 0;
         assert_eq!(t[28 * 64 + (20usize ^ 56)], 1.0); // ep plane
         assert_eq!(t[(6 * 8 + 4) * 8 + 4], 1.0); // their pawn on e4
-        assert_eq!(t[(0 * 8 + 1) * 8 + 4], 1.0); // our (black) pawn on e7 -> perspective rank 1
+        assert_eq!(t[(plane0 * 8 + 1) * 8 + 4], 1.0); // our (black) pawn on e7 -> perspective rank 1
     }
 
     #[test]
@@ -277,7 +280,7 @@ mod tests {
                 .unwrap()
         };
         // c7c8q: queen-like, dir N dist 1 -> plane 0.
-        assert_eq!(policy_index(&pos, &find(Square::C8, Some(Piece::Queen))), 50 * 73 + 0);
+        assert_eq!(policy_index(&pos, &find(Square::C8, Some(Piece::Queen))), 50 * 73);
         // c7c8n: underpromotion, df = 0, knight idx 0 -> plane 64 + 3 + 0 = 67.
         assert_eq!(policy_index(&pos, &find(Square::C8, Some(Piece::Knight))), 50 * 73 + 67);
         // c7b8r: capture underpromotion, df = -1, rook idx 2 -> plane 64 + 0 + 2 = 66.

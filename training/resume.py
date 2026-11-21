@@ -15,9 +15,17 @@ Warm-start resolution — `RegimeConfig.warmstart_from` accepts:
   - an HF repo id ("user/repo")   -> downloaded from the Hub (best-effort)
 Anything unresolvable logs a warning and returns None: a missing warm start
 must degrade to a fresh run, never crash one.
+
+State-file format (audit F-2): the replay buffer persists as an fp16 npz blob
+(`buffer_npz`) instead of a pickled per-example list -- planes are 0/1 and
+value targets are game outcomes, both exact in fp16; policy targets round at
+~1e-3 relative (see _BUFFER_FP16). Legacy state files (pickled
+`buffer_examples`) still restore, and only the newest STATE_FILES_TO_KEEP
+state files are kept on disk.
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 import time
@@ -34,6 +42,15 @@ from .regimes import REGIME_NAMES, RunPaths
 log = logging.getLogger(__name__)
 
 STATE_PREFIX = "state-"
+# Audit F-2: the replay buffer dominates state-file size (~26 KB/example as a
+# pickled list). Tensors persist as an fp16 npz blob instead: planes are 0/1
+# and value targets are game outcomes, both exact in fp16; policy targets take
+# ~1e-3 relative rounding, which is acceptable for resume fidelity. Flip to
+# False for exact-fp32 state files (roughly 2x larger).
+_BUFFER_FP16 = True
+# Audit F-2: state files previously accumulated unbounded (one full-buffer
+# dump per checkpoint); keep only the newest few.
+STATE_FILES_TO_KEEP = 2
 
 
 @dataclass
@@ -105,6 +122,44 @@ class ReplayBufferLike(Protocol):
         ...  # pragma: no cover
 
 
+def _buffer_npz_bytes(examples: list[dict[str, Any]]) -> bytes:
+    """Encode replay examples as an in-memory npz (planes, policies, values)."""
+    dtype: type = np.float16 if _BUFFER_FP16 else np.float32
+    if examples:
+        planes = np.stack([np.asarray(ex["board_tensor"], dtype=np.float32) for ex in examples])
+        policies = np.stack([np.asarray(ex["policy"], dtype=np.float32) for ex in examples])
+    else:
+        planes = np.zeros((0, 0, 0, 0), dtype=np.float32)
+        policies = np.zeros((0, 0), dtype=np.float32)
+    values = np.array([float(ex["value"]) for ex in examples], dtype=np.float32)
+    handle = io.BytesIO()
+    np.savez(handle, planes=planes.astype(dtype), policies=policies.astype(dtype), values=values)
+    return handle.getvalue()
+
+
+def _examples_from_npz(data: bytes) -> list[dict[str, Any]]:
+    """Decode an npz blob back into replay-example dicts (fp16 -> fp32)."""
+    with np.load(io.BytesIO(data)) as npz:
+        planes = npz["planes"].astype(np.float32)
+        policies = npz["policies"].astype(np.float32)
+        values = npz["values"].astype(np.float32)
+    return [
+        {"board_tensor": planes[i], "policy": policies[i], "value": float(values[i])}
+        for i in range(values.shape[0])
+    ]
+
+
+def _prune_state_files(paths: RunPaths, keep: int = STATE_FILES_TO_KEEP) -> list[Path]:
+    """Delete all but the newest `keep` state files (zero-padded = chronological)."""
+    states = sorted(paths.state.glob(f"{STATE_PREFIX}*.pt"))
+    stale = states[:-keep] if len(states) > keep else []
+    for path in stale:
+        path.unlink(missing_ok=True)
+    if stale:
+        log.info("[RESUME] pruned %d old state file(s); keeping newest %d", len(stale), keep)
+    return stale
+
+
 def save_run_state(
     paths: RunPaths,
     *,
@@ -119,7 +174,13 @@ def save_run_state(
     champion_elo: float,
     profile: object,
 ) -> Path:
-    """Persist everything needed to rebuild the run exactly (FS-5)."""
+    """Persist everything needed to rebuild the run exactly (FS-5).
+
+    Buffer tensors go in as an fp16 npz blob (see _BUFFER_FP16): the pickled
+    per-example list this replaced cost ~26 KB/example and made night-profile
+    state files multi-GB. Older state files are pruned to the newest
+    STATE_FILES_TO_KEEP.
+    """
     examples = list(buffer.buffer)
     payload = {
         "iterations_completed": iterations_completed,
@@ -127,7 +188,8 @@ def save_run_state(
         "games_played": games_played,
         "model_state": model.state_dict(),
         "optimizer_state": optimizer.state_dict(),
-        "buffer_examples": examples,
+        "buffer_npz": _buffer_npz_bytes(examples),
+        "buffer_count": len(examples),
         "buffer_max_size": buffer.buffer.maxlen,
         "torch_rng_state": torch.get_rng_state(),
         "numpy_rng_state": np.random.get_state(),
@@ -141,6 +203,7 @@ def save_run_state(
     }
     target = paths.state / f"{STATE_PREFIX}{steps:06d}.pt"
     torch.save(payload, target)
+    _prune_state_files(paths)
     log.info(
         "[RESUME] state saved: %s (iter %d, steps %d, buffer %d)",
         target,
@@ -179,7 +242,10 @@ def restore_run_state(
     """Rebuild model/optimizer/buffer/RNGs in place; returns the progress counters."""
     model.load_state_dict(state["model_state"])  # type: ignore[arg-type]
     optimizer.load_state_dict(state["optimizer_state"])  # type: ignore[arg-type]
-    examples = state.get("buffer_examples", [])
+    if state.get("buffer_npz") is not None:
+        examples = _examples_from_npz(bytes(state["buffer_npz"]))
+    else:  # legacy pre-F-2 state files carried a pickled example list
+        examples = state.get("buffer_examples", [])
     buffer.add(examples)
     torch.set_rng_state(state["torch_rng_state"])  # type: ignore[arg-type]
     np.random.set_state(state["numpy_rng_state"])  # type: ignore[call-overload]

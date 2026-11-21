@@ -16,10 +16,11 @@ Profiles are dataclasses — `smoke` finishes in well under two minutes on CPU,
 """
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -185,6 +186,34 @@ def _load_champion(
     return model, str(data.get("tag", "unknown")), float(data.get("elo", 800.0))
 
 
+def _champion_snapshot(
+    checkpoint_path: Path, device: torch.device, live_model: GambitNet
+) -> GambitNet:
+    """Materialize the champion as a FROZEN model (audit F-1).
+
+    Reloads the checkpoint that was just saved -- the same loading path
+    champion.json serving uses -- so every subsequent gate plays an independent
+    snapshot whose weights cannot drift with training. If the file is
+    unreadable (should not happen immediately after a successful save) a deep
+    copy is used instead. Aliasing the live model is never acceptable: an
+    aliased champion keeps learning in place and then plays ITSELF in the
+    arena, pinning every gate at 0.5 and making promotion impossible.
+    """
+    loaded = _load_champion(checkpoint_path, device)
+    if loaded is None:
+        log.warning(
+            "[GATE] checkpoint %s unreadable; snapshotting the live model via deep copy",
+            checkpoint_path,
+        )
+        frozen = copy.deepcopy(live_model)
+    else:
+        frozen = loaded[0]
+    frozen.eval()
+    for parameter in frozen.parameters():
+        parameter.requires_grad_(False)
+    return frozen
+
+
 def _load_champion_pointer(champion_file: Path) -> tuple[Path, float] | None:
     """Read champion.json -> (checkpoint path, elo); None when absent/broken."""
     try:
@@ -226,6 +255,8 @@ def run_training(
     base_dir: Path | str = "runs",
     data_dir: Path | str = "data",
     resume: str | bool = False,
+    search_kind: str | None = None,
+    playout_randomization: bool | None = None,
 ) -> RunSummary:
     """Run the full loop: collect -> optimize -> ladder -> arena -> ledger.
 
@@ -240,6 +271,15 @@ def run_training(
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     regime: RegimeConfig = get_regime(profile.regime)
+    # U1/U2 CLI overrides: explicit flags beat the regime defaults so a regime
+    # stays a swappable config rather than a hardcode (section 5.2).
+    regime_overrides: dict[str, object] = {}
+    if search_kind is not None:
+        regime_overrides["search_kind"] = search_kind
+    if playout_randomization is not None:
+        regime_overrides["playout_randomization"] = playout_randomization
+    if regime_overrides:
+        regime = replace(regime, **regime_overrides)
     is_resume = bool(resume)
     resume_id = resume if isinstance(resume, str) else None
     resolved_run_id = resume_id or run_id or _utc_run_id()
@@ -351,9 +391,17 @@ def run_training(
             else:
                 evaluator = BatchNNEvaluator(model, device)
             selfplay_config = SelfPlayConfig(
-                search=SearchConfig(num_simulations=profile.sims),
+                search=SearchConfig(
+                    num_simulations=profile.sims,
+                    search_kind=regime.search_kind,
+                    gumbel_candidates=regime.gumbel_candidates,
+                ),
                 max_plies=profile.max_plies,
                 temperature_plies=profile.max_plies,  # sample throughout a smoke game
+                playout_randomization=regime.playout_randomization,
+                playout_cap_full_prob=regime.playout_cap_full_prob,
+                playout_cap_fast_fraction=regime.playout_cap_fast_fraction,
+                playout_cap_start_ply=regime.playout_cap_start_ply,
             )
             elapsed_minutes = (time.monotonic() - started) / 60.0
             progress = (iteration + 1) / max(profile.iterations, 1)
@@ -458,7 +506,19 @@ def run_training(
             _save_checkpoint(model, ckpt_path, tag, regime.name, resolved_run_id, summary.steps, summary.games_played)
             summary.checkpoints.append(tag)
 
-            candidate_elo = profile.ladder.base_elo
+            # F-5 (audit): each checkpoint is a FRESH candidate with no rating
+            # history. base_elo is only the provisional rating inside the Elo
+            # expectation term; a candidate that does not promote gets NO rating
+            # claim in the ledger (elo=None), and a promoted candidate INHERITS
+            # the champion lineage's post-match rating instead of resetting the
+            # run's rating to a one-match read from base. champion_elo -- seeded
+            # from the reigning pointer / resume state, moved by the match delta
+            # at every gate -- is the continuous, honest rating series the
+            # journal and metrics feed expose.
+            provisional_elo = profile.ladder.base_elo
+            # Bound for the HF-publish metadata below; the baseline branch and
+            # the promote branch set it to True (both seat a new champion).
+            promote = False
             opponent_for_event = champion_tag or "unknown"
             if champion_model is None:
                 # First checkpoint becomes champion by default; recorded as baseline.
@@ -471,13 +531,18 @@ def run_training(
                         games=0,
                         wins=0,
                         draws=0,
-                        elo=candidate_elo,
+                        elo=provisional_elo,
                         kind="baseline",
                         promoted=True,
                     )
                 )
-                champion_model, champion_tag, champion_elo = model, tag, candidate_elo
-                log.info("[GATE] %s becomes the first champion (baseline elo %.1f)", tag, candidate_elo)
+                # F-1 (audit): the champion is a FROZEN snapshot reloaded from
+                # the just-saved checkpoint. Aliasing the live model made every
+                # later gate play the model against itself (0.5 forever).
+                champion_model = _champion_snapshot(ckpt_path, device, model)
+                champion_tag, champion_elo = tag, provisional_elo
+                promote = True
+                log.info("[GATE] %s becomes the first champion (baseline elo %.1f)", tag, provisional_elo)
                 last_match = None
                 opponent_for_event = "none"
             else:
@@ -486,8 +551,8 @@ def run_training(
                 )
                 last_match = match
                 arena_games_total += match.games
-                candidate_elo, champion_elo = update_elo(
-                    profile.ladder.base_elo, champion_elo, match, profile.ladder.k_factor
+                _, champion_elo = update_elo(
+                    provisional_elo, champion_elo, match, profile.ladder.k_factor
                 )
                 promote = should_promote(match, profile.ladder.promote_win_rate)
                 ledger.append(
@@ -499,13 +564,16 @@ def run_training(
                         games=match.games,
                         wins=match.wins,
                         draws=match.draws,
-                        elo=candidate_elo,
+                        elo=champion_elo if promote else None,
                         losses=match.losses,
                         promoted=promote,
                     )
                 )
                 if promote:
-                    champion_model, champion_tag, champion_elo = model, tag, candidate_elo
+                    # F-1 (audit): freeze the promoted candidate from its
+                    # just-saved checkpoint; never alias the live model.
+                    champion_model = _champion_snapshot(ckpt_path, device, model)
+                    champion_tag = tag
                     log.info("[GATE] %s promoted (score %.3f >= %.2f)",
                              tag, match.win_rate, profile.ladder.promote_win_rate)
                 else:
@@ -518,7 +586,7 @@ def run_training(
             elo_map = recompute_elos(ledger.read(), profile.ladder.base_elo, profile.ladder.k_factor)
             summary.arena_games = arena_games_total
             summary.champion = champion_tag
-            summary.elo = elo_map.get(champion_tag or "", champion_elo)
+            summary.elo = champion_elo
             metrics.update(
                 elo=summary.elo,
                 win_rate=last_match.win_rate if last_match is not None else None,
@@ -552,7 +620,7 @@ def run_training(
                     }
                     if last_match is not None
                     else None,
-                    "elo": candidate_elo,
+                    "elo": champion_elo,
                     "loss": last_loss,
                     "policy_loss": last_policy_loss,
                     "value_loss": last_value_loss,
@@ -587,7 +655,7 @@ def run_training(
                         "tag": tag,
                         "steps": summary.steps,
                         "games_played": summary.games_played,
-                        "elo": candidate_elo,
+                        "elo": champion_elo if promote else None,
                         "config_hash": regime.to_dict(),
                     },
                 )

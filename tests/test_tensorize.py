@@ -1,20 +1,20 @@
 """Tests for training/tensorize.py — pure numpy/chess, no GPU needed."""
-import sys
 import os
+import sys
+
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import chess
+
 from training.tensorize import (
+    NUM_CHANNELS,
+    NUM_POSSIBLE_MOVES,
     board_to_tensor,
+    idx_to_move,
     legal_moves_mask,
     move_to_idx,
-    idx_to_move,
-    NUM_CHANNELS,
-    NUM_PIECE_CHANNELS,
-    NUM_AUX_CHANNELS,
-    NUM_POSSIBLE_MOVES,
 )
 
 

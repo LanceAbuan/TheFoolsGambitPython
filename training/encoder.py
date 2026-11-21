@@ -42,6 +42,8 @@ from collections.abc import Sequence
 import chess
 import numpy as np
 
+from .fastpath import fastpath_enabled, import_gambit_core
+
 NUM_PLANES = 29
 POLICY_PLANES = 73
 POLICY_MOVES = POLICY_PLANES * 64  # 4672
@@ -130,6 +132,22 @@ def _piece_planes(
             tensor[offset + 6 + base, rank, file] = 1.0
 
 
+# UCI -> chess.Move memo for the Rust legal-move path. chess.Move is a plain
+# value type; the dict is bounded by the finite UCI vocabulary (~4.7k strings)
+# and reads/writes are atomic under the GIL, so it is thread-safe for the
+# parallel self-play callers (worst case: duplicate idempotent writes).
+_UCI_MOVE_MEMO: dict[str, chess.Move] = {}
+
+
+def _move_from_uci_memo(uci: str) -> chess.Move:
+    """Module-level memoized chess.Move.from_uci (hot path: ~30 calls/expand)."""
+    move = _UCI_MOVE_MEMO.get(uci)
+    if move is None:
+        move = chess.Move.from_uci(uci)
+        _UCI_MOVE_MEMO[uci] = move
+    return move
+
+
 def encode_state(board: chess.Board, prev_board: chess.Board | None = None) -> np.ndarray:
     """Encode one position into a (29, 8, 8) float32 tensor.
 
@@ -167,6 +185,13 @@ def encode_batch(
         prev_boards = [None] * len(boards)
     if len(prev_boards) != len(boards):
         raise ValueError("prev_boards length must match boards length")
+    if fastpath_enabled() and all(prev is None for prev in prev_boards):
+        # M3 fast path: one FFI call, bit-exact with the loop below for
+        # prev_board=None rows. The bridge FEN uses en_passant="fen" so the RAW
+        # ep square survives (python-chess's default "legal" mode drops ep
+        # squares with no legal capture, which would zero plane 28).
+        gc = import_gambit_core()
+        return gc.encode_batch([b.fen(en_passant="fen") for b in boards])
     return np.stack([encode_state(b, p) for b, p in zip(boards, prev_boards)])
 
 
@@ -246,7 +271,18 @@ def decode_index(board: chess.Board, index: int) -> chess.Move | None:
 
 
 def legal_move_map(board: chess.Board) -> dict[int, chess.Move]:
-    """Map every legal move's policy index to the move (bijective by design)."""
+    """Map every legal move's policy index to the move (bijective by design).
+
+    Insertion order follows ``board.legal_moves`` in BOTH paths: the Rust path
+    enumerates moves in python-chess order (``gambit_core.legal_move_pairs``,
+    order-differential-fuzzed), and MCTS child order / tie-breaks depend on it.
+    """
+    if fastpath_enabled():
+        gc = import_gambit_core()
+        return {
+            index: _move_from_uci_memo(uci)
+            for index, uci in gc.legal_move_pairs(board.fen(en_passant="fen"))
+        }
     mapping: dict[int, chess.Move] = {}
     for move in board.legal_moves:
         index = encode_move(board, move)

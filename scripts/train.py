@@ -42,6 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="disable live per-move journal streaming (FS-6b, headless/bulk)")
     parser.add_argument("--resume", nargs="?", const=True, default=None, metavar="RUN_ID",
                         help="resume a run: --resume RUN_ID, or --resume with --run-id")
+    parser.add_argument("--search", choices=["puct", "gumbel"], default=None,
+                        help="root search policy (U1): puct (regime default) or gumbel")
+    parser.add_argument("--playout-cap", action="store_true",
+                        help="enable KataGo playout cap randomization (U2, Wu 2020)")
     return parser
 
 
@@ -101,7 +105,9 @@ def main() -> int:
     profile = build_profile(args)
     summary = run_training(profile, run_id=args.run_id,
                            base_dir=Path(args.runs_dir), data_dir=Path(args.data_dir),
-                           resume=resume)
+                           resume=resume,
+                           search_kind=args.search,
+                           playout_randomization=True if args.playout_cap else None)
     logging.getLogger(__name__).info(
         "run complete: %s/%s checkpoints=%s champion=%s elo=%s games=%d",
         summary.regime, summary.run_id, summary.checkpoints,

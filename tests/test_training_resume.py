@@ -155,7 +155,7 @@ class TestKillAndResume:
         first_states = sorted(state_dir.glob("state-*.pt"))
         assert len(first_states) == 1
         first_state = torch.load(first_states[0], map_location="cpu", weights_only=False)
-        buffer_size_after_iter0 = len(first_state["buffer_examples"])
+        buffer_size_after_iter0 = int(first_state["buffer_count"])
 
         second = run_training(profile, run_id="killed-run", base_dir=runs, data_dir=data,
                               resume=True)
@@ -168,7 +168,7 @@ class TestKillAndResume:
         )
         assert final_state["iterations_completed"] == 2
         # The replay buffer carried over and kept growing (never restarted).
-        assert len(final_state["buffer_examples"]) > buffer_size_after_iter0
+        assert final_state["buffer_count"] > buffer_size_after_iter0
 
     def test_streamed_game_slots_unique_across_resume(self, tmp_path):
         """FS-6b: a resumed session continues the slot blocks, never reusing

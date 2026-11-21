@@ -16,12 +16,14 @@ use std::str::FromStr;
 
 use chess::{BitBoard, Board, CastleRights, ChessMove, Color, File, MoveGen, Piece, Rank, Square};
 
+use crate::encoder::policy_index;
+
 pub const START_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 /// python-chess `BB_DARK_SQUARES`: a1 is dark, dark iff (rank + file) even.
 fn square_is_dark(sq: Square) -> bool {
     let i = sq.to_index();
-    (i / 8 + i % 8) % 2 == 0
+    (i / 8 + i % 8).is_multiple_of(2)
 }
 
 fn square_from_index(i: usize) -> Square {
@@ -235,6 +237,7 @@ impl Position {
     /// python-chess `board.fen(en_passant="fen")`, which round-trips internal
     /// state; python-chess's default `"legal"` mode *drops* ep squares that no
     /// enemy pawn can capture).
+    #[allow(clippy::wrong_self_convention)] // python-chess `board.fen()` naming parity
     pub fn to_fen(&self) -> String {
         let mut placement = String::with_capacity(80);
         for rank in (0..8).rev() {
@@ -284,6 +287,109 @@ impl Position {
     /// Is the side to move in check?
     pub fn in_check(&self) -> bool {
         *self.board.checkers() != BitBoard(0)
+    }
+
+    /// Legal moves as `(policy_index, move)` pairs in **python-chess
+    /// `board.legal_moves` order**.
+    ///
+    /// python-chess 1.11 `generate_legal_moves` yields:
+    /// 1. non-pawn piece moves — from-squares high→low, to-squares high→low
+    ///    (`scan_reversed` both loops);
+    /// 2. castling — rook squares high→low (kingside before queenside);
+    /// 3. pawn captures — from high→low, to high→low, promotions Q,R,B,N;
+    /// 4. single pawn pushes — to-squares high→low, promotions Q,R,B,N;
+    /// 5. double pawn pushes — to-squares high→low;
+    /// 6. en passant captures — capturers high→low.
+    ///
+    /// When in check, king evasion steps come FIRST (to high→low), then the
+    /// same order restricted to capture/block targets, with castling excluded
+    /// (`_generate_evasions` calls the pseudo-legal generator with
+    /// `from_mask=~kings`).
+    ///
+    /// The MCTS tree appends children in this order and `_select_child`
+    /// breaks PUCT ties toward the earliest child, so bit-exact search parity
+    /// between the Python and Rust paths requires this exact order.
+    pub fn legal_moves_python_order(&self) -> Vec<(usize, ChessMove)> {
+        type SortKey = (i32, i32, i32, i32);
+        let board = &self.board;
+        let in_check = *board.checkers() != BitBoard(0);
+        let ep = self.raw_ep.map(|sq| sq as usize);
+
+        let mut keyed: Vec<(SortKey, usize, ChessMove)> = Vec::new();
+        for m in MoveGen::new_legal(board) {
+            let from = m.get_source().to_index();
+            let to = m.get_dest().to_index();
+            let piece = board
+                .piece_on(m.get_source())
+                .expect("legal move source square holds a piece");
+            let is_pawn = piece == Piece::Pawn;
+            let diagonal = (from % 8) as i32 - (to % 8) as i32 != 0;
+            let is_capture = board.piece_on(m.get_dest()).is_some();
+            let rank_diff = (to / 8) as i32 - (from / 8) as i32;
+            let is_double = is_pawn && !diagonal && rank_diff.abs() == 2;
+            let is_ep = is_pawn && diagonal && !is_capture && ep == Some(to);
+            // Castling: python-chess `is_castling` — king two-square move.
+            let is_castle = piece == Piece::King && ((from % 8) as i32 - (to % 8) as i32).abs() == 2;
+            // Promotion piece order within one (from, to): Q, R, B, N.
+            let promo_key = match m.get_promotion() {
+                Some(Piece::Queen) => 0,
+                Some(Piece::Rook) => 1,
+                Some(Piece::Bishop) => 2,
+                Some(Piece::Knight) => 3,
+                Some(Piece::Pawn) | Some(Piece::King) | None => 0,
+            };
+
+            let phase: i32;
+            if in_check {
+                if is_castle {
+                    unreachable!("castling is never legal while in check");
+                } else if piece == Piece::King {
+                    phase = 0; // evasion king steps come first
+                } else if is_ep {
+                    phase = 5;
+                } else if is_double {
+                    phase = 4;
+                } else if is_pawn && diagonal {
+                    phase = 2; // pawn captures (normal, occupied target)
+                } else if is_pawn {
+                    phase = 3; // single push
+                } else {
+                    phase = 1; // non-pawn, non-king piece moves
+                }
+            } else if is_castle {
+                phase = 1;
+            } else if !is_pawn {
+                phase = 0; // piece moves incl. king steps
+            } else if is_ep {
+                phase = 5;
+            } else if is_double {
+                phase = 4;
+            } else if diagonal {
+                phase = 2; // pawn captures
+            } else {
+                phase = 3; // single push
+            }
+
+            // Piece/king/capture phases order by (from desc, to desc); the
+            // push phases iterate TO-squares high→low (from is derivable), so
+            // -to there; -from desc is equivalent (from = to ∓ 8/16).
+            let key = (phase, -(from as i32), -(to as i32), promo_key);
+            keyed.push((key, policy_index(self, &m), m));
+        }
+
+        keyed.sort_by_key(|(key, _, _)| *key); // stable: preserves crate order on exact ties
+        keyed.into_iter().map(|(_, idx, m)| (idx, m)).collect()
+    }
+
+    /// `(policy_index, uci)` pairs in python-chess `board.legal_moves` order —
+    /// the FEN-facing form of [`Position::legal_moves_python_order`].
+    pub fn legal_move_pairs_fen(fen: &str) -> Result<Vec<(usize, String)>, String> {
+        let pos = Position::from_fen(fen)?;
+        Ok(pos
+            .legal_moves_python_order()
+            .into_iter()
+            .map(|(idx, m)| (idx, move_uci(&m)))
+            .collect())
     }
 
     /// True when the game is over: no legal moves (checkmate/stalemate),

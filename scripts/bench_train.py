@@ -83,10 +83,17 @@ def bench_train_step_latency(model: GambitNet, batch: int, iters: int, warmup: i
     return (time.perf_counter() - start) * 1000.0 / iters
 
 
-def bench_sims_per_second(model: GambitNet, sims: int) -> float:
+def bench_sims_per_second(
+    model: GambitNet, sims: int, search_kind: str = "puct", gumbel_candidates: int = 16
+) -> float:
     """MCTS throughput on the start position (search + NN eval, tiny net)."""
     evaluator = BatchNNEvaluator(model)
-    search = MCTSSearch(evaluator, SearchConfig(num_simulations=sims))
+    search = MCTSSearch(
+        evaluator,
+        SearchConfig(
+            num_simulations=sims, search_kind=search_kind, gumbel_candidates=gumbel_candidates
+        ),
+    )
     import chess
 
     board = chess.Board()
@@ -96,11 +103,19 @@ def bench_sims_per_second(model: GambitNet, sims: int) -> float:
     return sims / elapsed if elapsed > 0 else float("inf")
 
 
-def bench_games_per_hour(model: GambitNet, max_plies: int, sims: int) -> tuple[float, float]:
+def bench_games_per_hour(
+    model: GambitNet,
+    max_plies: int,
+    sims: int,
+    search_kind: str = "puct",
+    gumbel_candidates: int = 16,
+) -> tuple[float, float]:
     """Play one capped smoke-style game; return (estimated games/hour, seconds)."""
     evaluator = BatchNNEvaluator(model)
     config = SelfPlayConfig(
-        search=SearchConfig(num_simulations=sims),
+        search=SearchConfig(
+            num_simulations=sims, search_kind=search_kind, gumbel_candidates=gumbel_candidates
+        ),
         max_plies=max_plies,
         temperature_plies=max_plies,
     )
@@ -227,6 +242,10 @@ def main() -> int:
     parser.add_argument("--iters", type=int, default=30)
     parser.add_argument("--parallel", type=str, default="1,8,16,32",
                         help="comma list of parallel_games levels for the FS-4 sweep")
+    parser.add_argument("--search", choices=["puct", "gumbel"], default="puct",
+                        help="root search policy for the headline MCTS/games numbers (U1)")
+    parser.add_argument("--gumbel-candidates", type=int, default=16,
+                        help="m candidates for --search gumbel (U1)")
     args = parser.parse_args()
 
     cuda = torch.cuda.is_available()
@@ -241,8 +260,12 @@ def main() -> int:
 
     inference_ms = bench_nn_batch_latency(model, args.batch, args.iters)
     train_ms = bench_train_step_latency(model, min(args.batch, 64), max(args.iters // 3, 5))
-    sims_per_sec = bench_sims_per_second(model, args.sims)
-    games_per_hour, probe_seconds = bench_games_per_hour(model, args.plies, sims=2)
+    sims_per_sec = bench_sims_per_second(model, args.sims, args.search, args.gumbel_candidates)
+    games_per_hour, probe_seconds = bench_games_per_hour(
+        model, args.plies, sims=2, search_kind=args.search, gumbel_candidates=args.gumbel_candidates
+    )
+    if args.search != "puct":
+        print(f"search kind: {args.search} (m={args.gumbel_candidates}); FS-4/FS-6b sweeps stay PUCT")
 
     print("--- bench results (tiny config) ---")
     print(f"NN batch latency:  {inference_ms:8.2f} ms / batch of {args.batch} ({device.type})")

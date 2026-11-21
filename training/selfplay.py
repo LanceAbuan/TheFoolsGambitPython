@@ -10,13 +10,14 @@ in the loop and prevent overfitting to engine scores. Gaussian noise
 (sigma=0.1) is added to Stockfish evals to avoid memorization.
 """
 import logging
+import math
 import queue
 import threading
 import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import chess
 import chess.pgn
@@ -24,6 +25,7 @@ import numpy as np
 import torch
 
 from .encoder import encode_batch, encode_move, encode_state, legal_move_map
+from .fastpath import fastpath_enabled
 from .model import NUM_POLICY_MOVES_V2
 from .tensorize import NUM_POSSIBLE_MOVES, board_to_tensor, move_to_idx
 
@@ -528,6 +530,183 @@ class SelfPlayGame:
         return 0.0
 
 
+class FastBoard(chess.Board):
+    """python-chess Board whose repetition CLAIMS avoid push/pop replays (M3).
+
+    Profiling the self-play hot loop (tmp_m3 profiles, 2026-11-21) showed
+    ``is_game_over(claim_draw=True)`` is the single largest per-simulation
+    sink: ``can_claim_threefold_repetition()`` pops the entire move stack,
+    re-keys every position, pushes everything back, then probes every legal
+    move with push/pop - O(ply + moves) python-chess mutations per call, twice
+    per simulation (``MCTSSearch._simulate`` + ``_evaluate_and_expand``), and
+    the cost grows with game length.
+
+    This subclass overrides exactly three methods to walk the existing
+    ``_stack`` snapshots instead (they carry every transposition-key
+    component), and inherits everything else unchanged - movegen, SAN, PGN,
+    FEN, ``outcome()`` ordering, ``copy()``. The overrides are gated behind
+    GAMBIT_CORE_FASTPATH (see training/fastpath.py) and differential-tested
+    against the plain Board in tests/test_gambit_m3_fastpath.py.
+
+    Requires python-chess's private ``_BoardState``/``_stack`` layout
+    (python-chess 1.11.2, pinned via uv.lock).
+    """
+
+    @staticmethod
+    def _state_clean_castling_rights(state: "chess._BoardState") -> chess.Bitboard:  # type: ignore[name-defined]
+        """python-chess ``clean_castling_rights()`` for an EMPTY-stack board.
+
+        Used only for the game-root snapshot (index 0): python-chess evaluates
+        the root position with an empty move stack, where
+        ``clean_castling_rights()`` runs the full rook/king filter instead of
+        trusting ``castling_rights``. Logic copied from python-chess 1.11.2
+        (standard chess, chess960=False).
+        """
+        castling = state.castling_rights & state.rooks
+        white = castling & chess.BB_RANK_1 & state.occupied_w
+        black = castling & chess.BB_RANK_8 & state.occupied_b
+        white &= chess.BB_A1 | chess.BB_H1
+        black &= chess.BB_A8 | chess.BB_H8
+        if not state.occupied_w & state.kings & ~state.promoted & chess.BB_E1:
+            white = 0
+        if not state.occupied_b & state.kings & ~state.promoted & chess.BB_E8:
+            black = 0
+        return white | black
+
+    def _state_transposition_key(self, state: "chess._BoardState", *, root: bool = False) -> tuple:  # type: ignore[name-defined]
+        """Transposition key of a HISTORICAL stack snapshot (no push/pop).
+
+        Mirrors ``Board._transposition_key``: once a board has a move stack,
+        python-chess's ``clean_castling_rights()`` returns the raw rights
+        (they were filtered at set-up time), so ``state.castling_rights`` is
+        the key component - EXCEPT for the game-root snapshot, which
+        python-chess evaluates on an empty-stack board (full cleaning, see
+        ``_state_clean_castling_rights``). The en-passant component keeps the
+        legal-ep filter, computed by momentarily restoring the snapshot (ep
+        squares are rare - at most one position in the window has one).
+        """
+        if state.ep_square is None:
+            ep_component = None
+        else:
+            live = chess._BoardState(self)
+            state.restore(self)
+            try:
+                ep_component = state.ep_square if self.has_legal_en_passant() else None
+            finally:
+                live.restore(self)
+        rights = self._state_clean_castling_rights(state) if root else state.castling_rights
+        return (
+            state.pawns,
+            state.knights,
+            state.bishops,
+            state.rooks,
+            state.queens,
+            state.kings,
+            state.occupied_w,
+            state.occupied_b,
+            state.turn,
+            rights,
+            ep_component,
+        )
+
+    def _state_is_irreversible(self, state: "chess._BoardState", move: chess.Move, *, root: bool = False) -> bool:  # type: ignore[name-defined]
+        """``Board.is_irreversible(move)`` evaluated on a historical snapshot.
+
+        ``is_zeroing`` and ``_reduces_castling_rights`` only read bitboards
+        the snapshot already carries; ``root=True`` (game-root snapshot)
+        applies the empty-stack rights cleaning like python-chess does. The ep
+        cession term uses the same restore-trick as the key.
+        """
+        touched = chess.BB_SQUARES[move.from_square] ^ chess.BB_SQUARES[move.to_square]
+        their_occupied = state.occupied_w if state.turn == chess.BLACK else state.occupied_b
+        if touched & state.pawns or touched & their_occupied:
+            return True  # is_zeroing: pawn move or capture
+        cr = self._state_clean_castling_rights(state) if root else state.castling_rights
+        if touched & cr:
+            return True
+        if cr & chess.BB_RANK_1 and touched & state.kings & state.occupied_w & ~state.promoted:
+            return True
+        if cr & chess.BB_RANK_8 and touched & state.kings & state.occupied_b & ~state.promoted:
+            return True
+        if state.ep_square is not None:
+            live = chess._BoardState(self)
+            state.restore(self)
+            try:
+                if self.has_legal_en_passant():
+                    return True
+            finally:
+                live.restore(self)
+        return False
+
+    def _replay_window_keys(self) -> list[tuple]:
+        """Transposition keys of the current reversible window, newest first.
+
+        Equivalent to ``can_claim_threefold_repetition``'s switchyard replay
+        (pop until an irreversible move), evaluated on the ``_stack``
+        snapshots without a single push/pop. Only valid on stacked boards -
+        callers fall back to the inherited implementation otherwise.
+        """
+        keys: list[tuple] = []
+        states = self._stack
+        last = len(states) - 1
+        for index, (state, move) in enumerate(zip(reversed(states), reversed(self.move_stack))):
+            # Reversed walk: index len-1 is the game ROOT (python-chess
+            # evaluates it on an empty-stack board).
+            is_root = index == last
+            if self._state_is_irreversible(state, move, root=is_root):
+                break
+            keys.append(self._state_transposition_key(state, root=is_root))
+        return keys
+
+    def can_claim_threefold_repetition(self) -> bool:
+        """Bit-exact, replay-free port of ``Board.can_claim_threefold_repetition``."""
+        if self.chess960 or not self._stack:
+            return super().can_claim_threefold_repetition()
+        current_key = self._transposition_key()
+        counts: dict[tuple, int] = {current_key: 1}
+        for key in self._replay_window_keys():
+            counts[key] = counts.get(key, 0) + 1
+        if counts[current_key] >= 3:
+            return True
+        # The next legal move is a threefold repetition (same probe, push/pop).
+        for move in self.generate_legal_moves():
+            self.push(move)
+            try:
+                if counts.get(self._transposition_key(), 0) >= 2:
+                    return True
+            finally:
+                self.pop()
+        return False
+
+    def is_repetition(self, count: int = 3) -> bool:
+        """Bit-exact, replay-free port of ``Board.is_repetition`` (stacked boards)."""
+        if self.chess960 or not self._stack or count <= 1:
+            return super().is_repetition(count)
+        # Cheap occupancy pre-filter, then the key-counting window walk.
+        maybe = 1
+        occupied = self.occupied
+        for state in reversed(self._stack):
+            if state.occupied == occupied:
+                maybe += 1
+                if maybe >= count:
+                    break
+        if maybe < count:
+            return False
+        current_key = self._transposition_key()
+        seen = 1
+        states = self._stack
+        last = len(states) - 1
+        for index, (state, move) in enumerate(zip(reversed(states), reversed(self.move_stack))):
+            is_root = index == last
+            if self._state_is_irreversible(state, move, root=is_root):
+                break
+            if self._state_transposition_key(state, root=is_root) == current_key:
+                seen += 1
+                if seen >= count:
+                    return True
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Search v2 (WP-C): correct PUCT MCTS over the 73x64 policy encoding.
 #
@@ -547,6 +726,14 @@ class SearchConfig:
     dirichlet_epsilon: float = 0.25
     root_noise: bool = True
     num_simulations: int = 64
+    # U1: root-search policy. "puct" is the canonical AlphaZero root (argmax
+    # visit counts). "gumbel" is Danihelka et al., ICLR 2022 (Alg. 2): gumbel
+    # top-m candidates + sequential halving at the root, PUCT below the root,
+    # Eq. 11 improved policy as the training target. Default = flag-off.
+    search_kind: Literal["puct", "gumbel"] = "puct"
+    gumbel_candidates: int = 16   # m in Alg. 2 (paper: 16)
+    gumbel_c_visit: float = 50.0  # c_visit in Eq. 8 (paper chess setting)
+    gumbel_c_scale: float = 1.0   # c_scale in Eq. 8 (paper chess setting)
 
 
 @dataclass(frozen=True)
@@ -557,6 +744,10 @@ class MCTSResult:
     root_value: float
     chosen_move: chess.Move | None
     visited_root: bool = True
+    # U1: gumbel searches also return the Eq. 11 improved policy over the
+    # 4672 encoding (zeros off-policy, sums to 1). None for puct searches so
+    # the flag-off self-play path is bit-identical to the pre-U1 pipeline.
+    improved_policy: np.ndarray | None = None
 
 
 class Evaluator(Protocol):
@@ -716,9 +907,17 @@ class MCTSSearch:
     is not required — the tree is rebuilt per `search` call.
     """
 
-    def __init__(self, evaluator: Evaluator, config: SearchConfig = SearchConfig()) -> None:
+    def __init__(
+        self,
+        evaluator: Evaluator,
+        config: SearchConfig = SearchConfig(),
+        rng: np.random.Generator | None = None,
+    ) -> None:
         self.evaluator = evaluator
         self.config = config
+        # U1: only gumbel draws consume this generator; the PUCT path and the
+        # global-rng Dirichlet draw are untouched so seeded runs reproduce.
+        self._rng = rng
 
     def search(self, board: chess.Board, num_simulations: int | None = None) -> MCTSResult:
         """Search `board`; returns visit counts, root value, and chosen move."""
@@ -726,6 +925,9 @@ class MCTSSearch:
         legal = list(board.legal_moves)
         if not legal:
             return MCTSResult(np.zeros(NUM_POLICY_MOVES_V2, dtype=np.float32), terminal_value(board), None, False)
+
+        if self.config.search_kind == "gumbel":
+            return self._search_gumbel(board, sims)
 
         root = _Node(move=None, prior=0.0)
         self._evaluate_and_expand(root, board, add_root_noise=self.config.root_noise)
@@ -750,11 +952,16 @@ class MCTSSearch:
 
     # -- internals ---------------------------------------------------------
 
-    def _simulate(self, root: _Node, board: chess.Board) -> None:
+    def _simulate(
+        self, root: _Node, board: chess.Board, force_root_child: _Node | None = None
+    ) -> None:
         node = root
         path: list[_Node] = [root]
         while node.expanded and node.children and not node.terminal:
-            node = self._select_child(node)
+            if force_root_child is not None and node is root:
+                node = force_root_child  # U1 gumbel: descend a halving candidate
+            else:
+                node = self._select_child(node)
             board.push(node.move)
             path.append(node)
 
@@ -821,6 +1028,167 @@ class MCTSSearch:
         node.expanded = True
         return value, False
 
+    # -- U1: Gumbel AlphaZero root search -----------------------------------
+
+    def _search_gumbel(self, board: chess.Board, sims: int) -> MCTSResult:
+        """Gumbel AlphaZero root search (Danihelka et al., ICLR 2022, Alg. 2).
+
+        Root: sample m = min(gumbel_candidates, n_legal) candidates with the
+        Gumbel-Top-k trick on (g + prior_logits), distribute `sims` over them
+        with sequential halving (round-robin per phase, halve by the Eq. 8
+        score), then act with A_{n+1} = argmax over the surviving candidates
+        of g(a) + logits(a) + Psi(completedQ(a)). Below the root the tree is
+        ordinary PUCT (the paper's Gumbel AlphaZero variant; the Full
+        variant's Eq. 14 interior selection is a documented non-goal). NN
+        accounting matches the PUCT path: 1 root eval + `sims` leaf evals.
+        """
+        cfg = self.config
+        root = _Node(move=None, prior=0.0)
+        root_value, _ = self._evaluate_and_expand(root, board, add_root_noise=cfg.root_noise)
+        if root.terminal:
+            return MCTSResult(
+                np.zeros(NUM_POLICY_MOVES_V2, dtype=np.float32), root.terminal_value, None, False
+            )
+
+        legal_children: list[_Node] = list(root.children)
+        if len(legal_children) == 1:
+            # Forced move: no search needed; mirror the PUCT early return.
+            visit_counts = np.zeros(NUM_POLICY_MOVES_V2, dtype=np.float32)
+            visit_counts[encode_move(board, legal_children[0].move)] = float(sims)
+            one_hot = np.zeros(NUM_POLICY_MOVES_V2, dtype=np.float32)
+            one_hot[encode_move(board, legal_children[0].move)] = 1.0
+            return MCTSResult(visit_counts, root.value_mean, legal_children[0].move, True, one_hot)
+
+        rng = self._rng if self._rng is not None else np.random.default_rng()
+        # Prior logits (post-noise when root_noise is on - the mctx pattern).
+        priors = np.array([max(child.prior, 1e-9) for child in legal_children], dtype=np.float64)
+        logits = np.log(priors)
+        logits -= logits.max()
+        gumbel = rng.gumbel(size=len(legal_children))
+
+        m = min(cfg.gumbel_candidates, len(legal_children))
+        top = np.argsort(gumbel + logits)[::-1][:m]
+        cand: list[_Node] = [legal_children[i] for i in top]
+        cand_g = gumbel[top]
+
+        visits = np.zeros(m, dtype=np.int64)
+        budget = sims
+        survivors = list(range(m))  # candidate order == (g + logits) descending
+        while budget > 0 and len(survivors) > 1:
+            if len(survivors) == 2:
+                per_action = max(1, budget // 2)
+            else:
+                phases_left = max(1, math.ceil(math.log2(len(survivors))))
+                per_action = max(1, budget // (phases_left * len(survivors)))
+            exhausted = False
+            for _round in range(per_action):
+                for idx in survivors:
+                    if budget <= 0:
+                        exhausted = True
+                        break
+                    self._simulate(root, board.copy(), force_root_child=cand[idx])
+                    budget -= 1
+                    visits[idx] += 1
+                if exhausted:
+                    break
+            if exhausted or len(survivors) == 2:
+                break
+            scores = self._gumbel_scores(cand_g, cand, visits, root_value)
+            keep = max(2, len(survivors) // 2)
+            ranked = sorted(survivors, key=lambda i: scores[i], reverse=True)
+            survivors = sorted(ranked[:keep])
+
+        final_scores = self._gumbel_scores(cand_g, cand, visits, root_value)
+        best_idx = max(survivors, key=lambda i: (float(final_scores[i]), int(visits[i])))
+        best_move = cand[best_idx].move
+        assert best_move is not None, "gumbel halving lost its candidates"
+
+        visit_counts = np.zeros(NUM_POLICY_MOVES_V2, dtype=np.float32)
+        for child in legal_children:
+            visit_counts[encode_move(board, child.move)] = float(child.visit_count)
+
+        improved = self._gumbel_improved_policy(
+            board, legal_children, root_value, int(visits.max())
+        )
+        return MCTSResult(visit_counts, root.value_mean, best_move, True, improved)
+
+    def _gumbel_scores(
+        self,
+        cand_g: np.ndarray,
+        cand: list[_Node],
+        visits: np.ndarray,
+        root_value: float,
+    ) -> np.ndarray:
+        """Eq. 8: g(a) + logits(a) + Psi(completedQ(a)) per candidate.
+
+        Psi(q) = (c_visit + max_b N(b)) * c_scale * q01 with q01 = (q + 1) / 2
+        mapping the [-1, 1] value range onto [0, 1] (mctx convention; paper
+        chess values c_visit=50, c_scale=1.0).
+        """
+        logits = np.log(np.array([max(c.prior, 1e-9) for c in cand], dtype=np.float64))
+        completed = self._completed_q(cand, root_value)
+        q01 = (completed + 1.0) / 2.0
+        max_n = int(visits.max()) if visits.size else 0
+        scale = (self.config.gumbel_c_visit + max_n) * self.config.gumbel_c_scale
+        return cand_g + logits + scale * q01
+
+    def _completed_q(self, children: list[_Node], root_value: float) -> np.ndarray:
+        """Paper Eq. 10 completed Q from the ROOT's perspective.
+
+        Visited actions use their empirical mean (child values are stored from
+        the child's own side to move, hence the negation); unvisited actions
+        are imputed with the mixed value of paper Appendix D (mctx
+        qtransform_completed_by_mix_value): (raw_value + sum_N * weighted_q)
+        / (sum_N + 1) with weighted_q the prior-weighted mean over visited
+        actions.
+        """
+        q = np.zeros(len(children), dtype=np.float64)
+        unvisited: list[int] = []
+        sum_n = 0
+        weighted = 0.0
+        sum_probs = 0.0
+        for i, child in enumerate(children):
+            if child.visit_count > 0:
+                q[i] = -child.value_mean
+                prior = max(child.prior, 1e-9)
+                sum_n += child.visit_count
+                weighted += prior * q[i]
+                sum_probs += prior
+            else:
+                unvisited.append(i)
+        weighted_q = weighted / sum_probs if sum_probs > 0 else 0.0
+        mixed = (root_value + sum_n * weighted_q) / (sum_n + 1)
+        for i in unvisited:
+            q[i] = mixed
+        return q
+
+    def _gumbel_improved_policy(
+        self,
+        board: chess.Board,
+        legal_children: list[_Node],
+        root_value: float,
+        max_n: int,
+    ) -> np.ndarray:
+        """Eq. 11 improved policy: softmax(logits + Psi(completedQ)).
+
+        Over ALL legal moves (unvisited ones get zero advantage via the mixed
+        value), scattered into the 4672 encoding. Note: no gumbel values in
+        the target - the paper and mctx both use the prior logits (the task
+        brief's 'gumbel logits' wording is a documented deviation).
+        """
+        logits = np.log(np.array([max(c.prior, 1e-9) for c in legal_children], dtype=np.float64))
+        completed = self._completed_q(legal_children, root_value)
+        q01 = (completed + 1.0) / 2.0
+        scale = (self.config.gumbel_c_visit + max_n) * self.config.gumbel_c_scale
+        scores = logits + scale * q01
+        scores -= scores.max()
+        weights = np.exp(scores)
+        probs = weights / weights.sum()
+        policy = np.zeros(NUM_POLICY_MOVES_V2, dtype=np.float32)
+        for child, prob in zip(legal_children, probs):
+            policy[encode_move(board, child.move)] = float(prob)
+        return policy
+
 
 def select_move_from_visits(
     visit_counts: np.ndarray,
@@ -860,6 +1228,38 @@ class SelfPlayConfig:
     resign_threshold: float = -0.9
     resign_consecutive: int = 3
     resign_min_ply: int = 40
+    # U2: KataGo playout cap randomization (Wu 2020, sec 3.1). Default OFF -
+    # with the flag off, self_play_game consumes its rng exactly as before and
+    # games are bit-identical to the pre-U2 pipeline (golden-tested in
+    # tests/test_training_playout_cap.py).
+    #
+    # U1xU2 interaction (documented restriction, NOT an accident): the cap's
+    # semantics - which turns are searched fully, which are capped, which are
+    # recorded - presume PUCT VISIT-COUNT targets (KataGo sec 3.1). With
+    # search_kind="gumbel" a fast ply would record the Eq. 11 improved policy
+    # of a reduced-budget search: a mathematically well-defined but completely
+    # unvalidated target construction (bias/variance unmeasured, no oracle).
+    # Enabling both flags therefore raises ValueError - U2 is restricted to
+    # the PUCT path until the gumbel-target analogue is designed and gated on
+    # its own (one change at a time).
+    playout_randomization: bool = False
+    playout_cap_full_prob: float = 0.25      # p: share of turns searched fully (recorded)
+    playout_cap_fast_fraction: float = 0.25  # fast cap n = fraction * num_simulations
+    playout_cap_fast_min: int = 2            # ...but never below this many sims
+    playout_cap_start_ply: int = 10          # plies before this always search fully
+    # Paper: ONLY full-search turns are recorded for training. Flip this on to
+    # also record fast turns (their own visit distribution as the target).
+    # PUCT-only: see the U1xU2 restriction above.
+    playout_cap_record_fast: bool = False
+
+    def __post_init__(self) -> None:
+        if self.playout_randomization and self.search.search_kind != "puct":
+            raise ValueError(
+                "playout cap randomization applies to the PUCT search path only "
+                f"(got search_kind={self.search.search_kind!r}): KataGo cap semantics "
+                "presume PUCT visit-count targets, and the gumbel improved-policy "
+                "analogue is unvalidated"
+            )
 
 
 @dataclass(frozen=True)
@@ -940,9 +1340,22 @@ def self_play_game(
     target = game outcome from the mover's perspective. Terminal values inside
     the search use the §10-correct side-to-move sign. With `stream`, every ply
     is journaled as a ``live`` event and the finish as ``game_end`` (FS-6b).
+
+    U2 note: playout cap randomization is PUCT-only (config-validated); with
+    search_kind="gumbel" it raises ValueError rather than silently changing
+    which target construction the cheap-search plies would record.
     """
-    search = MCTSSearch(evaluator, config.search)
-    board = chess.Board()
+    search = MCTSSearch(evaluator, config.search, rng=rng)
+    # U2: cap_rng is the only new rng consumer and exists only when the flag
+    # is on, so flag-off games draw the rng exactly as before (bit-identical).
+    cap_rng: np.random.Generator | None = None
+    if config.playout_randomization:
+        cap_rng = rng if rng is not None else np.random.default_rng()
+    fast_search: MCTSSearch | None = None
+    # M3: FastBoard makes repetition CLAIMS cheap inside the search's
+    # is_game_over(claim_draw=True) calls. Gated; plain Board keeps the
+    # pre-M3 behavior bit-for-bit.
+    board: chess.Board = FastBoard() if fastpath_enabled() else chess.Board()
     prev_board: chess.Board | None = None
     pending: list[tuple[np.ndarray, np.ndarray, chess.Color]] = []
     sans: list[str] = []
@@ -953,14 +1366,44 @@ def self_play_game(
         if board.is_game_over(claim_draw=True):
             break
 
-        result = search.search(board)
+        # U2: a proportion p of turns gets the full (recorded) search; the
+        # rest get a fast noise-off search, not recorded (paper sec 3.1)
+        # unless playout_cap_record_fast is set. The move is always played
+        # from whichever search ran.
+        full_search = True
+        if cap_rng is not None and ply >= config.playout_cap_start_ply:
+            full_search = bool(cap_rng.random() < config.playout_cap_full_prob)
+        if full_search:
+            result = search.search(board)
+        else:
+            if fast_search is None:
+                fast_n = max(
+                    config.playout_cap_fast_min,
+                    round(config.search.num_simulations * config.playout_cap_fast_fraction),
+                )
+                fast_search = MCTSSearch(
+                    evaluator,
+                    replace(config.search, num_simulations=fast_n, root_noise=False),
+                    rng=rng,
+                )
+            result = fast_search.search(board)
+
         legal_map = legal_move_map(board)
-        total = result.visit_counts.sum()
-        policy = result.visit_counts / total if total > 0 else np.zeros_like(result.visit_counts)
-        pending.append((encode_state(board, prev_board), policy.copy(), board.turn))
+        # U1: gumbel results carry the Eq. 11 improved policy; it replaces the
+        # visit distribution as the training target and the sampling basis.
+        basis = result.improved_policy if result.improved_policy is not None else result.visit_counts
+        total = basis.sum()
+        policy = basis / total if total > 0 else np.zeros_like(basis)
+        if full_search or config.playout_cap_record_fast:
+            pending.append((encode_state(board, prev_board), policy.copy(), board.turn))
 
         temperature = config.temperature if ply < config.temperature_plies else 0.0
-        move = select_move_from_visits(result.visit_counts, legal_map, temperature, rng)
+        if result.improved_policy is not None and temperature <= 1e-6:
+            gumbel_move = result.chosen_move
+            assert gumbel_move is not None, "gumbel search returned no action on a live position"
+            move = gumbel_move  # A_{n+1}: the gumbel action (paper sec 3)
+        else:
+            move = select_move_from_visits(basis, legal_map, temperature, rng)
 
         sans.append(board.san(move))
         if (
@@ -1082,15 +1525,33 @@ def play_match_game(
     black_evaluator: Evaluator,
     num_simulations: int,
     max_plies: int = 200,
+    white_config: SearchConfig | None = None,
+    black_config: SearchConfig | None = None,
+    rng: np.random.Generator | None = None,
 ) -> tuple[str, str]:
     """Play one arena game; returns (result, termination).
 
     Arena play is deterministic-strength: no root noise, argmax moves.
     termination is 'game-over' or 'max-plies' (scored as a draw).
+    white_config/black_config default to the canonical PUCT arena search
+    (section 5.1 semantics unchanged); U1 ablations pass explicit per-side
+    SearchConfig objects (e.g. gumbel) instead.
     """
-    white_search = MCTSSearch(white_evaluator, SearchConfig(root_noise=False, num_simulations=num_simulations))
-    black_search = MCTSSearch(black_evaluator, SearchConfig(root_noise=False, num_simulations=num_simulations))
-    board = chess.Board()
+    white_search = MCTSSearch(
+        white_evaluator,
+        white_config
+        if white_config is not None
+        else SearchConfig(root_noise=False, num_simulations=num_simulations),
+        rng=rng,
+    )
+    black_search = MCTSSearch(
+        black_evaluator,
+        black_config
+        if black_config is not None
+        else SearchConfig(root_noise=False, num_simulations=num_simulations),
+        rng=rng,
+    )
+    board: chess.Board = FastBoard() if fastpath_enabled() else chess.Board()
     termination = "max-plies"
     for _ply in range(max_plies):
         if board.is_game_over(claim_draw=True):
