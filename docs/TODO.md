@@ -12,21 +12,13 @@ functionality end-to-end → list **every** defect and improvement found → add
 repeat. When the loop converges (clean sweep), switch to optimization: benchmark training
 algorithms/configs (sims/sec, games/hour, strength per wall-clock hour) and log results here + §13.
 
-**Enforcement:** OpenCode automation `standing-review-loop` (`aut_1feadea1b001Flh6KarH8f58To`) fires
-this loop **hourly** as a fresh orchestrator session — **ACTIVE** (user chose hourly; the heavy sweep
-itself takes 20–40 min, which is why the fast cadence lives in the monitor below). Its prompt carries
-a dirty-tree safety gate: if `git status --short` is not clean it aborts without touching anything.
-Between sweeps, a second no-model automation `backend-health-monitor`
-(`aut_1feacfef4001uYCa3ylqCP080l`) probes the site (:5173) + API (:8000) **every 5 minutes** and
-alerts on up→down transitions (zero token cost; 1 run so far). The **`delegation-loop`**
-(`aut_1feb425fd001su6H23Jn4yy8WF`, every **10 min**) is the self-driving builder: integrates
-finished worker slices (scoped verification → scoped conventional commit → push → tick FS
-checkbox) when the tree holds exactly one worker's files, and spawns the next open Finish-line
-slice's worker when the tree is clean — FS-9 tunnel + FS-10 training start are hard-gated to the
-user in its prompt. `code-patrol` (`aut_1feae9f48001dJ0y5fJDAxI7pg`) is **paused** (superseded by
-the delegation loop; resume on request). Pause/resume any via
-`opencode.cmd api post /api/experimental/automation/{id}/pause` (or `/resume`).
-Keep prompts in sync with the orchestrator runbook.
+**Enforcement:** automation roster trimmed at user request (2026-11-21) — the health monitor,
+hourly review loop, and 5-min code patrol were **removed**. The one surviving automation is the
+**`delegation-loop`** (`aut_1feb425fd001su6H23Jn4yy8WF`, every 10 min): integrates finished worker
+slices (scoped verification → scoped conventional commit → push → tick FS checkbox) when the tree
+holds exactly one worker's files, and spawns the next open Finish-line slice's worker when the tree
+is clean — FS-9 tunnel + FS-10 training start are hard-gated to the user in its prompt. The standing
+review loop itself remains a **manual on-request procedure** (steps in `.opencode/agents/orchestrator.md`).
 
 ## Now / Next
 
