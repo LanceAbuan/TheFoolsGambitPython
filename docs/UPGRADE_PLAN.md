@@ -383,7 +383,7 @@ WP-A (backend) implements this; WP-B (client) codes against it. Any deviation = 
 | `POST /play/new` | `{color: "white"\|"black"\|"random", opponent: "fool"\|"stockfish", strength}` → `{game_id, fen, orientation}` | orientation = the player's color |
 | `GET /play/{id}` | → `{game_id, fen, moves: [san], status, winner?, in_check, last_move}` | full state |
 | `POST /play/{id}/move` | `{from, to, promotion?}` → state | illegal ⇒ 422; server-side legality always |
-| `POST /play/{id}/undo` | → state | pops both half-moves vs The Fool |
+| `POST /play/{id}/undo` | → state | pops both half-moves vs The Fool. **Since 2026-11-21:** take-backs after game over (200, was 409) — board-finish endings revert the finishing ply pair (same parity rule as mid-game), resignations un-resign with history untouched, result state cleared **and persisted** (what the rehydrate layer trusts — restart keeps the game active); abandoned/reaped games stay 409 |
 | `POST /play/{id}/resign` | → state | |
 | `GET /games` | `?kind=play\|selfplay&limit=` → `{games: [...]}` | archive listing |
 | `GET /games/{id}/pgn` | → `text/pgn` | full PGN export |
