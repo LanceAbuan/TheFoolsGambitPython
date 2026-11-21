@@ -35,6 +35,32 @@ appends an audit line to gitignored `data/heartbeat.log`** (watch: `Get-Content 
       old Vercel site — currently guaranteed red). New: web `npm ci && npm run build && npm run check`,
       Python `ruff check` + `pytest` (once tests exist), later `cargo test` for the Rust crate.
 
+## Review-loop harvest (2026-11-21 functional sweep — API/WS/UI drive)
+
+Phase B of the standing review loop: 34 API/WS checks + 10 UI-drive checks all pass (games
+list/PGN/metrics/checkpoints, move/undo/resign incl. promotion-to-queen, illegal+404+429 paths,
+WS subscribe snapshots, invalid/unsupported rejects, live position fan-out, per-topic seq
+monotonicity, restart-persistence probe). Zero console errors, zero HTTP ≥400. Findings:
+
+- [ ] **Next — restore active play sessions on boot.** Defect: games+moves persist to SQLite
+      (row + plies verified in `data/gambit.db`) but `get_session` is memory-only and the app
+      lifespan never rehydrates → any server restart/deploy 404s an in-progress game
+      (GET `/api/play/{gid}`, WS `game:{gid}`, further moves) and drops it from the lobby.
+      Implement: on `get_session` miss (or startup) rebuild `Session` from the DB by replaying
+      stored UCIs; requires a `strength` column on `games` (small migration) for faithful
+      Fool/NN strength; keep TTL reaper semantics unchanged.
+- [ ] **Polish — unify archive game id field.** REST `/api/games` items use `id`, while the
+      client's `GameArchiveEntry` (web/src/lib/api/http.ts) and the WS `lobby` payload use
+      `game_id`. Benign today (UI only consumes arena entries via `run_id`) but a latent trap;
+      align on one shape.
+- [ ] **Idea — undo after game over.** Server 409s undo on finished games (UI matches by
+      disabling Undo when over). Consider allowing take-backs after a loss for casual play.
+- Note (not a defect): POST rate limit (20-token burst, 2/s refill, per IP) answers 429 with
+      CORS headers — browsers are unaffected; script/API integrations must pace ~2 POST/s.
+- Note: promotion verified via API (accepted; `=Q` in moves + PGN round-trip). The promo-picker
+      UI path was browser-verified earlier by client-dev (WP-B) and isn't re-driven here only
+      because reaching promotion through UI clicks needs a long manual game.
+
 ## Work packages (per docs/UPGRADE_PLAN.md)
 
 - [x] **WP-A — Backend**: FastAPI + WebSocket + SQLite. **LANDED** — slice 1 (`9a9c1d9`) + slice 2
