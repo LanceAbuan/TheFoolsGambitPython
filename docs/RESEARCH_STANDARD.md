@@ -78,7 +78,7 @@ win-rate) will be judged.
 
 | # | Prediction | Status |
 |---|------------|--------|
-| N1 | (Rust gate) wired gambit_core yields ≥3× e2e sims/sec vs the first-light baseline at p16 | pending |
+| N1 | (Rust gate) wired gambit_core yields ≥3× e2e sims/sec vs the first-light baseline at p16 | **✗ MISS — 1.1× measured** (interleaved paired arms, p16: 1.087×/1.110×/1.13× by game length). Attribution: wireable share (movegen/encoding) is ~4.5% of GIL demand; ~82% of per-sim cost lives in `_simulate`'s tree/PUCT ops, out of M3's no-search-change scope. Bit-exactness held everywhere (perft 4.87M, 5,990-position order fuzz, e2e identical visit counts/examples), so the slice lands as a 1.1× free win + the foundation for a search-in-Rust slice. N3's "combined <12 min" prediction now needs the search-policy lever (Gumbel) to carry it. |
 | N2 | (Gumbel gate) gumbel@64–100 sims ≥4× games/h vs puct@400 with head-to-head win-rate ≥0.35 vs baseline | pending |
 | N3 | (combined overnight) iteration time at the modern recipe < 12 min/iteration (vs ≥71 min baseline) | pending |
 | N4 | (streaming) per-move live events flow end-to-end: journal → WS → Watch grid, at ≥1 event/s sustained during self-play | pending |
