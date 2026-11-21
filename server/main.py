@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -67,12 +67,16 @@ def create_app() -> FastAPI:
     # FS-9: single-origin serving of the built web client when it exists (CORS
     # above stays for the Vite dev server). Mounted last so /api + /ws win.
     if config.WEB_DIST.is_dir():
-        app.mount("/assets", StaticFiles(directory=str(config.WEB_DIST / "assets")), name="assets")
+        if (config.WEB_DIST / "assets").is_dir():
+            app.mount("/assets", StaticFiles(directory=str(config.WEB_DIST / "assets")), name="assets")
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def spa_fallback(full_path: str) -> FileResponse:
             """Serve real files (favicon etc.); everything else is the SPA's index.html
-            so client-side routes like /play, /watch resolve on hard navigation."""
+            so client-side routes like /play, /watch resolve on hard navigation.
+            Unknown API/WS paths 404 instead of masquerading as the SPA."""
+            if full_path == "api" or full_path.startswith(("api/", "ws", "ws/")):
+                raise HTTPException(status_code=404, detail="Not Found")
             candidate = (config.WEB_DIST / full_path).resolve()
             if full_path and candidate.is_file() and candidate.is_relative_to(config.WEB_DIST.resolve()):
                 return FileResponse(candidate)

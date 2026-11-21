@@ -84,7 +84,12 @@ def test_static_mount_serves_built_client(tmp_path: Path, monkeypatch: pytest.Mo
         assert "FOOL-INDEX" in index.text
         assert client.get("/app.js").status_code == 200
         assert client.get("/api/health").json() == {"ok": True}  # API still wins
-        assert client.get("/definitely-not-here").status_code == 404
+        # SPA fallback: client-side routes resolve to index.html on hard navigation
+        deep = client.get("/play")
+        assert deep.status_code == 200
+        assert "FOOL-INDEX" in deep.text
+        # unknown /api paths 404 as JSON, never masquerade as the SPA
+        assert client.get("/api/definitely-not-here").status_code == 404
 
 
 def test_no_static_mount_when_dist_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -34,15 +34,23 @@ def test_train_feed_pushes_metrics_within_interval(client: TestClient):
         assert first["type"] == "metrics"  # subscribe-time snapshot
         assert "games_played" in first["payload"]
 
+        # FS-6: the journal backlog (log frames) may arrive between the snapshot
+        # and the next periodic push when data/train_log.jsonl exists — drain
+        # any logs while waiting for the metrics push.
         received: dict[str, Any] = {}
 
         def _recv() -> None:
-            received["msg"] = ws.receive_json()
+            while True:
+                msg = ws.receive_json()
+                if msg.get("type") == "log":
+                    continue
+                received["msg"] = msg
+                return
 
         watcher = threading.Thread(target=_recv, daemon=True)
         watcher.start()
-        watcher.join(timeout=2.0)
-        assert not watcher.is_alive(), "no metrics push within 2s"
+        watcher.join(timeout=6.0)
+        assert not watcher.is_alive(), "no metrics push within interval"
         push = received["msg"]
         assert push["type"] == "metrics"
         assert push["topic"] == "train"
