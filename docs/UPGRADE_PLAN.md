@@ -352,6 +352,7 @@ The tunnel gives visitors the exact model the owner trained, at full strength, f
 | 2026-11-21 | §14 Subagent Delegation Map written (was referenced but missing): 14.0 pinned API contract v1, 14.1 work packages WP-A…WP-E. CI rewritten for `web/` (legacy Vercel-era checks dropped) |
 | 2026-11-21 | Standing review loop automated: OpenCode automation `standing-review-loop` (cron 6h → fresh orchestrator session, dirty-tree safety gate), created paused then activated on user request. `experimental.automations` enabled |
 | 2026-11-21 | WP-A slice 1: `server/` FastAPI + WS hub + SQLite (WAL) per §14.0 — play/new·move·undo·resign, games archive + PGN, metrics/checkpoints, admin-gated train stubs, demo Fool engine, `scripts/serve.py`, pytest suite. Stale `test_sample_returns_none_when_insufficient` updated to the adaptive contract (Trainer owns the MIN_BATCH_SIZE guard) |
+| 2026-11-21 | §5.2 training regime matrix (user directive): five named regimes — `scratch`/`sf-games`/`sf-distill`/`hybrid`/`finetune` — per-regime lineage + cross-regime round-robin arena on the shared Elo ledger. Stockfish 19 installed (gitignored `tools/`). Overnight parallel build: WP-A s2 / WP-B s1 / WP-C s1 via backend-dev + client-dev + training-dev on disjoint ownership |
 
 ---
 

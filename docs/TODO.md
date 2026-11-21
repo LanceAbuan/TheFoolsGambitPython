@@ -13,10 +13,11 @@ repeat. When the loop converges (clean sweep), switch to optimization: benchmark
 algorithms/configs (sims/sec, games/hour, strength per wall-clock hour) and log results here + §13.
 
 **Enforcement:** OpenCode automation `standing-review-loop` (`aut_1fcc6d34a0010FX5Pxly82OALk`) fires
-this loop every 6 hours as a fresh orchestrator session — created **paused**, with a dirty-tree safety
-gate in its prompt. Resume it once the main list below is done:
-`opencode.cmd api post /api/experimental/automation/aut_1fcc6d34a0010FX5Pxly82OALk/resume`
-(or the `automation_resume` tool). Keep its prompt in sync with the orchestrator runbook.
+this loop every 6 hours as a fresh orchestrator session — **ACTIVE** (user activated it; first fire
+06:00 local). Its prompt carries a dirty-tree safety gate: if `git status --short` is not clean it
+aborts without touching anything, so it never collides with in-progress work. Pause/resume:
+`opencode.cmd api post /api/experimental/automation/aut_1fcc6d34a0010FX5Pxly82OALk/pause` (or `/resume`).
+Keep its prompt in sync with the orchestrator runbook.
 
 ## Now / Next
 
@@ -35,9 +36,12 @@ gate in its prompt. Resume it once the main list below is done:
 
 ## Work packages (per docs/UPGRADE_PLAN.md)
 
-- [ ] **WP-A — Backend**: FastAPI + WebSocket + SQLite. Serves: live board streaming, training telemetry
+- [~] **WP-A — Backend**: FastAPI + WebSocket + SQLite. Serves: live board streaming, training telemetry
       (ELO, loss, win-rate), training journal feed, game persistence. Swap the UI's mock data slots
       (Watch metrics, journal, ELO rating `—`) to real feeds. Self-play watcher process.
+      **Slice 1 LANDED** (`9a9c1d9`): play/new·move·undo·resign, archive + PGN, metrics, train stubs,
+      /ws hub, SQLite WAL, demo Fool engine — 65 tests green, latency baseline recorded (see Hygiene).
+      **Slice 2 IN FLIGHT** (backend-dev): Stockfish opponent (skill ladder) + WS train-topic telemetry.
 - [ ] **WP-C — Training**: self-play pipeline on the RTX 3080 (torch 2.15 cu132 pinned in pyproject),
       checkpoints to HF Hub, resumable runs, metrics emitted to backend/WS.
       **Arena gating per §5.1 is binding**: checkpoint ladder 5/10/15/20 min wall-clock, each checkpoint
@@ -50,6 +54,22 @@ gate in its prompt. Resume it once the main list below is done:
       hot paths for self-play speed.
 - [ ] **Deploy/hosting**: host the site so the user + friends can play (replace dead Vercel flow);
       reverse proxy + backend service; decide box (local machine vs VPS).
+
+## Overnight parallel build — 2026-11-21 (user asleep, agents running)
+
+Three workers on **disjoint file ownership**; they never commit — the orchestrator verifies and
+commits each slice as it lands, then pushes + opens the PR:
+
+- `backend-dev` → WP-A slice 2: owns `server/`, `scripts/serve.py`, new `tests/test_{api,ws}_*.py` — Stockfish opponent (env `FSG_STOCKFISH` → `tools/stockfish.exe` → 503), skill ladder per strength, WS train-topic telemetry every 10s.
+- `client-dev` → WP-B slice 1: owns `web/` — WS client (seq + reconnect), REST client, Play live mode w/ offline fallback, Watch live metrics; verifies in browser on API :8001 / Vite :5173.
+- `training-dev` → WP-C slice 1: owns `training/`, new `scripts/train*.py`/`scripts/bench_train.py`, new `tests/test_training_*.py` — encoder, ResNet v2, MCTS (§10 sign-bug regression), regime configs (§5.2), checkpoint ladder + arena skeleton (§5.1), JSONL arena ledger + `data/metrics.json` writer, CPU smoke run + bench.
+
+**Integration queue (orchestrator, as each reports):**
+- [ ] Verify backend-dev: full pytest + ruff → commit `feat(backend): ...`
+- [ ] Verify client-dev: `npm run check` + `npm run build` → commit `feat(web): ...`
+- [ ] Verify training-dev: pytest + ruff + smoke artifacts exist → commit `feat(training): ...`
+- [ ] Cross-slice verify: full suite, boot `scripts/serve.py`, browser sweep Play+Watch **live** mode at 390/1440 px
+- [ ] §13 changelog rows + TODO checkboxes → push branch → `gh pr create` → report URL to user
 
 ## Client polish (post-port)
 
@@ -68,6 +88,8 @@ gate in its prompt. Resume it once the main list below is done:
       games; archive query < 100 ms at 10k games; zero WS message drops under load.
 
 - [ ] Remove `web/dist/` + stray build artifacts from working tree before commit (gitignored already).
+- [x] Stockfish binary — SF 19 installed to gitignored `tools/stockfish.exe` (UCI verified). Legacy
+      `training/stockfish_engine.py` still defaults `STOCKFISH_PATH` to a dead WSL path — WP-C adapts.
 - [ ] Delete temp mock-server + extracted zip from `%TEMP%\opencode\fool-frontend` after mock retired.
 - [ ] svelte-check clean run (`npm run check`) — add to CI once green.
 - [ ] Rename session/docs references to old purple theme → sepia tarot (screenshots in plan doc).
