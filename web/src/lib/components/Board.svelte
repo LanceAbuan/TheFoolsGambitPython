@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { Move } from 'chess.js';
+  import { settings, GLYPHS } from '../settings.svelte';
 
   interface Props {
     fen: string;
@@ -39,6 +40,9 @@
   let hoverSquare: string | null = $state(null);
   let awaiting: { from: string; to: string } | null = $state(null);
   let boardEl: HTMLDivElement | undefined = $state();
+  /** Keyboard focus cursor (FS-8 a11y): arrows move it, Enter selects/moves, Escape cancels. */
+  let kcursor: string | null = $state(null);
+  let promoEl: HTMLDivElement | undefined = $state();
 
   const active = $derived(!mini && interactive);
 
@@ -282,10 +286,86 @@
     awaiting = null;
     clearSel();
   }
+
+  // ---- keyboard accessibility (FS-8): arrows move a focus cursor, Enter
+  // selects/moves, Escape cancels. The cursor is a visible dashed square in
+  // the theme gold; direction is adjusted for board orientation. ----
+  function stepCursor(sq: string, df: number, dr: number): string | null {
+    let fi = FILES.indexOf(sq[0]) + df;
+    let ri = Number(sq[1]) - 1 + dr;
+    if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return null;
+    return FILES[fi] + (ri + 1);
+  }
+
+  function onBoardKeydown(e: KeyboardEvent): void {
+    if (!active) return;
+    if (e.key === 'Escape') {
+      if (awaiting) cancelPromo();
+      else clearSel();
+      return;
+    }
+    if (awaiting) return; // promotion picker owns Enter/Tab while open
+    const deltas: Record<string, [number, number]> = {
+      ArrowUp: [0, 1],
+      ArrowDown: [0, -1],
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+    };
+    if (e.key in deltas) {
+      e.preventDefault();
+      let [df, dr] = deltas[e.key];
+      if (orientation === 'black') {
+        df = -df;
+        dr = -dr;
+      }
+      if (kcursor === null) {
+        kcursor = lastMove ? lastMove.to : orientation === 'white' ? 'e2' : 'e7';
+        return;
+      }
+      const next = stepCursor(kcursor, df, dr);
+      if (next) kcursor = next;
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (kcursor === null) return;
+      if (selected && selected !== kcursor && targets.some((t) => t.to === kcursor)) {
+        const dest = kcursor;
+        attempt(selected, dest);
+        kcursor = dest; // stay on the destination for follow-up moves
+        return;
+      }
+      if (legalTargets(kcursor).length > 0) {
+        select(kcursor);
+      } else {
+        clearSel();
+      }
+    }
+  }
+
+  // When a promotion picker opens, pull focus into it so Enter/Tab can choose
+  // without a pointer; the wrapper's Escape handler still cancels.
+  $effect(() => {
+    if (awaiting && promoEl) promoEl.focus();
+  });
 </script>
 
-<div class="board-wrap" class:mini bind:this={boardEl}>
-  <svg viewBox="0 0 800 800" role="group" aria-label="chess board" class:inert={!active}>
+<!-- The board is a composite keyboard widget (roving cursor): role=application +
+     tabindex is the standard accessible-chessboard pattern (cf. lichess). -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div
+  class="board-wrap"
+  class:mini
+  bind:this={boardEl}
+  tabindex={active ? 0 : -1}
+  role={active ? 'application' : undefined}
+  aria-roledescription={active ? 'chess board' : undefined}
+  aria-label={
+    active ? 'Chess board. Arrow keys move the cursor, Enter selects or moves, Escape cancels.' : 'chess board'
+  }
+  onkeydown={onBoardKeydown}
+>
+  <svg viewBox="0 0 800 800" role="presentation" class:inert={!active}>
     {#if !mini}
       <defs>
         <radialGradient id={uid} cx="50%" cy="50%" r="50%">
@@ -326,6 +406,11 @@
       <rect x={x + 2} y={y + 2} width="96" height="96" class="sel" pointer-events="none" />
     {/if}
 
+    {#if active && kcursor}
+      {@const { x, y } = xy(kcursor)}
+      <rect x={x + 3} y={y + 3} width="94" height="94" class="kcursor" pointer-events="none" />
+    {/if}
+
     {#if active}
       {#each targetDots as t (t.to)}
         {@const { x, y } = xy(t.to)}
@@ -354,22 +439,36 @@
         onpointermove={onPieceMove}
         onpointerup={onPieceUp}
       >
-        <image href={`/pieces/${p.color}${p.type.toUpperCase()}.svg`} x="3" y="3" width="94" height="94" />
+        {#if settings.unicodePieces}
+          <text class="uglyph {p.color}" x="50" y="54" text-anchor="middle">{GLYPHS[p.type] ?? p.type}</text>
+        {:else}
+          <image href={`/pieces/${p.color}${p.type.toUpperCase()}.svg`} x="3" y="3" width="94" height="94" />
+        {/if}
       </g>
     {/each}
 
     {#if dragPiece}
       <g class="piece dragging" transform={`translate(${dragX} ${dragY})`}>
-        <image href={`/pieces/${dragPiece.color}${dragPiece.type.toUpperCase()}.svg`} x="3" y="3" width="94" height="94" />
+        {#if settings.unicodePieces}
+          <text class="uglyph {dragPiece.color}" x="50" y="54" text-anchor="middle">
+            {GLYPHS[dragPiece.type] ?? dragPiece.type}
+          </text>
+        {:else}
+          <image href={`/pieces/${dragPiece.color}${dragPiece.type.toUpperCase()}.svg`} x="3" y="3" width="94" height="94" />
+        {/if}
       </g>
     {/if}
   </svg>
 
   {#if awaiting}
-    <div class="promo" style={promoStyle}>
+    <div class="promo" style={promoStyle} bind:this={promoEl} tabindex="-1">
       {#each ['q', 'r', 'b', 'n'] as pt (pt)}
         <button class="promo-piece" onclick={() => pick(pt)} aria-label={`promote to ${pieceName(pt)}`}>
-          <img src={`/pieces/${promoColor}${pt.toUpperCase()}.svg`} alt={pieceName(pt)} />
+          {#if settings.unicodePieces}
+            <span class="promo-glyph {promoColor}">{GLYPHS[pt]}</span>
+          {:else}
+            <img src={`/pieces/${promoColor}${pt.toUpperCase()}.svg`} alt="" />
+          {/if}
         </button>
       {/each}
       <button class="promo-x" onclick={cancelPromo} aria-label="cancel promotion">✕</button>
@@ -482,5 +581,51 @@
   .board-wrap.mini {
     border-width: 3px;
     box-shadow: none;
+  }
+  /* keyboard accessibility (FS-8): visible focus + dashed gold cursor */
+  .board-wrap:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 3px;
+  }
+  rect.kcursor {
+    fill: rgba(213, 173, 100, 0.14);
+    stroke: var(--gold-bright);
+    stroke-width: 3.5;
+    stroke-dasharray: 10 7;
+  }
+  /* unicode-glyph piece mode (settings toggle, default off) */
+  text.uglyph {
+    font-size: 84px;
+    text-anchor: middle;
+    paint-order: stroke fill;
+    stroke-width: 4;
+    filter: drop-shadow(0 3px 3px rgba(10, 5, 25, 0.45));
+    user-select: none;
+  }
+  text.uglyph.w {
+    fill: #f3e6c8;
+    stroke: #4c3b31;
+  }
+  text.uglyph.b {
+    fill: #201a20;
+    stroke: #c9a969;
+  }
+  .promo {
+    container-type: inline-size;
+  }
+  .promo-glyph {
+    display: block;
+    text-align: center;
+    line-height: 1;
+    font-size: 34px;
+    font-size: 58cqi;
+  }
+  .promo-glyph.w {
+    color: #f3e6c8;
+    text-shadow: 1px 1px 0 #4c3b31;
+  }
+  .promo-glyph.b {
+    color: #241d24;
+    text-shadow: 0 0 2px #c9a969;
   }
 </style>

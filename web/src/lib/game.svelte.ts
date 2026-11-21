@@ -43,6 +43,8 @@ export class GameStore {
   notice = $state<string | null>(null);
   /** The color the human plays in this game (flip() may change `orientation` only). */
   playColor = $state<'white' | 'black'>('white');
+  /** FS-9: server-provided end reason ('abandoned' from the TTL reaper, …). */
+  endReason = $state<string | null>(null);
 
   get over(): boolean {
     return this.status !== 'playing' || this.resigned;
@@ -113,6 +115,7 @@ export class GameStore {
       this.playColor = created.orientation;
       this.orientation = created.orientation;
       this.resigned = false;
+      this.endReason = null;
       this.applySnapshot(snap);
       this.setNotice(null);
     } catch (err) {
@@ -132,6 +135,7 @@ export class GameStore {
     this.cancelDemo();
     this.engine = new Chess();
     this.resigned = false;
+    this.endReason = null;
     this.orientation = color;
     this.playColor = color;
     this.afterMove();
@@ -174,6 +178,9 @@ export class GameStore {
 
   /** Reconcile the whole UI from a server snapshot: fen + moves + last_move + status. */
   private applySnapshot(snap: GameState): void {
+    // A response from a superseded game (user started a new one while a move
+    // was in flight) must never clobber the current game's state.
+    if (this.mode === 'live' && this.gameId !== null && snap.game_id !== this.gameId) return;
     try {
       this.engine.load(snap.fen);
     } catch {
@@ -184,6 +191,7 @@ export class GameStore {
     this.sans = [...snap.moves];
     const lm = snap.last_move;
     this.lastMove = lm && lm.length >= 4 ? { from: lm.slice(0, 2), to: lm.slice(2, 4) } : null;
+    this.endReason = typeof snap.reason === 'string' ? snap.reason : null;
     this.deriveFromBoard();
   }
 
@@ -199,7 +207,11 @@ export class GameStore {
     } catch (err) {
       if (err instanceof api.ApiError) {
         const detail = err.message.replace(/^illegal move /i, '');
-        this.setNotice(err.status === 422 ? `ILLEGAL MOVE · ${detail}` : `MOVE REJECTED · ${detail}`);
+        if (/abandon/i.test(detail)) {
+          this.setNotice('GAME ABANDONED · TTL REAPER CLAIMED IT');
+        } else {
+          this.setNotice(err.status === 422 ? `ILLEGAL MOVE · ${detail}` : `MOVE REJECTED · ${detail}`);
+        }
       } else {
         this.setNotice('CONNECTION LOST · MOVE NOT SENT');
       }

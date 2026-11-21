@@ -9,7 +9,8 @@ import { API_BASE } from './config';
 
 export type Color = 'white' | 'black';
 export type ColorOrRandom = Color | 'random';
-export type Opponent = 'fool' | 'stockfish';
+/** `nn` is FS-1 (backend): the option ships disabled until a checkpoint exists. */
+export type Opponent = 'fool' | 'stockfish' | 'nn';
 
 /** GET /api/play/{id} and the body of every play mutation — engine.Session.snapshot(). */
 export interface GameState {
@@ -20,6 +21,8 @@ export interface GameState {
   winner: 'white' | 'black' | 'draw' | null;
   in_check: boolean;
   last_move: string | null;
+  /** FS-9: 'abandoned' when the TTL reaper auto-resigned an idle game. */
+  reason?: string | null;
 }
 
 /** POST /api/play/new response. */
@@ -29,12 +32,50 @@ export interface NewGameResponse {
   orientation: Color;
 }
 
-/** GET /api/metrics — mirrors the WS `train` metrics payload. */
+/** GET /api/metrics — mirrors the WS `train` metrics payload.
+ *
+ * The four base fields are pinned by §14.0; FS-1/FS-2 grow the payload with a
+ * per-regime Elo map and arena counters. Those are typed as optional/unknown
+ * and parsed defensively by the views so old and new backends both render.
+ */
 export interface MetricsSnapshot {
   elo: number | null;
   loss: number | null;
   win_rate: number | null;
   games_played: number;
+  /** Active regime label (e.g. "scratch") when the backend reports one. */
+  regime?: string | null;
+  /** Champion checkpoint id when present. */
+  champion?: string | null;
+  /** Number of arena games played (FS-2). */
+  arena_games?: number;
+  /** Per-regime Elo map (FS-2): regime name → { checkpoint tag → elo }. */
+  elo_by_regime?: Record<string, Record<string, number>>;
+  regime_elo?: Record<string, number>;
+  /** Checkpoint → Elo ladder (WP-C slice 1 already emits this). */
+  checkpoints?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+/**
+ * Best known Elo for "the trained opponent": prefers the FS-2 per-regime map
+ * (regime → ckpt-tag → elo, best entry wins), falls back to the flat §14.0
+ * `elo` field, else null (renders as "—").
+ */
+export function bestKnownElo(m: MetricsSnapshot | null | undefined): number | null {
+  if (!m) return null;
+  const map = m.elo_by_regime;
+  if (map && typeof map === 'object' && !Array.isArray(map)) {
+    let best: number | null = null;
+    for (const ckpts of Object.values(map)) {
+      if (!ckpts || typeof ckpts !== 'object') continue;
+      for (const v of Object.values(ckpts)) {
+        if (typeof v === 'number' && Number.isFinite(v) && (best === null || v > best)) best = v;
+      }
+    }
+    if (best !== null) return best;
+  }
+  return typeof m.elo === 'number' && Number.isFinite(m.elo) ? m.elo : null;
 }
 
 export interface GameArchiveEntry {
@@ -129,10 +170,29 @@ export async function resign(gameId: string): Promise<GameState> {
   return post<GameState>(`/play/${encodeURIComponent(gameId)}/resign`);
 }
 
-export async function games(kind?: 'play' | 'selfplay', limit = 50): Promise<{ games: GameArchiveEntry[] }> {
+export async function games(
+  kind?: 'play' | 'selfplay' | 'arena',
+  limit = 50,
+): Promise<{ games: GameArchiveEntry[] }> {
   const qs = new URLSearchParams({ limit: String(limit) });
   if (kind) qs.set('kind', kind);
   return request<{ games: GameArchiveEntry[] }>(`/games?${qs.toString()}`);
+}
+
+/** Arena ledger row (FS-2): a ledger entry, NOT a play game — no id/status/moves. */
+export interface ArenaResult {
+  run_id?: string;
+  kind?: string;
+  regime?: string;
+  ckpt?: string;
+  opponent?: string;
+  games?: number;
+  wins?: number;
+  draws?: number;
+  losses?: number;
+  elo?: number;
+  ts?: number | string;
+  [key: string]: unknown;
 }
 
 export async function metrics(): Promise<MetricsSnapshot> {

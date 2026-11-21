@@ -809,8 +809,13 @@ h1 {
 }
 .chart-wrap {
   height: 170px;
-  display: flex;
+  /* grid, not flex: the svg's viewBox aspect ratio + definite height give it a
+     transferred min-content width (~465px) that a flex item keeps even with
+     min-width:0 — the minmax(0,1fr) track lets it actually shrink */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
+  align-items: stretch;
 }
 .chart-y {
   display: flex;
