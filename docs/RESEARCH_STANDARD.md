@@ -34,8 +34,8 @@ that makes that checkable. It binds every worker and every future slice.
 
 | # | Upgrade | Source | Expected effect | Status |
 |---|---------|--------|-----------------|--------|
-| U1 | **Gumbel AlphaZero search** — Gumbel-Top-K root sampling + sequential halving replaces uniform PUCT sims; same policy-improvement guarantee at a fraction of the sims | Danihelka et al., *Policy improvement by planning with Gumbel*, ICLR 2022 | ~400 → ~64–100 equally-good sims/move ⇒ **~4× games/hour** on the same GPU; biggest single lever | **queued** (next training slice after FS-6b streaming lands; one-change ablation, gated on arena win-rate not regressing at equal games/hour) |
-| U2 | **Playout-cap randomization** — sample training positions from cheap searches too (mixed-cost data), not only full-cost searches | Wu, *Accelerating Self-Play Learning in Go* (KataGo), 2020 | Large strength-per-compute gain from data diversity; stacks with U1 | queued behind U1 |
+| U1 | **Gumbel AlphaZero search** — Gumbel-Top-K root sampling + sequential halving replaces uniform PUCT sims; same policy-improvement guarantee at a fraction of the sims | Danihelka et al., *Policy improvement by planning with Gumbel*, ICLR 2022 | ~400 → ~64–100 equally-good sims/move ⇒ **~4× games/hour** on the same GPU; biggest single lever | **in flight** (training-dev; ablation-gated: ≥4× games/h at win-rate ≥0.35 vs PUCT@400 baseline) |
+| U2 | **Playout-cap randomization** — sample training positions from cheap searches too (mixed-cost data), not only full-cost searches | Wu, *Accelerating Self-Play Learning in Go* (KataGo), 2020 | Large strength-per-compute gain from data diversity; stacks with U1 | **in flight** (same worker, sequenced after U1; flag-off identical by test; orchestrator-gated post-integration) |
 | U3 | **Rating uncertainty + external anchor** — Glicko-2-style deviation on the ladder; periodic anchor evals vs Stockfish at fixed skills to report human-comparable equivalence | Glickman, *Parameter estimation in large dynamic paired comparison experiments*, 1999 (Glicko-2); CCRL methodology for engine anchor pools | "847 ± 31 internal" and "~1300 human-equivalent" become falsifiable statements | queued (pairs with the overnight run's first real arenas) |
 | U4 | **Scaling study** — same recipe at TINY/SMALL/BASE, measure Elo-hour vs params/compute on one consumer GPU | — (no published equivalent for single-GPU chess; cf. Kaplan et al. 2020 / Hoffmann et al. 2022 methodology) | A genuine (small) research contribution: the measured answer to "what does a 3080 buy" | blocked on U1+U3 landing; needs ≥3 completed runs |
 | U5 | LR schedule + optimizer hygiene — cosine decay, warmup, Adam betas per AlphaZero appendix | Silver et al., *AlphaZero*, Science 2018 | Modest, standard; fold into U1's ablation only if a gate demands it | parked |
@@ -56,15 +56,32 @@ Rules: predictions are written and committed *before* the relevant data
 exists, scored honestly after, never edited. Score: ✓ (hit) / ✗ (miss) / —
 (untestable, say why).
 
-### first-light (test run: night profile, scratch regime, 3 iterations, seed 7 — launched 10:26 local)
+### first-light (test run: night profile, scratch regime, 3 iterations, seed 7 — launched 10:26 local, **cut 11:45** by owner decision to prioritize engine modernization)
 
 | # | Prediction | Status |
 |---|------------|--------|
-| P1 | policy_loss falls monotonically across the 3 iterations (any increase = ✗) | pending |
-| P2 | value_loss ends below 0.0173 (the smoke run's starting value) | pending |
-| P3 | measured games/hour lands between 3k and 20k at parallel_games=16 with 400 sims (outside = ✗ and the throughput model is wrong) | pending |
-| P4 | no promotion occurs in 3 iterations (near-random candidates don't beat the reigning champion in a 2-game arena; a promotion = ✗ and the arena is too weak a gate) | pending |
-| P5 | individual games last ≥60 plies on average (random-ish MCTS produces long shuffles; shorter = ✗ and the game-length prior needs revising) | pending |
+| P1 | policy_loss falls monotonically across the 3 iterations | — untestable (run cut at 71 min, before any iteration event existed) |
+| P2 | value_loss ends below 0.0173 | — untestable (same) |
+| P3 | measured games/hour lands between 3k and 20k at parallel_games=16 with 400 sims | — untestable as stated, **but the throughput model is confirmed wrong** by direct observation: 0 of 32 games completed in 71 min ⇒ <27 games/h ⇒ far below the 3k floor. The bench numbers (15.5k games/h) were taken at tiny sims and do not extrapolate to night profile. |
+| P4 | no promotion occurs in 3 iterations | — untestable (no arena ran; champion lineage unchanged, `ckpt-000004-0004` remains) |
+| P5 | individual games last ≥60 plies on average | — untestable (no game completed) |
+
+**Run yield (what the 71 minutes actually bought):** the baseline diagnostic the
+optimization gates needed — the training process was **GIL-bound to ~1.0 core**
+(66.9 CPU-min in 71 wall-min, 16 game threads), zero iteration completions, and
+a measured lower bound on night-profile cost (≥71 min per 32-game iteration at
+400 sims). These numbers are the control against which the Rust-wiring gate
+(≥3× e2e sims/sec) and the Gumbel ablation (≥4× sims-efficiency at non-regressing
+win-rate) will be judged.
+
+### next run — pre-register before launch (fill in at launch time, do not edit after data arrives)
+
+| # | Prediction | Status |
+|---|------------|--------|
+| N1 | (Rust gate) wired gambit_core yields ≥3× e2e sims/sec vs the first-light baseline at p16 | pending |
+| N2 | (Gumbel gate) gumbel@64–100 sims ≥4× games/h vs puct@400 with head-to-head win-rate ≥0.35 vs baseline | pending |
+| N3 | (combined overnight) iteration time at the modern recipe < 12 min/iteration (vs ≥71 min baseline) | pending |
+| N4 | (streaming) per-move live events flow end-to-end: journal → WS → Watch grid, at ≥1 event/s sustained during self-play | pending |
 
 Scoring happens in this table, in place, with the actual numbers beside
 each verdict. Missing a prediction is *good* science — it means the model of
