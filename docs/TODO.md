@@ -12,12 +12,15 @@ functionality end-to-end → list **every** defect and improvement found → add
 repeat. When the loop converges (clean sweep), switch to optimization: benchmark training
 algorithms/configs (sims/sec, games/hour, strength per wall-clock hour) and log results here + §13.
 
-**Enforcement:** OpenCode automation `standing-review-loop` (`aut_1fcc6d34a0010FX5Pxly82OALk`) fires
-this loop every 6 hours as a fresh orchestrator session — **ACTIVE** (user activated it; first fire
-06:00 local). Its prompt carries a dirty-tree safety gate: if `git status --short` is not clean it
-aborts without touching anything, so it never collides with in-progress work. Pause/resume:
-`opencode.cmd api post /api/experimental/automation/aut_1fcc6d34a0010FX5Pxly82OALk/pause` (or `/resume`).
-Keep its prompt in sync with the orchestrator runbook.
+**Enforcement:** OpenCode automation `standing-review-loop` (`aut_1feadea1b001Flh6KarH8f58To`) fires
+this loop **hourly** as a fresh orchestrator session — **ACTIVE** (user chose hourly; the heavy sweep
+itself takes 20–40 min, which is why the fast cadence lives in the monitor below). Its prompt carries
+a dirty-tree safety gate: if `git status --short` is not clean it aborts without touching anything.
+Between sweeps, a second no-model automation `backend-health-monitor`
+(`aut_1feacfef4001uYCa3ylqCP080l`) probes the site (:5173) + API (:8000) **every 5 minutes** and
+alerts on up→down transitions (zero token cost). Pause/resume either via
+`opencode.cmd api post /api/experimental/automation/{id}/pause` (or `/resume`).
+Keep prompts in sync with the orchestrator runbook.
 
 ## Now / Next
 
