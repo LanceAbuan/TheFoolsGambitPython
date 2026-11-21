@@ -1,0 +1,10 @@
+# maturin build manifest for the gambit_core Python extension.
+# Build from the REPO ROOT so it installs into the main uv venv:
+#     uv run maturin develop --release -m gambit_core/Cargo.toml
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+features = ["extension-module"]
+# The compiled cdylib IS the `gambit_core` Python module.

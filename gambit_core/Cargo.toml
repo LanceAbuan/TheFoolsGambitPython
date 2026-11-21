@@ -1,0 +1,20 @@
+[package]
+name = "gambit_core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Rust hot-path core for Fool's Gambit v2: bitboard movegen (chess crate), perft, and the bit-exact 29-plane / 4672 policy encoder."
+
+[lib]
+name = "gambit_core"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+chess = "3.2"
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
+numpy = "0.30"
+
+[features]
+# maturin builds with this feature so the cdylib links as a Python extension;
+# plain `cargo test` (default features) links libpython instead, so tests run.
+extension-module = ["pyo3/extension-module"]
