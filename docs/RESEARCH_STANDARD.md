@@ -63,7 +63,7 @@ exists, scored honestly after, never edited. Score: ✓ (hit) / ✗ (miss) / —
 | P1 | policy_loss falls monotonically across the 3 iterations | — untestable (run cut at 71 min, before any iteration event existed) |
 | P2 | value_loss ends below 0.0173 | — untestable (same) |
 | P3 | measured games/hour lands between 3k and 20k at parallel_games=16 with 400 sims | — untestable as stated, **but the throughput model is confirmed wrong** by direct observation: 0 of 32 games completed in 71 min ⇒ <27 games/h ⇒ far below the 3k floor. The bench numbers (15.5k games/h) were taken at tiny sims and do not extrapolate to night profile. |
-| P4 | no promotion occurs in 3 iterations | — untestable (no arena ran; champion lineage unchanged, `ckpt-000004-0004` remains) |
+| P4 | no promotion occurs in 3 iterations | — untestable (no arena ran; champion lineage unchanged, `ckpt-000004-0004` remains). **Retrospect:** the audit (F-1) later showed the gate itself was inert — `champion_model = model` aliasing meant promotion was *impossible* after iteration 0 and every historical arena result (win_rate 0.5, elo 800.0) was the model playing itself. P4 would have been "confirmed" for the wrong reason: the prediction was right, but the model of the system behind it was wrong. A reminder that a confirmed prediction is not evidence the mechanism works. |
 | P5 | individual games last ≥60 plies on average | — untestable (no game completed) |
 
 **Run yield (what the 71 minutes actually bought):** the baseline diagnostic the
