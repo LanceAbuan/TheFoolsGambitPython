@@ -63,6 +63,26 @@ monotonicity, restart-persistence probe). Zero console errors, zero HTTP ≥400.
       UI path was browser-verified earlier by client-dev (WP-B) and isn't re-driven here only
       because reaching promotion through UI clicks needs a long manual game.
 
+## Optimization bench log (standing review loop, converged → optimization phase)
+
+2026-11-21 re-bench (`scripts/bench_train.py`, tiny config, 3080, torch 2.15.0+cu132) vs the
+FS-4 acceptance record — same ballpark, no config change to adopt, p32 still the best point:
+
+| Metric | Recorded (FS-4, `a5ba985`) | Re-bench | Δ |
+|---|---|---|---|
+| sims/sec p1 → p32 | 92 → 808 (×8.8) | 66.6 → 655.5 (×9.84) | −19% @p32 |
+| games/hour p32 | 16.8k | 14.7k | −12% |
+| NN batch-256 latency | 1.49 ms | 2.11 ms | +42% |
+| journal streaming A/B @p16 | −0.9% (on faster) | +10.7% | noisier |
+
+- [ ] **Next — re-bench on a verified-idle GPU.** Every number above is 10–25% below the FS-4
+      record and the streaming A/B flipped sign (−0.9% → +10.7% @p16); the 2026-11-21 desktop
+      session has browser/IDE GPU load, so this reads as contention, not regression. Pin a clean
+      protocol before FS-10: close desktop apps (or bench headless), 3 runs, report median.
+- [ ] **Next — wire `gambit_core` into the MCTS tree step (§5 M3, ≥3× e2e gate).** FS-7 proved
+      9–11× on the isolated tree-step CPU slice but the hot path still uses python-chess; at
+      p32 the CPU movegen side is the next throughput lever before the first real run.
+
 ## Work packages (per docs/UPGRADE_PLAN.md)
 
 - [x] **WP-A — Backend**: FastAPI + WebSocket + SQLite. **LANDED** — slice 1 (`9a9c1d9`) + slice 2
