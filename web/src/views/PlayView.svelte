@@ -5,11 +5,22 @@
 
   let difficulty = $state('Curious · Intermediate');
   let side = $state('White');
+  let starting = $state(false);
+
+  /** Panel-top mode chip: honest about where the moves are coming from. */
+  const modeLabel = $derived.by(() => {
+    if (game.mode === 'live' && game.gameId) return `LIVE · ${game.gameId.toUpperCase()}`;
+    if (game.backendUp === false) return 'OFFLINE · DEMO';
+    return 'DEMO · PRACTICE';
+  });
 
   const statusText = $derived.by(() => {
+    if (game.notice) return game.notice;
     if (game.resigned) return 'You resign — The Fool prevails.';
-    if (game.status === 'checkmate')
-      return game.winner === 'w' ? 'Checkmate — you prevail. ✦' : 'Checkmate — The Fool prevails.';
+    if (game.status === 'checkmate') {
+      const iWon = game.winner === (game.playColor === 'white' ? 'w' : 'b');
+      return iWon ? 'Checkmate — you prevail. ✦' : 'Checkmate — The Fool prevails.';
+    }
     if (game.status === 'stalemate') return 'Stalemate — the fates are balanced.';
     if (game.status === 'draw') return 'A draw — the fates are balanced.';
     if (game.thinking) return 'The Fool is thinking…';
@@ -17,10 +28,27 @@
     return 'Awaiting your move';
   });
 
-  function beginJourney(): void {
-    const color = side === 'Random' ? (Math.random() < 0.5 ? 'white' : 'black') : (side.toLowerCase() as 'white' | 'black');
-    game.newGame(color);
+  function strength(): string {
+    if (difficulty.startsWith('Wandering')) return 'wandering';
+    if (difficulty.startsWith('Enlightened')) return 'enlightened';
+    return 'curious';
   }
+
+  async function beginJourney(): Promise<void> {
+    if (starting) return;
+    starting = true;
+    const color =
+      side === 'Random' ? (Math.random() < 0.5 ? 'white' : 'black') : (side.toLowerCase() as 'white' | 'black');
+    try {
+      await game.startGame(color, 'fool', strength());
+    } finally {
+      starting = false;
+    }
+  }
+
+  $effect(() => {
+    void game.probeBackend();
+  });
 </script>
 
 <main class="page-wrap">
@@ -37,7 +65,7 @@
     <section class="panel board-panel">
       <div class="panel-top">
         <span><i class="live-dot"></i> YOUR JOURNEY</span>
-        <span class="tiny-label">STANDARD · 10 MIN</span>
+        <span class="tiny-label">{modeLabel}</span>
       </div>
       <div class="board-shell">
         <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
@@ -48,7 +76,7 @@
           orientation={game.orientation}
           interactive={!game.over}
           legalTargets={(sq) => game.legalTargets(sq)}
-          onmove={(f, t, p) => game.tryMove(f, t, p)}
+          onmove={(f, t, p) => game.playerMove(f, t, p)}
         />
         <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
       </div>
@@ -58,11 +86,12 @@
         <span><i class="fool-dot"></i> THE FOOL ♟</span>
       </div>
       <div class="board-controls">
-        <button class="button" onclick={() => game.undo()}>↶ Undo</button>
+        <button class="button" disabled={game.over || !game.canUndo} onclick={() => game.undo()}>↶ Undo</button>
+        <button class="button" disabled={game.over} onclick={() => game.resign()}>⚑ Resign</button>
         <button class="button" onclick={() => game.flip()}>⇅ Flip board</button>
-        <button class="button" onclick={() => game.newGame()}>↻ New game</button>
+        <button class="button" disabled={starting} onclick={() => game.newGame()}>↻ New game</button>
       </div>
-      <p class="notice" class:think={game.thinking}>{statusText}</p>
+      <p class="notice" class:think={game.thinking} class:alert={game.notice !== null}>{statusText}</p>
     </section>
 
     <aside class="side-stack">
@@ -90,7 +119,9 @@
           <option>Black</option>
           <option>Random</option>
         </select>
-        <button class="button gold full" onclick={beginJourney}>Begin a new journey <span>→</span></button>
+        <button class="button gold full" disabled={starting} onclick={beginJourney}>
+          {starting ? 'Summoning The Fool…' : 'Begin a new journey'} <span>→</span>
+        </button>
       </section>
 
       <section class="panel moves">
@@ -106,5 +137,15 @@
 <style>
   .notice.think {
     animation: pulse 1.8s infinite;
+  }
+  .notice.alert {
+    color: var(--gold-bright);
+  }
+  .button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .button:disabled:hover {
+    background: transparent;
   }
 </style>

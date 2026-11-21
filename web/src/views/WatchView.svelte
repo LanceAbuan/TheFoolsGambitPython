@@ -1,6 +1,8 @@
 <script lang="ts">
   import { Chess } from 'chess.js';
   import Board from '../lib/components/Board.svelte';
+  import { metrics as fetchMetrics, type MetricsSnapshot } from '../lib/api/http';
+  import { socket, type ServerMessage, type SocketStatus } from '../lib/api/ws';
 
   // A real miniature game, replayed frame by frame through the playback controls.
   const line = ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'Nf6', 'O-O', 'Be7', 'd3', 'd6', 'c3', 'a6'];
@@ -52,6 +54,77 @@
     stop();
     frame = Math.min(frames.length - 1, Math.max(0, frame + delta));
   }
+
+  // ---- live telemetry: WS `train` topic (§14.0) with REST one-shot fallback ----
+  let conn = $state<SocketStatus>('connecting');
+  let liveMetrics = $state<MetricsSnapshot | null>(null);
+  let journal = $state<{ time: string; title: string; detail: string }[]>([
+    { time: '23:48:12', title: 'Game completed', detail: 'The Fool won by checkmate.' },
+    { time: '23:47:58', title: 'Position evaluated', detail: 'Advantage: +0.18 pawns.' },
+    { time: '23:47:43', title: 'New variation explored', detail: 'Candidate move: Nf6.' },
+    { time: '23:47:21', title: 'Self-play started', detail: 'Journey #12,483 began.' },
+  ]);
+
+  function clockTime(ts: string): string {
+    const d = new Date(ts);
+    return Number.isNaN(d.getTime())
+      ? new Date().toLocaleTimeString('en-GB', { hour12: false })
+      : d.toLocaleTimeString('en-GB', { hour12: false });
+  }
+
+  function onMessage(msg: ServerMessage): void {
+    if (msg.topic !== 'train') return;
+    if (msg.type === 'metrics') {
+      const m = msg.payload as Partial<MetricsSnapshot>;
+      liveMetrics = {
+        elo: typeof m.elo === 'number' ? m.elo : null,
+        loss: typeof m.loss === 'number' ? m.loss : null,
+        win_rate: typeof m.win_rate === 'number' ? m.win_rate : null,
+        games_played: typeof m.games_played === 'number' ? m.games_played : 0,
+      };
+    } else if (msg.type === 'log') {
+      const p = msg.payload as { level?: string; message?: string };
+      if (p.message) {
+        journal = [
+          { time: clockTime(msg.ts), title: (p.level ?? 'log').toUpperCase(), detail: p.message },
+          ...journal,
+        ].slice(0, 8);
+      }
+    }
+  }
+
+  $effect(() => {
+    const offMessage = socket.onMessage(onMessage);
+    const offStatus = socket.onStatus((s) => (conn = s));
+    socket.start();
+    socket.subscribe('train');
+    void fetchMetrics()
+      .then((m) => {
+        if (liveMetrics === null) liveMetrics = m;
+      })
+      .catch(() => {});
+    return () => {
+      offMessage();
+      offStatus();
+      socket.stop();
+    };
+  });
+
+  // Live values when the backend reports them; illustrative numbers otherwise.
+  const eloText = $derived(liveMetrics?.elo != null ? Math.round(liveMetrics.elo).toLocaleString('en-US') : '1,625');
+  const lossText = $derived(liveMetrics?.loss != null ? liveMetrics.loss.toFixed(3) : '0.384');
+  const winRateText = $derived(
+    liveMetrics?.win_rate != null
+      ? `${((liveMetrics.win_rate <= 1 ? liveMetrics.win_rate * 100 : liveMetrics.win_rate)).toFixed(1)}%`
+      : '54.7%',
+  );
+  const gamesText = $derived(
+    liveMetrics?.games_played != null ? liveMetrics.games_played.toLocaleString('en-US') : '12,482',
+  );
+  const telemetryLabel = $derived(liveMetrics !== null ? 'LIVE TELEMETRY' : 'ILLUSTRATIVE DATA');
+  const chip = $derived(
+    conn === 'open' ? 'LIVE · CONNECTED' : conn === 'connecting' ? 'LIVE · CONNECTING' : 'DEMO · OFFLINE',
+  );
 </script>
 
 <main class="page-wrap">
@@ -61,7 +134,10 @@
       <h1>Watch</h1>
       <p>Observe The Fool as it learns the game.</p>
     </div>
-    <div class="training-state"><i class="live-dot"></i> {playing ? 'REPLAY' : 'DEMO SESSION'} <span>·</span> {playing ? 'PLAYING' : 'PAUSED'}</div>
+    <div class="training-state" class:off={conn !== 'open'}>
+      <i class="live-dot"></i>
+      {chip}
+    </div>
   </div>
 
   <div class="watch-grid">
@@ -92,8 +168,12 @@
     </section>
 
     <section class="panel progress-panel">
-      <div class="section-title"><span>Training progress</span><span class="tiny-label">ILLUSTRATIVE DATA</span></div>
-      <div class="metric-main"><strong>1,625</strong><span>ESTIMATED ELO</span><em>↗ +42 this week</em></div>
+      <div class="section-title"><span>Training progress</span><span class="tiny-label">{telemetryLabel}</span></div>
+      <div class="metric-main">
+        <strong>{eloText}</strong>
+        <span>ESTIMATED ELO</span>
+        <em>{liveMetrics !== null ? 'LIVE · WS FEED' : '↗ +42 THIS WEEK'}</em>
+      </div>
       <div class="chart-wrap">
         <div class="chart-y"><span>1800</span><span>1600</span><span>1400</span><span>1200</span><span>1000</span></div>
         <svg class="line-chart" viewBox="0 0 520 190" preserveAspectRatio="none" role="img" aria-label="Rating over training, rising trend">
@@ -110,9 +190,9 @@
       </div>
       <div class="chart-legend"><span><i></i> RATING OVER TRAINING</span><span>LAST 30 SESSIONS</span></div>
       <div class="stat-grid">
-        <div><small>GAMES PLAYED</small><strong>12,482</strong></div>
-        <div><small>WIN RATE</small><strong>54.7%</strong></div>
-        <div><small>TRAINING LOSS</small><strong>0.384</strong></div>
+        <div><small>GAMES PLAYED</small><strong>{gamesText}</strong></div>
+        <div><small>WIN RATE</small><strong>{winRateText}</strong></div>
+        <div><small>TRAINING LOSS</small><strong>{lossText}</strong></div>
         <div><small>BEST STREAK</small><strong>08 W</strong></div>
       </div>
     </section>
@@ -120,10 +200,9 @@
     <section class="panel log-panel">
       <div class="section-title"><span>Training journal</span><span class="tiny-label">LATEST EVENTS</span></div>
       <div class="log-list">
-        <div><time>23:48:12</time><i class="log-dot"></i><span><b>Game completed</b><small>The Fool won by checkmate.</small></span></div>
-        <div><time>23:47:58</time><i class="log-dot"></i><span><b>Position evaluated</b><small>Advantage: +0.18 pawns.</small></span></div>
-        <div><time>23:47:43</time><i class="log-dot"></i><span><b>New variation explored</b><small>Candidate move: Nf6.</small></span></div>
-        <div><time>23:47:21</time><i class="log-dot"></i><span><b>Self-play started</b><small>Journey #12,483 began.</small></span></div>
+        {#each journal as entry, i (`${i}-${entry.time}-${entry.title}`)}
+          <div><time>{entry.time}</time><i class="log-dot"></i><span><b>{entry.title}</b><small>{entry.detail}</small></span></div>
+        {/each}
       </div>
     </section>
 
@@ -134,3 +213,10 @@
     </section>
   </div>
 </main>
+
+<style>
+  .training-state.off .live-dot {
+    background: var(--red);
+    box-shadow: 0 0 9px var(--red);
+  }
+</style>

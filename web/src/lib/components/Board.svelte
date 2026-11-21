@@ -42,6 +42,19 @@
 
   const active = $derived(!mini && interactive);
 
+  /** Promotion generates up to four moves per destination square; dots are identical, render one. */
+  const targetDots = $derived.by(() => {
+    const seen = new Set<string>();
+    const out: Move[] = [];
+    for (const t of targets) {
+      if (!seen.has(t.to)) {
+        seen.add(t.to);
+        out.push(t);
+      }
+    }
+    return out;
+  });
+
   function parse(f: string): Map<string, { type: string; color: 'w' | 'b' }> {
     const map = new Map<string, { type: string; color: 'w' | 'b' }>();
     const rows = f.split(' ')[0].split('/');
@@ -314,7 +327,7 @@
     {/if}
 
     {#if active}
-      {#each targets as t (t.to)}
+      {#each targetDots as t (t.to)}
         {@const { x, y } = xy(t.to)}
         {#if t.captured}
           <circle cx={x + 50} cy={y + 50} r="40" class="cap" pointer-events="none" />
