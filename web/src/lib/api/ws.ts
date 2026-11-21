@@ -4,7 +4,7 @@
  *
  * - C→S subscribe: `{seq, type: "subscribe", topic, last_seq}` — `last_seq` is the
  *   last seq seen on that topic so the server can resync on reconnect.
- * - S→C: `{seq, topic, type: "position"|"state"|"metrics"|"log"|"lobby"|"error", payload, ts}`.
+ * - S→C: `{seq, topic, type: "position"|"state"|"metrics"|"log"|"live"|"game_end"|"lobby"|"error", payload, ts}`.
  * - Auto-reconnect with exponential backoff (1s → 15s cap); all topics are
  *   resubscribed automatically when the socket reopens.
  *
@@ -13,7 +13,15 @@
  */
 import { wsUrlFromBase, API_BASE } from './config';
 
-export type ServerEventType = 'position' | 'state' | 'metrics' | 'log' | 'lobby' | 'error';
+export type ServerEventType =
+  | 'position'
+  | 'state'
+  | 'metrics'
+  | 'log'
+  | 'live'
+  | 'game_end'
+  | 'lobby'
+  | 'error';
 export type SocketStatus = 'idle' | 'connecting' | 'open' | 'closed';
 
 export interface ServerMessage {

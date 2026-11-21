@@ -134,6 +134,191 @@
     if (follow && feedEl && count > 0) feedEl.scrollTop = feedEl.scrollHeight;
   });
 
+  // ---- live games grid (FS-6c): `live` frames on the train topic -------------
+  // Contract (server/telemetry.py + FS-6c correction): payload {game, ply,
+  // move(uci), fen, run_id, ts} = position AFTER the move; newest per game;
+  // NEVER replayed on subscribe (every join is mid-stream). `game` ids are
+  // RUN-UNIQUE (iteration i owns [i*16, (i+1)*16); ids never repeat within a
+  // run), so cells are addressed by `game % gridSize` and refill only when a
+  // NEW game id maps to them; newest-fen-wins per CELL resolves any overlap.
+  // game_end marks the occupying cell for ~5s, then its game entry is dropped.
+  const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  const END_TTL_MS = 5000;
+  const MOVE_LIST_CAP = 160;
+  const MAX_STORE = 64; // memory safety net; TTL cleanup keeps this far below in practice
+
+  interface LiveMove {
+    ply: number;
+    uci: string;
+    san: string | null;
+  }
+  interface LiveSlot {
+    game: number;
+    fen: string;
+    ply: number;
+    lastUci: string | null;
+    lastSan: string | null;
+    runId: string | null;
+    updated: number; // Date.now() of last frame — per-cell newest-fen-wins
+    ended: { result: string } | null;
+    moves: LiveMove[];
+  }
+
+  // Plain record (not a Map): Svelte 5 deep-proxy tracks property writes
+  // reliably; Map iteration in $derived proved not to invalidate here.
+  let liveSlots = $state<Record<number, LiveSlot>>({});
+  let sawLive = $state(false);
+  let featured = $state<number | null>(null);
+  let gridSize = $state(16); // desktop 4×4; shrinks on narrow viewports
+  const endTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  $effect(() => {
+    const onResize = (): void => {
+      gridSize = window.innerWidth >= 900 ? 16 : window.innerWidth >= 560 ? 9 : 6;
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  });
+
+  /** UCI → SAN via the position the move was played from. The first move seen
+   *  for a late-joined game has no known pre-move position — it stays UCI. */
+  function sanFor(prevFen: string | null, ply: number, uci: string): string | null {
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promo = uci.slice(4, 5);
+    if (from.length !== 2 || to.length !== 2) return null;
+    const base = prevFen ?? (ply <= 1 ? START_FEN : null);
+    if (!base) return null;
+    try {
+      const c = new Chess(base);
+      const m = c.move({ from, to, ...(promo ? { promotion: promo } : {}) });
+      return m.san;
+    } catch {
+      return null; // defensive: a bad fen/uci pair degrades to UCI display
+    }
+  }
+
+  function onLiveFrame(p: Record<string, unknown>): void {
+    const game = p.game;
+    const fen = p.fen;
+    if (typeof game !== 'number' || !Number.isInteger(game) || typeof fen !== 'string' || fen.length === 0) return;
+    const ply = typeof p.ply === 'number' ? p.ply : 0;
+    const uci = typeof p.move === 'string' ? p.move : '';
+    const prev = liveSlots[game];
+    if (prev && prev.fen === fen && prev.ply === ply) return; // duplicate frame — skip re-render
+    const san = sanFor(prev ? prev.fen : null, ply, uci);
+    liveSlots[game] = {
+      game,
+      fen,
+      ply,
+      lastUci: uci || null,
+      lastSan: san,
+      runId: typeof p.run_id === 'string' && p.run_id ? p.run_id : (prev?.runId ?? null),
+      updated: Date.now(),
+      ended: null,
+      moves: [...(prev?.moves ?? []), { ply, uci, san }].slice(-MOVE_LIST_CAP),
+    };
+    sawLive = true;
+    // Memory safety net: drop the stalest game when the store grows past MAX_STORE.
+    const ids = Object.keys(liveSlots).map(Number);
+    if (ids.length > MAX_STORE) {
+      let stalestId = ids[0];
+      for (const id of ids) {
+        if (liveSlots[id].updated < liveSlots[stalestId].updated) stalestId = id;
+      }
+      delete liveSlots[stalestId];
+      if (featured === stalestId) featured = null;
+    }
+  }
+
+  function onGameEnd(p: Record<string, unknown>): void {
+    const game = p.game;
+    if (typeof game !== 'number' || !Number.isInteger(game)) return;
+    const slot = liveSlots[game];
+    if (!slot) return; // never saw this game — nothing to mark
+    const result = typeof p.result === 'string' && p.result ? p.result : '—';
+    slot.ended = { result };
+    const prior = endTimers.get(game);
+    if (prior) clearTimeout(prior);
+    endTimers.set(
+      game,
+      setTimeout(() => {
+        endTimers.delete(game);
+        // ids are run-unique: the entry is simply dropped; its cell refills
+        // only when a NEW game id maps to it via modulo.
+        if (liveSlots[game]) {
+          delete liveSlots[game];
+          if (featured === game) featured = null;
+        }
+      }, END_TTL_MS),
+    );
+  }
+
+  /** The server never replays live frames: every (re)connect is a fresh join. */
+  function resetLiveSlots(): void {
+    liveSlots = {};
+    sawLive = false;
+    featured = null;
+    for (const t of endTimers.values()) clearTimeout(t);
+    endTimers.clear();
+  }
+
+  function toggleFeatured(game: number): void {
+    featured = featured === game ? null : game;
+  }
+
+  /** Escape anywhere collapses the featured view (Tip's own Escape stops propagation). */
+  function onGlobalKeydown(e: KeyboardEvent): void {
+    if (e.key === 'Escape' && featured !== null) featured = null;
+  }
+
+  function slotLabel(s: LiveSlot): string {
+    if (s.ended) return `game ${s.game} finished, result ${s.ended.result}`;
+    return `game ${s.game}, move ${s.ply}, position after ${s.lastSan ?? s.lastUci ?? 'start'}`;
+  }
+
+  /** UCI → the {from,to} shape Board's last-move highlight expects. */
+  function fromTo(uci: string | null): { from: string; to: string } | null {
+    if (!uci || uci.length < 4) return null;
+    return { from: uci.slice(0, 2), to: uci.slice(2, 4) };
+  }
+
+  // Cell model (FS-6c correction): cell c is occupied by the game with the
+  // most recent frame among those with `game % gridSize === c` — newest-fen-
+  // wins per CELL resolves any overlap between iteration blocks. Cells render
+  // in cell-index order; only occupied cells render.
+  const liveList = $derived.by(() => {
+    const byCell = new Map<number, LiveSlot>();
+    for (const s of Object.values(liveSlots)) {
+      const cell = ((s.game % gridSize) + gridSize) % gridSize;
+      const cur = byCell.get(cell);
+      if (!cur || s.updated > cur.updated) byCell.set(cell, s);
+    }
+    return [...byCell.entries()].sort((a, b) => a[0] - b[0]).map(([, s]) => s);
+  });
+  // Honest chip: real count of games in progress (may exceed visible cells
+  // during a rare iteration overlap — the tooltip explains the count).
+  const liveInPlay = $derived(Object.values(liveSlots).filter((s) => s.ended === null).length);
+  const liveChip = $derived(sawLive ? `${liveInPlay} IN PLAY` : 'IDLE');
+  const featuredSlot = $derived(featured !== null ? (liveSlots[featured] ?? null) : null);
+
+  let movesEl: HTMLDivElement | undefined = $state();
+  // Featured move list auto-follows the newest move.
+  $effect(() => {
+    const n = featuredSlot?.moves.length ?? 0;
+    if (movesEl && n > 0) movesEl.scrollTop = movesEl.scrollHeight;
+  });
+
+  // Tooltip copy (FS-8b voice: plain clarity).
+  const TIP_LIVE_GAMES =
+    'The Fool is playing itself right now — every board is one real game running on the training machine, updating the moment a move is made. Boards advance every few seconds, not every second: between moves the bot is thinking, weighing hundreds of candidate positions before it commits.';
+  const TIP_LIVE_CHIP =
+    'How many of the training games are still in progress at this moment. A finished game shows its result for a few seconds, then clears its board.';
+  const TIP_MOVES =
+    'Each line is one move, newest at the bottom. A few lines show coordinates (like e2e4) instead of standard notation — that happens when we join a game mid-way and never saw the position the move was played from.';
+
+
   // ---- metrics parsing: base fields are pinned, FS-1/FS-2 additions are optional ----
   function mapOfNumbers(v: unknown): Record<string, number> | undefined {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
@@ -329,12 +514,19 @@
       }
     } else if (msg.type === 'log') {
       pushJournal(msg);
+    } else if (msg.type === 'live') {
+      onLiveFrame(msg.payload);
+    } else if (msg.type === 'game_end') {
+      onGameEnd(msg.payload);
     }
   }
 
   $effect(() => {
     const offMessage = socket.onMessage(onMessage);
-    const offStatus = socket.onStatus((s) => (conn = s));
+    const offStatus = socket.onStatus((s) => {
+      conn = s;
+      if (s === 'open') resetLiveSlots(); // (re)connect = fresh join: no replay exists
+    });
     socket.start();
     socket.subscribe('train');
     void fetchMetrics()
@@ -346,6 +538,8 @@
     return () => {
       offMessage();
       offStatus();
+      for (const t of endTimers.values()) clearTimeout(t);
+      endTimers.clear();
       socket.stop();
     };
   });
@@ -375,6 +569,8 @@
     conn === 'open' ? 'LIVE · CONNECTED' : conn === 'connecting' ? 'LIVE · CONNECTING' : 'DEMO · OFFLINE',
   );
 </script>
+
+<svelte:window onkeydown={onGlobalKeydown} />
 
 <main class="page-wrap">
   <div class="page-heading">
@@ -426,32 +622,94 @@
   </section>
 
   <div class="watch-grid">
-    <section class="panel training-board">
-      <div class="panel-top">
-        <span><i class="live-dot"></i> SELF-PLAY TABLE <Tip text={TIP_BOARD} label="About the self-play board" /></span>
-        <span class="tiny-label">SAMPLE GAME · REPLAY</span>
+    <section class="panel training-board live-panel">
+      <div class="section-title">
+        <span><i class="live-dot"></i> LIVE GAMES <Tip text={TIP_LIVE_GAMES} label="What is this wall of boards?" /></span>
+        <span class="tiny-label">{liveChip} <Tip text={TIP_LIVE_CHIP} label="What does the count mean?" /></span>
       </div>
-      <div class="board-shell small-board">
-        <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
-        <Board mini fen={current.fen} />
-        <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
-      </div>
-      <div class="playback">
-        <button class="round-button" onclick={() => step(-1)} aria-label="previous position">←</button>
-        <button class="round-button play-toggle" onclick={toggle} aria-label={playing ? 'pause' : 'play'}>
-          {playing ? '❙❙' : '▶'}
-        </button>
-        <button class="round-button" onclick={() => step(1)} aria-label="next position">→</button>
-        <span>POSITION {String(frame + 1).padStart(2, '0')} / {String(frames.length).padStart(2, '0')}</span>
-        <input type="range" min="0" max={frames.length - 1} bind:value={frame} oninput={stop} aria-label="timeline" />
-      </div>
-      <div class="analysis-row">
-        <div><small>CURRENT MOVE</small><strong>{current.label}</strong></div>
-        <div><small>POSITION SCORE</small><strong>{score}</strong></div>
-        <div><small>SEARCH DEPTH</small><strong>{depth}</strong></div>
-      </div>
-      {#if regimeText}
-        <p class="regime-line">REGIME <b>{regimeText}</b>{#if liveMetrics?.champion} · CHAMPION <b>{liveMetrics.champion}</b>{/if}</p>
+
+      {#if !sawLive}
+        <p class="live-empty">
+          No live games right now. Training runs offline; when a run is active, its games appear here move by move.
+        </p>
+        <div class="sample-block">
+          <div class="sample-head">
+            <span class="tiny-label">SAMPLE GAME · REPLAY</span>
+            <Tip text={TIP_BOARD} label="About the sample game" />
+          </div>
+          <div class="board-shell small-board">
+            <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
+            <Board mini fen={current.fen} />
+            <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
+          </div>
+          <div class="playback">
+            <button class="round-button" onclick={() => step(-1)} aria-label="previous position">←</button>
+            <button class="round-button play-toggle" onclick={toggle} aria-label={playing ? 'pause' : 'play'}>
+              {playing ? '❙❙' : '▶'}
+            </button>
+            <button class="round-button" onclick={() => step(1)} aria-label="next position">→</button>
+            <span>POSITION {String(frame + 1).padStart(2, '0')} / {String(frames.length).padStart(2, '0')}</span>
+            <input type="range" min="0" max={frames.length - 1} bind:value={frame} oninput={stop} aria-label="timeline" />
+          </div>
+          <div class="analysis-row">
+            <div><small>CURRENT MOVE</small><strong>{current.label}</strong></div>
+            <div><small>POSITION SCORE</small><strong>{score}</strong></div>
+            <div><small>SEARCH DEPTH</small><strong>{depth}</strong></div>
+          </div>
+          {#if regimeText}
+            <p class="regime-line">REGIME <b>{regimeText}</b>{#if liveMetrics?.champion} · CHAMPION <b>{liveMetrics.champion}</b>{/if}</p>
+          {/if}
+        </div>
+      {:else}
+        {#if featuredSlot}
+          <div class="featured" role="region" aria-label="featured game {featuredSlot.game}">
+            <div class="featured-head">
+              <span class="live-tag">#{String(featuredSlot.game).padStart(2, '0')}</span>
+              <span class="tiny-label">
+                {featuredSlot.ended ? `RESULT ${featuredSlot.ended.result}` : `MOVE ${featuredSlot.ply}`}
+                {#if featuredSlot.runId}<em class="featured-run"> · {featuredSlot.runId}</em>{/if}
+              </span>
+              <button class="featured-close" onclick={() => (featured = null)} aria-label="close featured game">✕</button>
+            </div>
+            <div class="featured-body">
+              <div class="featured-board">
+                <Board fen={featuredSlot.fen} lastMove={fromTo(featuredSlot.lastUci)} interactive={false} />
+              </div>
+              <div class="featured-side">
+                <div class="featured-moves-title">
+                  <span class="tiny-label">MOVES</span>
+                  <Tip text={TIP_MOVES} label="About the move list" />
+                </div>
+                <div class="featured-moves" bind:this={movesEl}>
+                  {#each featuredSlot.moves as m, i (`${m.ply}-${i}`)}
+                    <span class="fm-row">
+                      <b>{Math.floor((m.ply - 1) / 2) + 1}{m.ply % 2 === 1 ? '.' : '…'}</b>
+                      <span>{m.san ?? m.uci}</span>
+                    </span>
+                  {/each}
+                </div>
+              </div>
+            </div>
+          </div>
+        {/if}
+        <div class="live-grid">
+          {#each liveList as s (s.game)}
+            <button
+              type="button"
+              class="live-cell"
+              class:ended={s.ended !== null}
+              class:active={featured === s.game}
+              aria-label={slotLabel(s)}
+              aria-pressed={featured === s.game}
+              onclick={() => toggleFeatured(s.game)}
+            >
+              <span class="live-tag">#{String(s.game).padStart(2, '0')}</span>
+              {#if s.ended}<span class="live-result">{s.ended.result}</span>{/if}
+              <span class="live-mini"><Board mini interactive={false} fen={s.fen} lastMove={fromTo(s.lastUci)} /></span>
+              <span class="live-meta">MOVE {s.ply}{s.lastSan ? ` · ${s.lastSan}` : ''}</span>
+            </button>
+          {/each}
+        </div>
       {/if}
     </section>
 
@@ -816,5 +1074,182 @@
   .arena-sub {
     font: 10px var(--mono);
     color: #9c896d;
+  }
+
+  /* ---- FS-6c: live games grid + featured view ---- */
+  .live-panel {
+    grid-column: 1 / -1;
+  }
+  .live-empty {
+    font: 14px/1.6 var(--serif);
+    color: var(--paper-dim);
+    margin: 4px 0 14px;
+  }
+  /* honest empty state keeps the sample replay, clearly labelled */
+  .sample-block {
+    max-width: 440px;
+  }
+  .sample-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .live-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 4px;
+  }
+  .live-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 6px;
+    background: #17131b;
+    border: 1px solid #44382f;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    color: inherit;
+    min-width: 0;
+  }
+  .live-cell:hover {
+    border-color: #826747;
+  }
+  .live-cell:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  .live-cell.active {
+    border-color: var(--gold-bright);
+  }
+  .live-cell.ended {
+    border-color: var(--red);
+  }
+  .live-tag {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    font: 9px var(--mono);
+    letter-spacing: 0.08em;
+    color: #2a2118;
+    background: rgba(213, 173, 100, 0.92);
+    padding: 1px 4px;
+  }
+  .live-result {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    font: 20px var(--mono);
+    color: var(--gold-bright);
+    background: rgba(23, 19, 27, 0.74);
+    pointer-events: none;
+  }
+  .live-mini {
+    display: block;
+    min-width: 0;
+  }
+  .live-meta {
+    font: 9px var(--mono);
+    letter-spacing: 0.08em;
+    color: #9c896d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .featured {
+    margin: 2px 0 14px;
+    border: 1px solid #594634;
+    background: #241e27;
+    padding: 12px 14px;
+  }
+  .featured-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .featured-run {
+    font-style: normal;
+    color: #9c896d;
+  }
+  .featured-close {
+    margin-left: auto;
+    background: none;
+    border: 1px solid #44382f;
+    color: var(--paper-dim);
+    cursor: pointer;
+    font: 11px var(--mono);
+    padding: 3px 9px;
+  }
+  .featured-close:hover {
+    color: var(--gold-bright);
+    border-color: #826747;
+  }
+  .featured-close:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+  }
+  .featured-body {
+    display: grid;
+    grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+    gap: 14px;
+  }
+  .featured-board {
+    min-width: 0;
+  }
+  .featured-side {
+    min-width: 0;
+  }
+  .featured-moves-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .featured-moves {
+    max-height: 320px;
+    overflow-y: auto;
+    background: #17131b;
+    border: 1px solid #44382f;
+    padding: 8px 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 2px 12px;
+    align-content: start;
+  }
+  .fm-row {
+    display: flex;
+    gap: 6px;
+    font: 11px var(--mono);
+    color: var(--paper-dim);
+    white-space: nowrap;
+  }
+  .fm-row b {
+    font-weight: 400;
+    color: #7d6b53;
+  }
+  @media (max-width: 900px) {
+    .featured-body {
+      grid-template-columns: 1fr;
+    }
+    .featured-board {
+      max-width: 340px;
+    }
+  }
+  @media (max-width: 820px) {
+    .live-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 560px) {
+    .live-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 </style>
