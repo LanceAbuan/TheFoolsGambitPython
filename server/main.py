@@ -22,10 +22,17 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Backfill the arena ledger, run the background feeds + TTL reaper; clean up on shutdown."""
+    """Migrate + backfill the DB, rehydrate active game sessions, run the
+    background feeds + TTL reaper; clean up on shutdown."""
+    await asyncio.to_thread(db.migrate)
     backfilled = await asyncio.to_thread(db.backfill_arena)
     if backfilled:
         log.info("backfilled %d arena ledger row(s) at startup", backfilled)
+    # Restart resilience: rebuild in-progress games from SQLite before serving,
+    # so GET/WS/moves on a pre-restart game and the lobby's active list survive
+    # deploys. Runs before the reaper starts so restored sessions are visible
+    # to its first scan.
+    await asyncio.to_thread(engine.rehydrate_active)
     telemetry.start()
     reaper.start()
     warmup = asyncio.create_task(model_server.warmup_async(), name="champion-warmup")

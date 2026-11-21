@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS games (
   updated_at TEXT NOT NULL,
   orientation TEXT NOT NULL,
   opponent TEXT NOT NULL DEFAULT 'fool',
+  strength TEXT NOT NULL DEFAULT 'curious',
   status TEXT NOT NULL,
   winner TEXT,
   reason TEXT,
@@ -97,8 +98,9 @@ def persist_session(session: Any) -> None:
     def _op(conn: sqlite3.Connection) -> None:
         conn.execute(
             "INSERT OR REPLACE INTO games"
-            " (id, kind, created_at, updated_at, orientation, opponent, status, winner, reason, pgn)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " (id, kind, created_at, updated_at, orientation, opponent, strength,"
+            " status, winner, reason, pgn)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 session.id,
                 session.kind,
@@ -106,6 +108,7 @@ def persist_session(session: Any) -> None:
                 _iso(time.time()),
                 session.orientation,
                 session.opponent,
+                session.strength,
                 session.status,
                 session.winner,
                 session.reason,
@@ -126,9 +129,11 @@ def persist_session(session: Any) -> None:
 
 def list_games(kind: str | None, limit: int) -> list[dict[str, Any]]:
     def _op(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+        # `game_id` is an additive alias of the pinned §14.0 `id` field so the
+        # web client's GameArchiveEntry (which speaks `game_id`) can align.
         sql = (
-            "SELECT g.id, g.kind, g.created_at, g.updated_at, g.orientation, g.opponent,"
-            " g.status, g.winner, g.reason,"
+            "SELECT g.id, g.id AS game_id, g.kind, g.created_at, g.updated_at,"
+            " g.orientation, g.opponent, g.status, g.winner, g.reason,"
             " (SELECT COUNT(*) FROM moves m WHERE m.game_id = g.id) AS plies"
             " FROM games g"
         )
@@ -154,6 +159,94 @@ def moves_for(gid: str) -> tuple[list[str], str] | None:
             "SELECT san FROM moves WHERE game_id = ? ORDER BY ply", (gid,)
         ).fetchall()
         return [row["san"] for row in rows], game["orientation"]
+
+    return tx(_op)
+
+
+# ---------------------------------------------------------------------------
+# Schema migration (additive only, run from the app lifespan — never from
+# connect(), so merely importing this package, e.g. during test collection
+# against the live DB, cannot mutate anything).
+# ---------------------------------------------------------------------------
+
+def migrate() -> None:
+    """Apply additive schema migrations to a pre-existing database (idempotent).
+
+    v1 → v2: ``games.strength`` records the opponent's skill preset so sessions
+    rehydrate faithfully after a restart. Existing rows backfill with the
+    default ``'curious'``; fresh databases already create the column.
+    """
+
+    def _op(conn: sqlite3.Connection) -> None:
+        columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(games)")}
+        if "strength" not in columns:
+            conn.execute("ALTER TABLE games ADD COLUMN strength TEXT NOT NULL DEFAULT 'curious'")
+            log.info("db migration: games.strength column added (existing rows -> 'curious')")
+
+    tx(_op)
+
+
+# ---------------------------------------------------------------------------
+# Session rehydration (restart resilience): raw restore sources for engine.py,
+# which owns the chess-level replay/validation.
+# ---------------------------------------------------------------------------
+
+RestoreSource = tuple[dict[str, Any], list[str]]  # (games row, ordered UCIs)
+
+_GAME_COLUMNS = (
+    "id, kind, created_at, updated_at, orientation, opponent, strength, status, winner, reason"
+)
+
+
+def _restore_source(conn: sqlite3.Connection, row: sqlite3.Row) -> RestoreSource:
+    """(games row dict, ordered UCIs) for a single game row."""
+    ucis = [
+        str(m["uci"])
+        for m in conn.execute("SELECT uci FROM moves WHERE game_id = ? ORDER BY ply", (row["id"],))
+    ]
+    return dict(row), ucis
+
+
+def restore_active() -> dict[str, RestoreSource]:
+    """Rehydration sources for every still-``active`` game row, oldest first.
+
+    Duplicate ``game_id`` rows (possible only in legacy tables created before
+    the primary key existed) are deduplicated first-wins with a warning.
+    Self-migrating so a restore never reads a schema it did not ensure.
+    """
+    migrate()
+
+    def _op(conn: sqlite3.Connection) -> dict[str, RestoreSource]:
+        out: dict[str, RestoreSource] = {}
+        rows = conn.execute(
+            f"SELECT {_GAME_COLUMNS} FROM games WHERE status = 'active' ORDER BY rowid"
+        ).fetchall()
+        for row in rows:
+            gid = str(row["id"])
+            if gid in out:
+                log.warning("db restore: duplicate games row for %s; keeping the first", gid)
+                continue
+            out[gid] = _restore_source(conn, row)
+        return out
+
+    return tx(_op)
+
+
+def restore_one(gid: str) -> RestoreSource | None:
+    """Rehydration source for one game (any status), or None when unknown.
+
+    Self-migrating (idempotent, one PRAGMA check) so a lazy rehydrate on a
+    legacy database works even if the lifespan has not run in this process.
+    """
+    migrate()
+
+    def _op(conn: sqlite3.Connection) -> RestoreSource | None:
+        row = conn.execute(
+            f"SELECT {_GAME_COLUMNS} FROM games WHERE id = ?", (gid,)
+        ).fetchone()
+        if row is None:
+            return None
+        return _restore_source(conn, row)
 
     return tx(_op)
 

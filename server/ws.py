@@ -21,10 +21,12 @@ def _now() -> str:
 
 
 def lobby_state() -> list[dict[str, Any]]:
-    """Active games for the Watch tab. ``opponent``/``strength`` added in WP-A slice 2."""
+    """Active games for the Watch tab. ``opponent``/``strength`` added in WP-A slice 2;
+    ``id`` is an additive alias of ``game_id`` aligning with the REST archive shape."""
     return [
         {
             "game_id": s.id,
+            "id": s.id,
             "orientation": s.orientation,
             "status": s.status,
             "opponent": s.opponent,

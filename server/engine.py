@@ -18,15 +18,21 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 import chess
 import chess.engine
 
-from . import model_server, stockfish
+from . import db, model_server, stockfish
 
 log = logging.getLogger(__name__)
 
 MAX_UNDO_PLIES = 2  # a human undo pops the opponent's reply too
+DEFAULT_STRENGTH = "curious"  # fallback for legacy rows predating games.strength
+_RESTORE_ORIENTATIONS = frozenset({"white", "black"})
+_RESTORE_OPPONENTS = frozenset({"fool", "stockfish", "nn"})
+_RESTORE_WINNERS = frozenset({"white", "black", "draw"})
 
 
 class GameError(Exception):
@@ -331,7 +337,128 @@ async def shutdown_engines() -> int:
 
 
 def get_session(gid: str) -> Session:
+    """The live session for ``gid``, rehydrating from SQLite on a memory miss.
+
+    Boot (:func:`rehydrate_active`) restores still-active games at startup; any
+    other persisted play game — typically a finished archive row — is rebuilt
+    here on first access so a server restart never 404s a persisted game. The
+    miss path is one small indexed SQLite read, only paid once per game per
+    process. Corrupt rows restore as absent (404), never a crash.
+    """
     session = _sessions.get(gid)
-    if session is None:
+    if session is not None:
+        return session
+    source = db.restore_one(gid)
+    if source is None:
         raise NotFound(f"game {gid} not found")
-    return session
+    row, ucis = source
+    if str(row.get("kind") or "") != "play":
+        raise NotFound(f"game {gid} not found")
+    restored = _session_from_row(row, ucis)
+    if restored is None:
+        raise NotFound(f"game {gid} not found")
+    with _lock:  # a concurrent miss may have raced us; first insert wins
+        existing = _sessions.get(gid)
+        if existing is not None:
+            return existing
+        _sessions[gid] = restored
+    return restored
+
+
+def _parse_iso_ts(value: object) -> float:
+    """Epoch seconds from an ISO-8601 ``db._iso`` timestamp; unparseable → now."""
+    text = str(value or "")
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.timestamp()
+    except ValueError:
+        log.debug("rehydrate: unparseable timestamp %r; using now", value)
+        return time.time()
+
+
+def _session_from_row(row: dict[str, Any], ucis: list[str]) -> Session | None:
+    """Rebuild a Session from its persisted games row + ordered UCIs.
+
+    Corrupt rows (bad enum, malformed or position-illegal stored UCI) return
+    ``None`` with a warning — rehydration never crashes boot and never turns a
+    request into a 500. The stored result state is trusted for finished games
+    (resign/abandon endings are not derivable from the board). The engine
+    process (stockfish) is intentionally not resurrected: it respawns lazily on
+    the next move via :func:`server.stockfish.ensure`.
+    """
+    gid = str(row.get("id") or "")
+    try:
+        orientation = str(row.get("orientation"))
+        opponent = str(row.get("opponent"))
+        status = str(row.get("status"))
+        if orientation not in _RESTORE_ORIENTATIONS:
+            raise ValueError(f"bad orientation {orientation!r}")
+        if opponent not in _RESTORE_OPPONENTS:
+            raise ValueError(f"bad opponent {opponent!r}")
+        if status not in ("active", "finished"):
+            raise ValueError(f"bad status {status!r}")
+        winner = row.get("winner")
+        reason = row.get("reason")
+        if status == "finished" and winner not in _RESTORE_WINNERS:
+            raise ValueError(f"bad winner {winner!r}")
+        board = chess.Board()
+        sans: list[str] = []
+        played: list[str] = []
+        fens: list[str] = []
+        for raw in ucis:
+            move = chess.Move.from_uci(str(raw).strip())  # ValueError on malformed UCI
+            if move not in board.legal_moves:
+                raise ValueError(f"stored move illegal in position: {raw!r}")
+            sans.append(board.san(move))
+            board.push(move)
+            played.append(move.uci())
+            fens.append(board.fen())
+    except (TypeError, ValueError) as exc:
+        log.warning("rehydrate: skipping corrupt game row %s (%s)", gid or "(no id)", exc)
+        return None
+    finished = status == "finished"
+    return Session(
+        id=gid,
+        kind=str(row.get("kind") or "play"),
+        orientation=orientation,
+        opponent=opponent,
+        strength=str(row.get("strength") or DEFAULT_STRENGTH),
+        sans=sans,
+        ucis=played,
+        fens=fens,
+        board=board,
+        status=status,
+        winner=winner if finished else None,
+        reason=reason if finished else None,
+        created_at=_parse_iso_ts(row.get("created_at")),
+        last_activity=_parse_iso_ts(row.get("updated_at")),
+    )
+
+
+def rehydrate_active() -> int:
+    """Boot-time (lifespan): rebuild every still-active play session from SQLite.
+
+    Games replay their stored UCIs in order; ``last_activity`` comes from the
+    persisted ``updated_at`` so rehydrated sessions obey the TTL reaper's
+    unchanged semantics (idle before the restart ⇒ reaped after it). Corrupt or
+    duplicate rows are skipped with a warning. Returns the count restored. The
+    restore layer self-migrates (``games.strength``) so this is order-safe.
+    """
+    restored = 0
+    for gid, (row, ucis) in db.restore_active().items():
+        if str(row.get("kind") or "") != "play":
+            log.warning("rehydrate: skipping non-play game %s (kind=%r)", gid, row.get("kind"))
+            continue
+        session = _session_from_row(row, ucis)
+        if session is None:
+            continue
+        with _lock:
+            _sessions.setdefault(gid, session)
+        restored += 1
+    if restored:
+        log.info("rehydrated %d active game session(s) from the database", restored)
+    return restored
