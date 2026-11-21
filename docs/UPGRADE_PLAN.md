@@ -357,6 +357,7 @@ The tunnel gives visitors the exact model the owner trained, at full strength, f
 | 2026-11-21 | WP-C slice 1 (`3e3b925`): 29-plane encoder (73×64 policy, underpromotion planes), GambitNet v2, MCTS v2 (PUCT + Dirichlet), regime configs w/ lineage, checkpoint ladder + arena gate + Elo ledger, pipeline/train/bench CLIs. §10 bugs fixed w/ failing-then-passing proof (terminal sign, instant resign, promotion policy). 108 new tests; bench: batch-256 NN **1.49 ms** on 3080, ~10.6k games/h est |
 | 2026-11-21 | WP-B slice 1 (`258e84d`): web client wired to the live backend — typed REST/WS clients (seq + reconnect + resubscribe), Play live mode w/ offline demo fallback, Watch live metrics, promotion duplicate-key fix. Browser-verified headless: 229 API calls all 200 (promotion, undo, resign, as-black, reconnect); svelte-check 0 errors |
 | 2026-11-21 | Cross-slice verification: **189/189 pytest**, ruff clean on all new code, live boot — health / black-undo-noop / SF turn 0.33 s / WS spontaneous push all PASS. Branch pushed → PR |
+| 2026-11-21 | FS-1/2/6/9 landed (`04e40b7`): opponent `nn` (ModelServer, MCTS 32/96/256 sims, mtime hot-swap, pre-warm → 450 ms/move), arena_games SQLite ledger w/ idempotent backfill + `elo_by_regime`, WS journal feed (log frames), TTL reaper + rate limit + static single-origin mount. 25 new tests, 53 scoped green |
 
 ---
 
