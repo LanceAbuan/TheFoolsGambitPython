@@ -27,3 +27,8 @@ runs/
 target/
 # Web client build output
 web/dist/
+
+# worker scratch dirs (in-repo tmp benches/smokes - never commit)
+tmp_m3/
+tmp_u1u2/
+
