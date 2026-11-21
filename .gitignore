@@ -4,6 +4,10 @@ node_modules/
 .env
 .DS_Store
 .vercel
+# Python virtualenv (uv-managed)
+.venv/
+# Local tooling binaries (e.g. stockfish.exe)
+tools/
 # Model checkpoints (stored locally, pushed to HF instead)
 *.pt
 *.pth
@@ -17,8 +21,5 @@ eval_cache.json
 data/
 # Log files
 *.log
-# Client build output
-client/dist/
-
-# Client node_modules (overrides root rule for nested dir)
-client/node_modules/
+# Web client build output
+web/dist/
