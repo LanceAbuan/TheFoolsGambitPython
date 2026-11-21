@@ -27,7 +27,7 @@ The user mandate: *overhaul anything that is not 100% optimal, including changin
 | Pure-Python chess rules in the **training hot path** | **REPLACE** | New Rust extension **`gambit_core`** (PyO3 + `chess` crate): bitboard movegen, make/unmake, FEN, Zobrist, batched stepping, batched tensor encoding, perft. This is the "completely custom engine optimized for training." |
 | `python-chess` | **DEMOTE, keep** | Demoted to: website game layer (correctness-critical, perf-irrelevant), PGN I/O, and the **test oracle** for `gambit_core` (perft + randomized game-equality fuzzing). |
 | Flask + SSE server | **REPLACE** | **FastAPI + uvicorn + WebSockets.** Public play with spectators needs bidirectional realtime, typed messages, and async concurrency. SSE is one-directional and its Flask implementation is thread-based; WS is supported end-to-end through Cloudflare Tunnel. |
-| `react-chessboard` (MIT, v5.12.1, active) | **KEEP** | Lichess's chessground is the gold standard but is **GPL-3.0** — adopting it makes the whole frontend GPL. react-chessboard is MIT, actively maintained, already integrated. Premove support exists in the interaction model we need (click/drag + promotion dialog); premoves are a non-goal for vs-AI play. Trade-off logged in §12. |
+| `react-chessboard` (MIT, v5.12.1, active) | **REPLACE → DONE** | Replaced by a hand-built Svelte 5 SVG board (pointer drag + click-click, promotion picker, piece-ID glide, a11y labels). MIT-clean with zero board dependencies; matches the approved tarot design exactly. Trade-off logged in §12. |
 | Model head: flat 4096 (from×to) | **REPLACE** | AlphaZero-canonical **73×64 = 4672** policy planes (56 queen-like + 8 knight + 9 underpromotion planes per origin square). Underpromotions get real logits; encoding is the standard every reference implementation uses. |
 | Input encoder: 16 planes, no history | **REPLACE** | ~29 planes: 12 current pieces + 12 previous position + 4 castling + 1 en-passant. History gives repetition/draw awareness for ~zero cost. Encoder lives behind an interface so this stays a config knob, not a rewrite. |
 | Training bugs (MCTS sign, instant-resign, promotion collision) | **FIX + regression tests** | §10. Prior checkpoints are tainted by these bugs → **archive old HF artifacts as `v1-legacy`, retrain from scratch** with the fixed pipeline. |
@@ -38,7 +38,7 @@ The user mandate: *overhaul anything that is not 100% optimal, including changin
 | Stockfish wrapper | **KEEP, fix paths** | Windows binary in `tools/` (gitignored), path resolution: env → `tools/` → `PATH`. Local sparring partner + gate-eval ladder. **Never exposed to website visitors** (§9). |
 | Hugging Face Hub checkpointing | **KEEP, extend** | Still the model upload/registry. Add `scripts/publish.py` (tag, push, attach model card) — this is the "upload the model" half of the mission. |
 | Vercel/`vercel.json`/`Procfile`/serverless deploy | **DELETE** | Serverless cannot host GPU inference, WS, or training. Replaced by Cloudflare Tunnel (below) + optional VPS path (§8). |
-| React 19 + Mantine 9 + Vite + TypeScript | **KEEP** | Right tool, modern, already built. New views added; SSE hooks swapped for one WS client. |
+| React 19 + Mantine 9 + Vite + TypeScript | **REPLACE → DONE** | Legacy `client/` deleted. New client: **Svelte 5 + Vite 7 + TypeScript** in `web/` — smaller bundle, runic reactivity without a vDOM, custom board fits naturally. UI is a 1:1 port of the user-approved static tarot mock (Cormorant Garamond + DM Mono, sepia palette). |
 | SQLite for archive; Python for web/training; TS for UI | **KEEP** | §12 logs why each language stays: Python owns training (PyTorch is the irreplaceable asset) and the web layer; Rust owns only the hot path; TypeScript owns the UI. No other split pays for its coordination cost. |
 
 ---
@@ -306,8 +306,9 @@ The tunnel gives visitors the exact model the owner trained, at full strength, f
 | WebSockets + FastAPI WS test client | https://fastapi.tiangolo.com/advanced/websockets/ |
 | Cloudflare Tunnel — named tunnels, custom hostname, Windows service | https://developers.cloudflare.com/tunnel/ |
 | SQLite (WAL mode, concurrency) | https://www.sqlite.org/wal.html |
-| react-chessboard — board component, promotion, arrows | https://react-chessboard.com/ |
-| Mantine 9 — AppShell/components | https://mantine.dev/ |
+| react-chessboard — board component, promotion, arrows | *(replaced — custom Svelte board)* |
+| Svelte 5 — runes, $state/$derived/$effect, event attrs | https://svelte.dev/docs/svelte |
+| Vite 7 — dev server, builds, @sveltejs/vite-plugin-svelte | https://vite.dev/ |
 | pytest — fixtures, parametrization | https://docs.pytest.org/ |
 | Stockfish PyPI wrapper | https://pypi.org/project/stockfish/ |
 
@@ -319,3 +320,49 @@ The tunnel gives visitors the exact model the owner trained, at full strength, f
 |---|---|
 | 2026-11-20 | Plan v2 written: full-overhaul verdicts, Rust `gambit_core` added, FastAPI+WS replaces Flask+SSE, model v2 head, hosting strategy, research findings §3, decision log §11 |
 | 2026-11-20 | §8: "no Docker/Linux needed" clarification added. Per user: focus on **local hosting first** — Cloudflare tunnel (M1) and VPS path (M4) deferred; they are exposure layers on the same app, zero rework to enable later |
+| 2026-11-21 | Frontend milestone: legacy `client/` deleted; new Svelte 5 client in `web/` — custom SVG board (drag/click, promotion, glide), demo engine, **1:1 port of the user-approved static tarot mock** (Home landing added, Play/Watch/About restructured, CSS art, Cormorant Garamond + DM Mono, sepia palette). Verdicts §2 updated (React/Mantine → Svelte). `docs/TODO.md` added as the living checklist incl. the standing review loop |
+| 2026-11-21 | §14 Subagent Delegation Map written (was referenced but missing): 14.0 pinned API contract v1, 14.1 work packages WP-A…WP-E. CI rewritten for `web/` (legacy Vercel-era checks dropped) |
+
+---
+
+## 14. Subagent Delegation Map
+
+How parallel work is delegated. Rules of engagement (enforced by `.opencode/agents/orchestrator.md`): workers never `git commit`/`git push` — only the orchestrator integrates; never run two live packages with overlapping file ownership.
+
+### 14.0 Pinned API contract v1
+
+WP-A (backend) implements this; WP-B (client) codes against it. Any deviation = version bump + §13 changelog row + both runbooks updated. Nothing drifts silently.
+
+**REST — all JSON under `/api`:**
+
+| Endpoint | Request → Response | Notes |
+|---|---|---|
+| `POST /play/new` | `{color: "white"\|"black"\|"random", opponent: "fool"\|"stockfish", strength}` → `{game_id, fen, orientation}` | orientation = the player's color |
+| `GET /play/{id}` | → `{game_id, fen, moves: [san], status, winner?, in_check, last_move}` | full state |
+| `POST /play/{id}/move` | `{from, to, promotion?}` → state | illegal ⇒ 422; server-side legality always |
+| `POST /play/{id}/undo` | → state | pops both half-moves vs The Fool |
+| `POST /play/{id}/resign` | → state | |
+| `GET /games` | `?kind=play\|selfplay&limit=` → `{games: [...]}` | archive listing |
+| `GET /games/{id}/pgn` | → `text/pgn` | full PGN export |
+| `GET /metrics` | → telemetry snapshot | elo, loss, win_rate, games_played |
+| `GET /checkpoints` | → list | HF Hub + local |
+| `POST /train/start` `/stop` `/reset` | → `{ok}` | `ADMIN_TOKEN` required |
+
+**WebSocket `/ws` — one connection per client; typed JSON; sequence-numbered:**
+
+- Client→server: `{"seq": n, "type": "subscribe", "topic": "lobby" | "game:{id}" | "train"}`
+- Server→client: `{"seq": n, "topic": ..., "type": "position" | "state" | "metrics" | "log" | "lobby" | "error", "payload": {...}, "ts": iso8601}`
+- `position.payload`: `{fen, last_move, move_number}` · `metrics.payload` mirrors `GET /metrics` · `log.payload`: `{level, message}`
+- Heartbeat ping/pong every 30s; on reconnect the client resubscribes with its last seen seq.
+
+### 14.1 Work packages
+
+| WP | Scope | Owns (edit) | Deliverable |
+|---|---|---|---|
+| **WP-A** | Backend core | `server/**`, `tests/**`, `scripts/serve.py` | FastAPI + WS + SQLite per §14.0; self-play watcher feed; boot script |
+| **WP-B** | Client integration | `web/**` | WS client; real telemetry/game slots replace demo data |
+| **WP-C** | Training pipeline | `training/**`, `scripts/train*` | RTX 3080 self-play, checkpoints → HF Hub, metrics → WS `train` topic |
+| **WP-D** | Rust core | `gambit_core/**`, `Cargo.toml`, parity tests in `tests/` | PyO3 movegen; perft + fuzz gates (§5) |
+| **WP-E** | Hosting & hardening | deploy configs, cloudflared, security middlewares | tunnel, rate limits, backups |
+
+Sequencing: **WP-A → WP-B** (client codes against the pinned contract once WP-A's schema lands). **WP-C and WP-D** start after WP-A and run in parallel. **WP-E** last.
