@@ -113,8 +113,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
     Subscribe-time snapshots (state/metrics/lobby) are sent immediately, then
     the hub feeds live events. The train topic additionally receives a metrics
-    push every 10s from :mod:`server.telemetry` while subscribed. Heartbeats
-    are protocol-level pings (uvicorn default 20s interval).
+    push every 10s from :mod:`server.telemetry` while subscribed, plus the
+    FS-6 journal: an aggregate-log backlog (last ≤50 lines; ``live``/
+    ``game_end`` lines excluded) at subscribe, then tail-pushed ``live``/
+    ``game_end``/``log`` frames every 2s (schemas in ``server.telemetry``'s
+    docstring; live frames are never replayed pre-subscribe). Heartbeats are
+    protocol-level pings (uvicorn default 20s interval).
     """
     await ws.accept()
     joined: set[str] = set()
@@ -128,6 +132,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             if not _TOPIC.match(topic):
                 await _reject(ws, f"invalid topic {topic!r}")
                 continue
+            if topic == "train":
+                # FS-6b: advance the journal cursor BEFORE this connection
+                # counts as subscribed (sync — no await between seek and
+                # subscribe), so live/game_end frames accumulated while
+                # nobody watched are never replayed: a client joining
+                # mid-stream gets live frames from subscription time onward.
+                # Recent aggregate history still arrives via journal.backlog().
+                journal.seek_to_now()
             await hub.subscribe(topic, ws)
             joined.add(topic)
             if topic.startswith("game:"):
@@ -139,7 +151,6 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 await _snapshot(ws, topic, "state", session.snapshot())
             elif topic == "train":
                 await _snapshot(ws, topic, "metrics", metrics_snapshot())
-                # FS-6: catch-up journal history (last 50 lines) right after the snapshot.
                 for payload in journal.backlog():
                     await _snapshot(ws, topic, "log", payload)
             else:  # lobby
