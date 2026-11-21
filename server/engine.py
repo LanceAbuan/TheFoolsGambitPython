@@ -291,28 +291,76 @@ async def player_move(session: Session, from_sq: str, to_sq: str, promotion: str
         return san
 
 
+def _pop_plies(session: Session, pops: int) -> None:
+    """Pop ``pops`` plies off the board and every parallel move record.
+
+    Caller must hold ``session.lock``. The board's internal stack and the
+    sans/ucis/fens records are always mutated together so ``record()`` and a
+    rehydrate replay stay consistent with the board.
+    """
+    for _ in range(max(pops, 0)):
+        session.board.pop()
+        session.sans.pop()
+        session.ucis.pop()
+        session.fens.pop()
+
+
+def _pops_for_human_turn(session: Session) -> int:
+    """Ply count to pop so the human is on turn afterwards, capped at MAX_UNDO_PLIES.
+
+    The parity trim keeps the game from ever being stranded before the
+    opponent's opening reply (e.g. undoing with only the engine's 1st move on
+    the board pops nothing).
+    """
+    total = len(session.sans)
+    pops = min(MAX_UNDO_PLIES, total)
+    human_to_move_after = 0 if session.human_color is chess.WHITE else 1
+    if (total - pops) % 2 != human_to_move_after:
+        pops -= 1
+    return max(pops, 0)
+
+
+def _undo_finished(session: Session) -> None:
+    """Take-back after game over: revert the finish and resume as an active game.
+
+    Resignations have no finishing board position — the move list is untouched
+    and only the result is cleared (un-resign). Board finishes (mate,
+    stalemate, ...) revert the finishing plies with the same MAX_UNDO_PLIES
+    parity rule as mid-game undo, so the human is on turn when play resumes.
+    Abandoned games raise Conflict: the TTL reaper's retirement is final —
+    undo must not resurrect a game the reaper closed precisely because it was
+    left idle.
+
+    Caller must hold ``session.lock``. The cleared result state is written
+    back by the API layer's persist; the rehydrate layer trusts the stored
+    result for finished games, so the persist is what makes an undone game
+    stay undone across restarts.
+    """
+    if session.reason == "abandoned":
+        raise Conflict("abandoned games cannot take back")
+    if session.reason != "resign":
+        _pop_plies(session, _pops_for_human_turn(session))
+    session.status = "active"
+    session.winner = None
+    session.reason = None
+
+
 async def undo(session: Session) -> None:
     """Pop the human's last move (+ the opponent's reply), landing on the human's turn.
 
-    The pop count is trimmed so the game is never stranded before the
-    opponent's opening reply (e.g. undoing with only the engine's 1st move on
-    the board is a no-op).
+    Active games no-op when there is nothing of the human's to undo yet.
+    Finished games take back too (casual play, user story #10): a board finish
+    reverts the finishing plies and clears the result, a resignation is
+    un-resigned with the move list untouched, and only abandoned (reaped)
+    games stay final.
     """
     async with session.lock:
         if session.status != "active":
-            raise Conflict("game is finished")
-        if not session.sans or session.board.turn != session.human_color:
-            return  # nothing of the human's to undo yet
-        total = len(session.sans)
-        pops = min(MAX_UNDO_PLIES, total)
-        human_to_move_after = 0 if session.human_color is chess.WHITE else 1
-        if (total - pops) % 2 != human_to_move_after:
-            pops -= 1
-        for _ in range(max(pops, 0)):
-            session.board.pop()
-            session.sans.pop()
-            session.ucis.pop()
-            session.fens.pop()
+            _undo_finished(session)
+        else:
+            if not session.sans or session.board.turn != session.human_color:
+                return  # nothing of the human's to undo yet
+            _pop_plies(session, _pops_for_human_turn(session))
         session.last_activity = time.time()
 
 

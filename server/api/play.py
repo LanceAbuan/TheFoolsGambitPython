@@ -86,13 +86,16 @@ async def move(gid: str, body: MoveIn) -> dict:
 @router.post("/play/{gid}/undo")
 async def undo(gid: str) -> dict:
     session = _load(gid)
+    was_finished = session.status != "active"  # take-back resumes it -> lobby changes
     try:
         await engine.undo(session)
     except engine.GameError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc)) from None
-    await _persist(session)
+    await _persist(session)  # the cleared result state is what rehydrate trusts
     snap = session.snapshot()
     await hub.send(f"game:{gid}", "state", snap)
+    if was_finished and session.status == "active":
+        await hub.send("lobby", "lobby", {"active_games": lobby_state()})
     return snap
 
 

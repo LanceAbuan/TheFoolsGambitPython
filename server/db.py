@@ -1,6 +1,7 @@
-"""SQLite persistence (WAL mode). Games archive + full move history + arena ledger.
+"""SQLite persistence (WAL mode, busy_timeout 5s, synchronous=NORMAL).
 
-Sync access guarded by a lock; async endpoints call in via `asyncio.to_thread`.
+Games archive + full move history + arena ledger. Sync access guarded by a
+lock; async endpoints call in via `asyncio.to_thread`.
 """
 from __future__ import annotations
 
@@ -72,6 +73,13 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(target, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # Another process (training worker, arena job) may hold SQLite's write
+    # lock; without a busy timeout our writes would fail instantly with
+    # "database is locked" instead of waiting their turn.
+    conn.execute("PRAGMA busy_timeout=5000")
+    # WAL's documented pairing: corruption-safe, and it drops the per-commit
+    # fsync that would otherwise stall every writer queued behind the timeout.
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA)
     conn.commit()
