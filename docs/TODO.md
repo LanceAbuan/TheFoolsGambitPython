@@ -18,7 +18,12 @@ itself takes 20–40 min, which is why the fast cadence lives in the monitor bel
 a dirty-tree safety gate: if `git status --short` is not clean it aborts without touching anything.
 Between sweeps, a second no-model automation `backend-health-monitor`
 (`aut_1feacfef4001uYCa3ylqCP080l`) probes the site (:5173) + API (:8000) **every 5 minutes** and
-alerts on up→down transitions (zero token cost). Pause/resume either via
+alerts on up→down transitions (zero token cost). A third automation `code-patrol`
+(`aut_1feae9f48001dJ0y5fJDAxI7pg`) fires a **model-driven** quick check **every 5 minutes** —
+rotating: full test suite / lint one area / live perf bench vs the Hygiene baseline / single-file
+improvement skim / web check+build — logging findings to gitignored `data/patrol.log` (never
+committed) and committing small fixes immediately. The dirty-tree gate makes patrols self-skip
+while a deep sweep holds the repo. Pause/resume any of the three via
 `opencode.cmd api post /api/experimental/automation/{id}/pause` (or `/resume`).
 Keep prompts in sync with the orchestrator runbook.
 
