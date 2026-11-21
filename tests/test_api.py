@@ -100,3 +100,21 @@ def test_train_admin_gate(client, monkeypatch):
     assert client.post("/api/train/reset").status_code == 403
     r = client.post("/api/train/reset", headers={"X-Admin-Token": "sekrit"})
     assert r.status_code == 503  # training service attaches with WP-C
+
+
+def test_black_undo_before_first_move_is_safe_noop(client):
+    """Regression: Black undoing before any human move must keep the opener, not strand the game."""
+    snap = _new_game(client, color="black").json()
+    gid = snap["game_id"]
+    r = client.post(f"/api/play/{gid}/undo")
+    assert r.status_code == 200
+    state = client.get(f"/api/play/{gid}").json()
+    assert state["status"] == "active"
+    assert len(state["moves"]) == 1  # the Fool's opener is preserved
+
+
+def test_white_undo_with_no_moves_is_noop(client):
+    gid = _new_game(client).json()["game_id"]
+    r = client.post(f"/api/play/{gid}/undo")
+    assert r.status_code == 200
+    assert client.get(f"/api/play/{gid}").json()["moves"] == []
