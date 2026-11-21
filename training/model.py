@@ -1,19 +1,23 @@
-"""Neural network model for chess evaluation.
+"""Neural network models for chess evaluation.
 
-Architecture inspired by AlphaZero:
-- Input: 16-channel board tensor (8x8x16)
-- Residual tower: N residual blocks with batch norm
-- Policy head: conv -> softmax over legal moves
-- Value head: conv -> fc -> tanh (position evaluation)
+Legacy v1 (`ChessNet`, below): 16-plane input, flat 4096 from-to policy head.
+Kept importable for the legacy trainer/server; tainted by the §10 promotion
+bug (all promotions share one logit) — do not train new models with it.
 
-The model outputs:
-- policy_logits: raw logits over 4096 possible moves (before softmax)
-- value: scalar in [-1, 1] representing win probability for side to move
+Model v2 (`GambitNet`, bottom of this file): AlphaZero-canonical 29-plane
+input, 73x64 = 4672 policy logits (real underpromotion planes), scalar value
+head, dataclass config, CPU + CUDA. This is the WP-C training model.
+
+Architecture (both): residual tower with batch norm, conv policy head, tanh
+value head.
 """
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from __future__ import annotations
 
+from dataclasses import dataclass
+
+import torch
+import torch.nn.functional as F
+from torch import nn
 
 NUM_CHANNELS = 16
 NUM_RESIDUAL_BLOCKS = 2
@@ -113,3 +117,134 @@ class ChessNet(nn.Module):
             policy_probs = F.softmax(policy_logits, dim=-1)
             
             return policy_probs.squeeze(0), value.squeeze(0).item()
+
+
+# ---------------------------------------------------------------------------
+# Model v2 (WP-C): AlphaZero-canonical policy head over 73x64 = 4672 logits.
+# ---------------------------------------------------------------------------
+
+NUM_POLICY_MOVES_V2 = 4672
+
+
+@dataclass(frozen=True)
+class ModelConfig:
+    """Shape knobs for `GambitNet`. Presets below match plan §4/M2 targets."""
+
+    in_channels: int = 29
+    num_blocks: int = 2
+    filters: int = 32
+    conv_width: int = 3
+    policy_planes: int = 73
+    value_channels: int = 8
+    value_fc: int = 64
+
+    def __post_init__(self) -> None:
+        if self.num_blocks < 1:
+            raise ValueError("num_blocks must be >= 1")
+        if self.filters < 1 or self.in_channels < 1:
+            raise ValueError("filters and in_channels must be >= 1")
+
+    @property
+    def policy_moves(self) -> int:
+        return self.policy_planes * 64
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "in_channels": self.in_channels,
+            "num_blocks": self.num_blocks,
+            "filters": self.filters,
+            "conv_width": self.conv_width,
+            "policy_planes": self.policy_planes,
+            "value_channels": self.value_channels,
+            "value_fc": self.value_fc,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, int]) -> ModelConfig:
+        return cls(**data)
+
+
+# tiny: smoke/tests/CI — well under 1M params (~81k)
+MODEL_TINY = ModelConfig(num_blocks=2, filters=32)
+# small: ~530k params — the "6-block/64-f ~1M" M2 preset
+MODEL_SMALL = ModelConfig(num_blocks=6, filters=64, value_fc=128)
+# base: ~5.1M params — the "10-block/128-f ~6M" M2 preset
+MODEL_BASE = ModelConfig(num_blocks=10, filters=128, value_channels=32, value_fc=512)
+
+
+class ResidualBlockV2(nn.Module):
+    """Pre-activation residual block (conv-bn-relu-conv-bn + identity)."""
+
+    def __init__(self, channels: int, conv_width: int) -> None:
+        super().__init__()
+        padding = conv_width // 2
+        self.conv1 = nn.Conv2d(channels, channels, conv_width, padding=padding, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv2 = nn.Conv2d(channels, channels, conv_width, padding=padding, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        return F.relu(out + x)
+
+
+class GambitNet(nn.Module):
+    """Model v2: 29-plane input, 73x64 policy head, scalar value head.
+
+    Policy logits are indexed in side-to-move perspective coordinates, exactly
+    matching `training.encoder` (see encoder module docstring) — including real
+    underpromotion planes, so the §10 promotion bug cannot reappear.
+    """
+
+    def __init__(self, config: ModelConfig = MODEL_TINY) -> None:
+        super().__init__()
+        self.config = config
+        padding = config.conv_width // 2
+        self.input_conv = nn.Conv2d(
+            config.in_channels, config.filters, config.conv_width, padding=padding, bias=False
+        )
+        self.input_bn = nn.BatchNorm2d(config.filters)
+        self.residual_tower = nn.Sequential(
+            *[ResidualBlockV2(config.filters, config.conv_width) for _ in range(config.num_blocks)]
+        )
+        # Policy: 1x1 conv straight to 73 planes -> flatten to 4672 logits.
+        self.policy_conv = nn.Conv2d(config.filters, config.policy_planes, 1, bias=True)
+        # Value: 1x1 conv -> MLP -> tanh scalar.
+        self.value_conv = nn.Conv2d(config.filters, config.value_channels, 1, bias=False)
+        self.value_bn = nn.BatchNorm2d(config.value_channels)
+        self.value_fc1 = nn.Linear(config.value_channels * 64, config.value_fc)
+        self.value_fc2 = nn.Linear(config.value_fc, 1)
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.parameters()).device
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """x: (B, C, 8, 8) -> (policy_logits (B, 4672), value (B,))."""
+        x = x.to(self.device)
+        out = F.relu(self.input_bn(self.input_conv(x)))
+        out = self.residual_tower(out)
+
+        policy = self.policy_conv(out)
+        policy = policy.reshape(-1, self.config.policy_moves)
+
+        value = F.relu(self.value_bn(self.value_conv(out)))
+        value = value.reshape(value.shape[0], -1)
+        value = F.relu(self.value_fc1(value))
+        value = torch.tanh(self.value_fc2(value)).squeeze(-1)
+        return policy, value
+
+    def count_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters())
+
+
+def masked_policy_softmax(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Softmax restricted to legal moves.
+
+    logits: (B, 4672) raw policy logits; mask: (B, 4672) with 1.0/True at
+    legal indices. Illegal entries get exactly 0 probability.
+    """
+    mask_bool = mask.bool()
+    masked = logits.masked_fill(~mask_bool, float("-inf"))
+    return F.softmax(masked, dim=-1)

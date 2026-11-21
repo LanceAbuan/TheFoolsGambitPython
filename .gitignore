@@ -19,6 +19,8 @@ nohup.out
 eval_cache.json
 # Persistent event/metric data
 data/
+# Training run lineage (checkpoints pushed to HF instead)
+runs/
 # Log files
 *.log
 # Web client build output
