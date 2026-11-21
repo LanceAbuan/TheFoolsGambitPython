@@ -14,14 +14,42 @@ CRASH RECOVERY: If the engine dies, methods auto-restart the subprocess
 and retry once before returning a safe fallback.
 """
 import os
-import sys
-import time
+import shutil
 import threading
+from pathlib import Path
+
 import chess
-import signal
 from stockfish import Stockfish as SF
 
-STOCKFISH_PATH = os.environ.get('STOCKFISH_PATH', '/home/lance/.local/bin/stockfish')
+TOOLS_DIR = Path(__file__).resolve().parent.parent / "tools"
+# Candidate binary names, Windows-first (§10 "Stockfish path" bug: the old
+# default was a dead WSL path). Resolution chain: STOCKFISH_PATH env ->
+# repo-local tools/ -> PATH -> None.
+_CANDIDATE_NAMES = ("stockfish.exe", "stockfish") if os.name == "nt" else ("stockfish", "stockfish.exe")
+
+
+def resolve_stockfish_path() -> str | None:
+    """Locate a Stockfish binary: ``STOCKFISH_PATH`` env -> ``tools/`` -> PATH.
+
+    A set-but-invalid ``STOCKFISH_PATH`` falls through to the next source so a
+    stale env var can never shadow a working local binary. Returns None when
+    nothing resolves; callers decide whether that is fatal.
+    """
+    env = os.environ.get("STOCKFISH_PATH", "").strip()
+    if env and Path(env).is_file():
+        return env
+    if env:
+        print(f"[SF] STOCKFISH_PATH={env!r} does not exist; falling back to tools/ then PATH", flush=True)
+    for name in _CANDIDATE_NAMES:
+        local = TOOLS_DIR / name
+        if local.is_file():
+            return str(local)
+    return shutil.which("stockfish")
+
+
+# Kept for backwards compatibility (imported elsewhere), but always derived
+# from the resolver above — never a hardcoded dead path again.
+STOCKFISH_PATH = resolve_stockfish_path()
 SF_DEPTH = 10
 SF_THREADS = 2
 SF_HASH = 256
@@ -29,11 +57,18 @@ _MAX_RESTART = 1  # How many times to auto-restart a dead engine per call
 
 
 class StockfishPlayer:
-    def __init__(self, depth=SF_DEPTH, threads=SF_THREADS, hash_mb=SF_HASH):
+    def __init__(self, depth=SF_DEPTH, threads=SF_THREADS, hash_mb=SF_HASH, skill=None):
+        """Create the shared-style Stockfish wrapper.
+
+        `skill` optionally pins SF's "Skill Level" (0-20) for the sf-games
+        regime ladder; None keeps the engine default (full strength) for
+        sf-distill teaching moves.
+        """
         self._lock = threading.RLock()
         self._depth = depth
         self._threads = threads
         self._hash_mb = hash_mb
+        self._skill = skill
         self._engine = self._create_engine()
         self._alive = True
         # Incremental position cache — keeps SF's TT warm across consecutive moves
@@ -43,15 +78,24 @@ class StockfishPlayer:
     # ---- internal helpers ----
 
     def _create_engine(self):
-        """Create a new Stockfish engine subprocess."""
+        """Create a new Stockfish engine subprocess (env -> tools/ -> PATH)."""
+        path = resolve_stockfish_path()
+        if path is None:
+            raise RuntimeError(
+                "no Stockfish binary found: set STOCKFISH_PATH, install tools/stockfish.exe, "
+                "or put 'stockfish' on PATH"
+            )
+        parameters = {
+            "Threads": self._threads,
+            "Hash": self._hash_mb,
+            "MultiPV": 1,
+        }
+        if self._skill is not None:
+            parameters["Skill Level"] = int(self._skill)
         return SF(
-            path=STOCKFISH_PATH,
+            path=path,
             depth=self._depth,
-            parameters={
-                "Threads": self._threads,
-                "Hash": self._hash_mb,
-                "MultiPV": 1,
-            },
+            parameters=parameters,
         )
 
     @property
@@ -165,7 +209,7 @@ class StockfishPlayer:
         for attempt in range(_MAX_RESTART + 1):
             acquired = self._lock.acquire(timeout=30.0)
             if not acquired:
-                print(f'[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds', flush=True)
+                print('[SF] TIMEOUT: Failed to acquire Stockfish lock within 30 seconds', flush=True)
                 raise TimeoutError("Failed to acquire Stockfish lock within 30 seconds")
             try:
                 res = fn(*args, **kwargs)

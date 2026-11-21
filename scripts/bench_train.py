@@ -4,6 +4,8 @@ Reports for the tiny config on the current device:
   - NN batch latency (ms) for inference and one fwd+bwd step
   - MCTS sims/sec (search-bound, tiny net)
   - games/hour (extrapolated from a capped smoke-style game)
+  - FS-4 parallel sweep: sims/sec + games/hour for parallel_games in {1,8,16,32}
+    (p=1 is the slice-1 sequential path; p>1 shares the queued evaluator)
   - GPU availability + name (one-shot CUDA smoke, no long runs)
 """
 from __future__ import annotations
@@ -11,20 +13,28 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import chess
 import torch
 
+from training.evaluator import QueuedNNEvaluator
 from training.model import MODEL_TINY, GambitNet
 from training.selfplay import (
     BatchNNEvaluator,
     MCTSSearch,
     SearchConfig,
     SelfPlayConfig,
+    parallel_self_play,
     self_play_game,
 )
+
+# Slice-1 recorded sequential baseline (3080, tiny config) for old-vs-new (§5).
+SLICE1_BASELINE_SIMS_PER_SEC = 390.0
+SLICE1_BASELINE_GAMES_PER_HOUR = 10_600.0
 
 
 def bench_nn_batch_latency(model: GambitNet, batch: int, iters: int, warmup: int = 5) -> float:
@@ -99,12 +109,66 @@ def bench_games_per_hour(model: GambitNet, max_plies: int, sims: int) -> tuple[f
     return 3600.0 / per_game if per_game > 0 else float("inf"), elapsed
 
 
+def bench_parallel_sims_per_second(model: GambitNet, parallel_games: int, sims: int) -> float:
+    """Aggregate MCTS throughput while `parallel_games` root searches run at once.
+
+    parallel_games == 1 keeps the slice-1 synchronous evaluator (the old path);
+    > 1 shares the queued batch service (FS-4) so the forwards merge.
+    """
+    evaluator: object
+    if parallel_games <= 1:
+        evaluator = BatchNNEvaluator(model)
+    else:
+        evaluator = QueuedNNEvaluator(model)
+    searches = [
+        MCTSSearch(evaluator, SearchConfig(num_simulations=sims, root_noise=False))  # type: ignore[arg-type]
+        for _ in range(parallel_games)
+    ]
+    board = chess.Board()
+    try:
+        start = time.perf_counter()
+        with ThreadPoolExecutor(max_workers=parallel_games) as pool:
+            list(pool.map(lambda search: search.search(board), searches))
+        elapsed = time.perf_counter() - start
+    finally:
+        if isinstance(evaluator, QueuedNNEvaluator):
+            evaluator.close()
+    total_sims = parallel_games * sims
+    return total_sims / elapsed if elapsed > 0 else float("inf")
+
+
+def bench_parallel_games_per_hour(
+    model: GambitNet, parallel_games: int, max_plies: int, sims: int
+) -> tuple[float, float]:
+    """Play `parallel_games` capped games at once; (aggregate games/hour, seconds)."""
+    if parallel_games <= 1:
+        evaluator: object = BatchNNEvaluator(model)
+    else:
+        evaluator = QueuedNNEvaluator(model)
+    config = SelfPlayConfig(
+        search=SearchConfig(num_simulations=sims),
+        max_plies=max_plies,
+        temperature_plies=max_plies,
+    )
+    try:
+        start = time.perf_counter()
+        results = parallel_self_play(evaluator, parallel_games, config, parallel_games=parallel_games)  # type: ignore[arg-type]
+        elapsed = time.perf_counter() - start
+    finally:
+        if isinstance(evaluator, QueuedNNEvaluator):
+            evaluator.close()
+    games_per_hour = len(results) / elapsed * 3600.0 if elapsed > 0 else float("inf")
+    return games_per_hour, elapsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="training bench (tiny config, current device)")
     parser.add_argument("--batch", type=int, default=256)
     parser.add_argument("--sims", type=int, default=128)
     parser.add_argument("--plies", type=int, default=40, help="ply cap for the games/hour probe")
     parser.add_argument("--iters", type=int, default=30)
+    parser.add_argument("--parallel", type=str, default="1,8,16,32",
+                        help="comma list of parallel_games levels for the FS-4 sweep")
     args = parser.parse_args()
 
     cuda = torch.cuda.is_available()
@@ -127,6 +191,29 @@ def main() -> int:
     print(f"train step:        {train_ms:8.2f} ms / fwd+bwd batch 64 ({device.type})")
     print(f"MCTS throughput:   {sims_per_sec:8.1f} sims/sec ({args.sims} sims, startpos)")
     print(f"games/hour (est):  {games_per_hour:8.1f}  (one {args.plies}-ply game in {probe_seconds:.2f}s, extrapolated)")
+
+    # --- FS-4: parallel self-play sweep (queued evaluator) vs the old path ---
+    levels = [int(level) for level in args.parallel.split(",") if level.strip()]
+    rows: list[tuple[int, float, float]] = []
+    for level in levels:
+        sweep_sims = bench_parallel_sims_per_second(model, level, min(args.sims, 64))
+        sweep_gph, sweep_elapsed = bench_parallel_games_per_hour(model, level, args.plies, sims=2)
+        rows.append((level, sweep_sims, sweep_gph))
+        print(
+            f"parallel={level:>2}: {sweep_sims:9.1f} sims/sec | {sweep_gph:9.1f} games/hour "
+            f"| ({level} games in {sweep_elapsed:.2f}s)"
+        )
+    baseline_gph = rows[0][2] if rows else 1.0
+    print("--- parallel sweep vs slice-1 sequential baseline ---")
+    print(f"slice-1 recorded (GPU, sequential): ~{SLICE1_BASELINE_SIMS_PER_SEC:.0f} sims/sec, "
+          f"~{SLICE1_BASELINE_GAMES_PER_HOUR:.0f} games/hour est")
+    for level, sweep_sims, sweep_gph in rows:
+        speedup_sims = sweep_sims / rows[0][1] if rows and rows[0][1] > 0 else 0.0
+        speedup_gph = sweep_gph / baseline_gph if baseline_gph > 0 else 0.0
+        print(
+            f"parallel={level:>2}: {speedup_sims:5.2f}x sims/sec vs p=1 | "
+            f"{speedup_gph:5.2f}x games/hour vs p=1"
+        )
     if cuda:
         # One-shot GPU smoke: device verdict + a single synced pass, no long runs.
         torch.cuda.synchronize()

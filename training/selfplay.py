@@ -796,6 +796,53 @@ class SelfPlayResult:
     result: str  # '1-0' | '0-1' | '1/2-1/2'
     ply_count: int
     resigned_side: str | None = None
+    opponent: str | None = None  # None for pure self-play; e.g. 'stockfish-skill-4'
+
+
+def game_outcome(board: chess.Board, resigned_side: str | None = None) -> tuple[float, str]:
+    """Final (outcome, result string) — outcome is WHITE's perspective.
+
+    Shared by `self_play_game` and the sf-* data providers so every game
+    scores identically (§10-correct mate sign, resign = loss for the resigner,
+    ply-capped games score as draws).
+    """
+    if resigned_side is not None:
+        outcome = -1.0 if resigned_side == 'white' else 1.0  # white's perspective
+        result_str = '0-1' if resigned_side == 'white' else '1-0'
+        return outcome, result_str
+    if board.is_checkmate():
+        # The mated side is the side to move; white won iff black is mated.
+        outcome = 1.0 if board.turn == chess.BLACK else -1.0  # white's perspective
+        result_str = '1-0' if board.turn == chess.BLACK else '0-1'
+        return outcome, result_str
+    result_str = board.result(claim_draw=True)
+    if result_str == '*':
+        result_str = '1/2-1/2'  # hit the ply cap — score as a draw
+    return 0.0, result_str
+
+
+def build_pgn(sans: Sequence[str], result_str: str) -> str:
+    """Render a SAN move list as a minimal PGN string with the result header."""
+    game = chess.pgn.Game()
+    node = game
+    replay = chess.Board()
+    for san in sans:
+        move = replay.parse_san(san)
+        node = node.add_variation(move)
+        replay.push(move)
+    game.headers["Result"] = result_str
+    return str(game.accept(chess.pgn.StringExporter(headers=None, variations=False, comments=False)))
+
+
+def finalize_game_examples(
+    pending: Sequence[tuple[np.ndarray, np.ndarray, chess.Color]],
+    outcome: float,
+) -> list[TrainingExample]:
+    """Turn recorded (planes, policy, mover color) plies into value-labelled examples."""
+    return [
+        TrainingExample(planes=planes, policy=pol, value=outcome if color == chess.WHITE else -outcome)
+        for planes, pol, color in pending
+    ]
 
 
 def self_play_game(
@@ -846,33 +893,10 @@ def self_play_game(
         prev_board = board.copy()
         board.push(move)
 
-    if resigned_side is not None:
-        outcome = -1.0 if resigned_side == 'white' else 1.0  # white's perspective
-        result_str = '0-1' if resigned_side == 'white' else '1-0'
-    elif board.is_checkmate():
-        # The mated side is the side to move; white won iff black is mated.
-        outcome = 1.0 if board.turn == chess.BLACK else -1.0  # white's perspective
-        result_str = '1-0' if board.turn == chess.BLACK else '0-1'
-    else:
-        outcome = 0.0
-        result_str = board.result(claim_draw=True)
-        if result_str == '*':
-            result_str = '1/2-1/2'  # hit the ply cap — score as a draw
+    outcome, result_str = game_outcome(board, resigned_side)
 
-    examples = [
-        TrainingExample(planes=planes, policy=pol, value=outcome if color == chess.WHITE else -outcome)
-        for planes, pol, color in pending
-    ]
-
-    game = chess.pgn.Game()
-    node = game
-    replay = chess.Board()
-    for san in sans:
-        move = replay.parse_san(san)
-        node = node.add_variation(move)
-        replay.push(move)
-    game.headers["Result"] = result_str
-    pgn = str(game.accept(chess.pgn.StringExporter(headers=None, variations=False, comments=False)))
+    examples = finalize_game_examples(pending, outcome)
+    pgn = build_pgn(sans, result_str)
 
     return SelfPlayResult(
         examples=examples,
@@ -882,6 +906,60 @@ def self_play_game(
         ply_count=len(sans),
         resigned_side=resigned_side,
     )
+
+
+def parallel_self_play(
+    evaluator: Evaluator,
+    num_games: int,
+    config: SelfPlayConfig = SelfPlayConfig(),
+    parallel_games: int = 1,
+    rng: np.random.Generator | None = None,
+) -> list[SelfPlayResult]:
+    """Play `num_games` self-play games, up to `parallel_games` concurrently.
+
+    With `parallel_games <= 1` this is the plain sequential loop. Above 1 the
+    games share ONE evaluator — the queued batch service (`training.evaluator`)
+    merges their per-position requests into single forwards. Results keep game
+    order regardless of completion order. A game that crashes is logged and
+    skipped; if every game fails the error propagates.
+    """
+    if num_games < 0:
+        raise ValueError("num_games must be >= 0")
+    if parallel_games < 1:
+        raise ValueError("parallel_games must be >= 1")
+    if parallel_games <= 1 or num_games <= 1:
+        return [self_play_game(evaluator, config, rng) for _ in range(num_games)]
+
+    game_rngs: list[np.random.Generator | None]
+    if rng is not None:
+        game_rngs = rng.spawn(num_games)  # deterministic per-game children
+    else:
+        game_rngs = [None] * num_games
+
+    results: list[SelfPlayResult | None] = [None] * num_games
+    failures: list[tuple[int, BaseException]] = []
+
+    def _play(index: int) -> None:
+        try:
+            results[index] = self_play_game(evaluator, config, game_rngs[index])
+        except Exception as exc:
+            failures.append((index, exc))
+            log.exception("[SELFPLAY] parallel game %d failed", index)
+
+    workers = min(parallel_games, num_games)
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="selfplay") as pool:
+        futures = [pool.submit(_play, index) for index in range(num_games)]
+        for future in futures:
+            future.result()
+
+    missing = [index for index, result in enumerate(results) if result is None]
+    if len(missing) == num_games:
+        raise RuntimeError(f"all {num_games} parallel self-play games failed") from (
+            failures[0][1] if failures else None
+        )
+    if missing:
+        log.warning("[SELFPLAY] %d/%d parallel games failed and were skipped", len(missing), num_games)
+    return [result for result in results if result is not None]
 
 
 @dataclass(frozen=True)

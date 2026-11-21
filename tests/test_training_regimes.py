@@ -1,17 +1,20 @@
 """Regime config tests (§5.2): five named regimes, lineage paths, data hooks."""
+import json
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-import json
 
 import pytest
 
 from training.regimes import (
     REGIME_NAMES,
     REGIMES,
+    FinetuneProvider,
+    HybridProvider,
     SelfPlayProvider,
+    SFDistillProvider,
+    SFGamesProvider,
     StubDataProvider,
     all_regime_names,
     build_data_provider,
@@ -89,11 +92,33 @@ class TestDataProviders:
     def test_scratch_provider_is_selfplay(self):
         assert isinstance(build_data_provider(get_regime("scratch")), SelfPlayProvider)
 
-    @pytest.mark.parametrize("name", ["sf-games", "sf-distill", "hybrid", "finetune"])
-    def test_stub_providers_fail_with_clear_message(self, name):
+    @pytest.mark.parametrize(
+        ("name", "provider_type"),
+        [
+            ("sf-games", SFGamesProvider),
+            ("sf-distill", SFDistillProvider),
+            ("hybrid", HybridProvider),
+            ("finetune", FinetuneProvider),
+        ],
+    )
+    def test_slice2_providers_replaced_stubs(self, name, provider_type):
+        """FS-3: the slice-1 NotImplementedError stubs are now live providers.
+
+        (Updated from `test_stub_providers_fail_with_clear_message`, which
+        pinned the pre-slice-2 state that these regimes raised
+        NotImplementedError — that contract was replaced by FS-3.)
+        """
         provider = build_data_provider(get_regime(name))
+        assert isinstance(provider, provider_type)
+
+    def test_unknown_data_source_still_stubs(self):
+        """An unrecognised data_source keeps the clear stub error."""
+        provider = build_data_provider(get_regime("scratch").__class__(
+            name="x", description="x", data_source="mystery", num_simulations=1,
+            games_per_iteration=1, train_steps_per_iteration=1, batch_size=1, learning_rate=0.1,
+        ))
         assert isinstance(provider, StubDataProvider)
-        with pytest.raises(NotImplementedError, match="slice 2"):
+        with pytest.raises(NotImplementedError, match="no data provider wired"):
             provider.collect(evaluator=None, num_games=1, config=SelfPlayConfig())
 
     def test_selfplay_provider_collects_games(self):

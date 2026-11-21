@@ -36,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plies", type=int, default=None, help="override max plies per game")
     parser.add_argument("--sims", type=int, default=None, help="override MCTS sims per move")
     parser.add_argument("--seed", type=int, default=None, help="override RNG seed")
+    parser.add_argument("--parallel-games", type=int, default=None,
+                        help="override concurrent self-play games (1-32, FS-4)")
+    parser.add_argument("--resume", nargs="?", const=True, default=None, metavar="RUN_ID",
+                        help="resume a run: --resume RUN_ID, or --resume with --run-id")
     return parser
 
 
@@ -55,6 +59,8 @@ def build_profile(args: argparse.Namespace) -> TrainingProfile:
         overrides["sims"] = args.sims
     if args.seed is not None:
         overrides["seed"] = args.seed
+    if args.parallel_games is not None:
+        overrides["parallel_games"] = args.parallel_games
     return TrainingProfile(
         name=base.name,
         model=model,
@@ -69,6 +75,7 @@ def build_profile(args: argparse.Namespace) -> TrainingProfile:
         ladder=base.ladder,
         seed=overrides.get("seed", base.seed),  # type: ignore[arg-type]
         snapshot_every_iteration=base.snapshot_every_iteration,
+        parallel_games=overrides.get("parallel_games", base.parallel_games),  # type: ignore[arg-type]
     )
 
 
@@ -82,9 +89,14 @@ def main() -> int:
         logging.getLogger(__name__).warning(
             "profile=night is a long run — start it only deliberately, not from CI"
         )
+    if args.resume is True and args.run_id is None:
+        logging.getLogger(__name__).error("--resume without a run id: pass --resume RUN_ID or --run-id")
+        return 2
+    resume: str | bool = args.run_id if args.resume is True else (args.resume or False)
     profile = build_profile(args)
     summary = run_training(profile, run_id=args.run_id,
-                           base_dir=Path(args.runs_dir), data_dir=Path(args.data_dir))
+                           base_dir=Path(args.runs_dir), data_dir=Path(args.data_dir),
+                           resume=resume)
     logging.getLogger(__name__).info(
         "run complete: %s/%s checkpoints=%s champion=%s elo=%s games=%d",
         summary.regime, summary.run_id, summary.checkpoints,
