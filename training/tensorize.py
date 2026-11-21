@@ -12,7 +12,6 @@ Total channels: 12 (piece planes) + 4 (auxiliary) = 16 channels
 import chess
 import numpy as np
 
-
 PIECE_ORDER = [chess.PAWN, chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN, chess.KING]
 NUM_PIECE_CHANNELS = 12  # 6 types x 2 colors
 NUM_AUX_CHANNELS = 4

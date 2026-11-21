@@ -41,3 +41,15 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 110
 target-version = "py313"
+
+# Quarantined legacy stack, pending deletion (U15 in docs/RESEARCH_NOTES.md §3):
+# divergent v1 MCTS/HTTP-trainer code, 129 lint errors, not on the v2 path.
+# Everything the v2 pipeline, arena, or server actually runs lives OUTSIDE this
+# list and stays lint-gated. Do not add new files here.
+extend-exclude = [
+    "training/persistence.py",
+    "training/server.py",
+    "training/stockfish_engine.py",
+    "train_server.py",
+    "training/critic_game.py",
+]

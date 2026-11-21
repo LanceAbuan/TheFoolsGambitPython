@@ -1,6 +1,7 @@
 """Tests for TrainingBuffer — pure Python collections, no GPU needed."""
-import sys
 import os
+import sys
+
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -84,7 +85,7 @@ class TestTrainingBuffer:
         examples = [self._make_example(value=1.0) for _ in range(64)]
         self.buffer.add(examples)
         batch = self.buffer.sample(64)
-        tensors, policies, values = batch
+        _, _, values = batch
         assert all(v == 1.0 for v in values.tolist())
 
     def test_sample_values_correct_for_loss(self):
@@ -103,7 +104,7 @@ class TestTrainingBuffer:
         examples = [self._make_example() for _ in range(100)]
         self.buffer.add(examples)
         batch = self.buffer.sample(32)
-        tensors, policies, values = batch
+        tensors, _, _ = batch
         assert tensors.shape[0] == 32
 
     def test_default_max_size(self):
