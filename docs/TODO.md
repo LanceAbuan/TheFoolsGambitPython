@@ -76,6 +76,31 @@ Keep prompts in sync with the orchestrator runbook.
 - [ ] **Deploy/hosting**: host the site so the user + friends can play (replace dead Vercel flow);
       reverse proxy + backend service; decide box (local machine vs VPS).
 
+## Finish-line plan (2026-11-21 · subagent-optimized · supersedes the WP list below for execution order)
+
+**Definition of done:** a neural opponent trained by the §5.1 arena ladder on the 3080, playable in
+the browser as opponent `nn` with live Elo on Watch, all five §5.2 regimes trainable, Rust hot path
+benched, site hosted for friends. Ordered by impact; each slice has an acceptance gate.
+
+| ID | Slice | Owner (file ownership — strict) | Acceptance gate |
+|---|---|---|---|
+| FS-1 | **Opponent `nn`** — `ModelServer` singleton loading `runs/<regime>/champion.json` → `GambitNet` + state_dict (device auto cuda>cpu, mtime reload); reply via `MCTSSearch` (sims: wandering 32 / curious 96 / enlightened 256), masked policy, async `to_thread` + per-session lock mirroring the stockfish path; `create_game(opponent="nn")` → 503 "no trained model yet" when no champion exists | backend-dev → `server/**`, new `tests/test_{api,ws}_*.py` | pytest green incl. no-checkpoint-503 + full-turn-with-tiny-checkpoint tests; NN move < 2 s at curious |
+| FS-2 | **Arena ledger in SQLite** — new `arena_games` table (run_id, regime, ckpt, opponent, games, wins, draws, elo, ts), idempotent startup backfill from `data/arena.jsonl`, `/api/games?kind=arena`, metrics gains per-regime Elo map | backend-dev | double-boot backfill creates no dupes; tests |
+| FS-3 | **sf-* + finetune data providers** — fix `training/stockfish_engine.py` path resolution (env → `tools/stockfish.exe` → PATH); implement `collect()` for `sf-games` (self-play mixed vs SF skill ladder 2→12), `sf-distill` (policy ← SF move, value ← SF eval), `hybrid` (distill warm-start → scratch chain), `finetune` (init from another champion / HF id) | training-dev → `training/**`, `scripts/train*.py`, `bench_train.py`, new `tests/test_training_*.py` | each regime's `collect()` returns examples; CPU smoke < 3 min per regime; tests |
+| FS-4 | **Queued GPU evaluator + parallel self-play** — async batch service (queue from N games → ≤256 batch / 4 ms window → one forward → fan-out, no cross-game leakage); `parallel_games` 1–32 in `RegimeConfig`; wire `bench_train.py` to report old-vs-new | training-dev | ≥3× games/hour at 16 games vs slice-1 sequential baseline (record both in §13); queue correctness tests |
+| FS-5 | **Resumable runs + HF publish** — replay buffer + optimizer state persisted per checkpoint; `run_training(resume=...)` exact rebuild; `huggingface_hub` per-regime upload, graceful no-op without `HF_TOKEN` | training-dev | kill mid-run → resume completes; tests |
+| FS-6 | **Training journal on WS** — training appends structured events to `data/train_log.jsonl`; server tails it on `train`-topic subscribe (last 50) + pushes new lines every 2 s while subscribed | training-dev (writer) + backend-dev (tailer) | WS client receives live journal frames; tests |
+| FS-7 | **Rust `gambit_core`** — PyO3 crate: bitboard movegen + perft d1–5 exact (20/400/8902/197281/4865609), batch encoder **bit-exact** vs `training/encoder.py` (1000 random positions cross-checked in pytest), legal-mask gen; bench vs python-chess recorded | rust-dev → `gambit_core/**`, `Cargo.toml`, crate lines of `pyproject.toml`/`uv.lock` | cargo test green; perft exact; encoder bit-exact; speedup number in §13. NOT wired into hot path (§5 M3 gate ≥3× e2e later). If cargo missing: `winget install Rustlang.Rustup` first |
+| FS-8 | **Client: NN opponent + Watch journal + polish** — Play gains "The Fool (NN)" (disabled hint until `metrics.elo` non-null; opponent card shows live Elo); Watch: journal pane (WS log frames), arena results, per-regime leaderboard; keyboard nav (arrows+enter), responsive audit 320–1920, unicode-glyph toggle (persisted) | client-dev → `web/**` | svelte-check 0 errors; build green; browser-verified flows incl. vs-stockfish and vs-nn (tiny fixture checkpoint); screenshots read back |
+| FS-9 | **Production hardening + hosting** — static mount of `web/dist` (single origin, CORS off), TTL reaper (`FSG_GAME_TTL_MIN` default 30 → auto-resign abandoned games), light per-IP rate limit; then cloudflared tunnel + service install + `ADMIN_TOKEN` | backend-dev (code) + orchestrator+user (tunnel/domain — user-gated, needs CF account) | reaper test; static mount test; tunnel runbook in docs |
+| FS-10 | **First real training run** — night profile, scratch regime, ladder 5/10/15/20→every 20, arenas between bursts, Watch live | **USER-GATED** ("start training") | Elo ledger rows; champion promoted |
+
+**Loop protocol:** workers never commit — the delegating loop integrates (scoped staging per the
+ownership column, conventional commits, push feature branch). A 30-min orchestrator heartbeat
+integrates finished slices (scoped verification first: pytest + ruff / svelte-check+build) and
+spawns the next open slice's worker. Dirty tree from in-flight work = heartbeat skips. User gates:
+FS-9 tunnel + FS-10 training start.
+
 ## Overnight parallel build — 2026-11-21 (user asleep, agents running)
 
 Three workers on **disjoint file ownership**; they never commit — the orchestrator verifies and
