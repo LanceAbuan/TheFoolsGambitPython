@@ -359,6 +359,7 @@ The tunnel gives visitors the exact model the owner trained, at full strength, f
 | 2026-11-21 | Cross-slice verification: **189/189 pytest**, ruff clean on all new code, live boot — health / black-undo-noop / SF turn 0.33 s / WS spontaneous push all PASS. Branch pushed → PR |
 | 2026-11-21 | FS-1/2/6/9 landed (`04e40b7`): opponent `nn` (ModelServer, MCTS 32/96/256 sims, mtime hot-swap, pre-warm → 450 ms/move), arena_games SQLite ledger w/ idempotent backfill + `elo_by_regime`, WS journal feed (log frames), TTL reaper + rate limit + static single-origin mount. 25 new tests, 53 scoped green |
 | 2026-11-21 | FS-7 landed (`f982dd5`): Rust `gambit_core` PyO3 crate — perft exact d1–5, encoder bit-exact (3,125-pos fuzz, zero mismatches), zero unsafe; tree-step CPU slice **9.0–11.1×** vs python-chess (330→30 µs). Hot-path wiring deferred to the gated §5 M3 slice |
+| 2026-11-21 | FS-8 landed (`7fb1113`): client complete — NN opponent UI w/ live Elo, Watch journal + arena ledger + per-regime leaderboard, keyboard roving-cursor a11y, responsive 36/36 (320–1920), unicode toggle, single-origin relative base. svelte-check 0 errors; 6 browser verification stages all green |
 
 ---
 
