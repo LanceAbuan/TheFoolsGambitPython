@@ -1,5 +1,6 @@
 """WS training journal (FS-6/FS-6b): backlog on subscribe, 2s live tail, live/game_end
-frame forwarding, stale-replay guard, and the ~10 frames/sec live-frame cap."""
+frame forwarding, stale-replay guard, and the ~10 frames/sec live-frame cap.
+Audit F-3: O(window) backlog reads and rotation-tolerant tailing."""
 from __future__ import annotations
 
 import json
@@ -418,3 +419,151 @@ def test_multi_game_burst_capped_to_budget(client: TestClient, tmp_path: Path, m
         assert games == sorted(games)  # each flush keeps its max-ts game
         assert games[-1] == 12  # most recent position wins
         assert lives[-1]["ts"] == 12.0
+
+
+# ---------------------------------------------------------------------------
+# Audit F-3: O(window) backlog reads + rotation-tolerant tail.
+# ---------------------------------------------------------------------------
+
+def test_backlog_window_is_last_50_raw_lines_then_filter(tmp_path: Path):
+    """Pinned semantics: the window is the last 50 RAW lines (position frames
+    consume window slots, then drop from the output) — not the last 50 logs."""
+    path = tmp_path / "train_log.jsonl"
+    lines = [json.dumps({"message": f"log-{i}"}) for i in range(10)]
+    lines += [_live_line(1, ply, float(ply)) for ply in range(1, 41)]  # 40 live lines
+    lines.append(json.dumps({"message": "tail-log"}))
+    _write_journal(path, lines)
+    backlog = journal_mod.backlog(path=path)
+    assert [f["message"] for f in backlog] == [f"log-{i}" for i in range(1, 10)] + ["tail-log"]
+
+
+def test_tail_start_offsets_are_exact(tmp_path: Path):
+    """_tail_start bounds the last-N-lines byte span for newline-terminated and
+    unterminated files alike; 0 when the file holds fewer than N lines."""
+    path = tmp_path / "train_log.jsonl"
+    lines = [f"line-{i:04d}".encode() for i in range(300)]  # 9 chars each
+    path.write_bytes(b"".join(line + b"\n" for line in lines))  # LF-terminated: 10 B/line
+    current = path.stat().st_size
+    assert current == 300 * 10
+    # 51 newlines counted from EOF on a terminated file bounds the last 50 lines
+    # (the trailing newline consumes one count): start of line 250 (0-based).
+    assert journal_mod._tail_start(path, 51, current) == 250 * 10
+    # more newlines requested than exist -> the whole file
+    assert journal_mod._tail_start(path, 301, current) == 0
+
+    path.write_bytes(b"\n".join(lines))  # no trailing newline: all 51 lines bound
+    assert journal_mod._tail_start(path, 51, path.stat().st_size) == 249 * 10
+
+
+def test_tail_start_scans_backward_across_long_lines(tmp_path: Path):
+    """Lines larger than TAIL_CHUNK: the backward walk crosses many blocks and
+    still yields exact last-50 semantics (a fixed byte window would truncate)."""
+    path = tmp_path / "train_log.jsonl"
+    big = "x" * (journal_mod.TAIL_CHUNK + 256)
+    _write_journal(path, [json.dumps({"message": f"big-{i:02d}", "pad": big}) for i in range(60)])
+    backlog = journal_mod.backlog(path=path)
+    assert len(backlog) == 50
+    assert backlog[0]["message"] == "big-10"  # oldest of the last 50
+    assert backlog[-1]["message"] == "big-59"
+
+
+def test_backlog_never_reads_whole_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The F-3 regression gate: a 50k-line journal serves the exact last-50
+    backlog with Path.read_text poisoned — only the O(window) seek path may
+    answer a subscribe (the defect was read_text().splitlines() per subscribe)."""
+    path = tmp_path / "train_log.jsonl"
+    _write_journal(path, [json.dumps({"message": f"line-{i}"}) for i in range(50_000)])
+
+    def _poison(_self: Path, *args: Any, **kwargs: Any) -> str:
+        raise AssertionError("backlog() performed a full-file read_text")
+
+    monkeypatch.setattr(Path, "read_text", _poison)
+    backlog = journal_mod.backlog(path=path)
+    assert len(backlog) == 50
+    assert backlog[0]["message"] == "line-49950"
+    assert backlog[-1]["message"] == "line-49999"
+
+
+def test_subscribe_backlog_on_huge_journal(client: TestClient, tmp_path: Path):
+    """Functional O(1) tail: subscribing with 50k lines on disk still streams
+    exactly the last-50-window backlog, oldest first, and nothing older."""
+    path = tmp_path / "train_log.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        for i in range(50_000):
+            handle.write(json.dumps({"message": f"bulk-{i}"}) + "\n")
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"seq": 1, "type": "subscribe", "topic": "train"})
+        first = ws.receive_json()
+        assert first["type"] == "metrics"
+        frames = [ws.receive_json() for _ in range(50)]
+        assert all(f["type"] == "log" for f in frames)
+        assert frames[0]["payload"]["message"] == "bulk-49950"
+        assert frames[-1]["payload"]["message"] == "bulk-49999"
+
+
+def test_seek_to_now_reconciles_replacement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """After a replace-with-larger-file rotation, seek_to_now anchors at the NEW
+    file's EOF (never a stale offset into its middle) and the tail resumes clean."""
+    path = tmp_path / "train_log.jsonl"
+    monkeypatch.setattr(config, "TRAIN_LOG_PATH", path)
+    _write_journal(path, [json.dumps({"message": f"old-{i:02d}"}) for i in range(20)])
+    journal_mod.reset_cursor()
+    journal_mod.delta_from_cursor()  # cursor mechanics are pure file logic (no hub needed)
+    assert journal_mod._cursor == path.stat().st_size
+
+    path.unlink()
+    _write_journal(path, [json.dumps({"message": f"new-{i:03d}"}) for i in range(80)])  # larger file
+    journal_mod.seek_to_now()
+    assert journal_mod._cursor == path.stat().st_size  # re-anchored, not max()'d into the middle
+    assert journal_mod.delta_from_cursor() == []  # nothing stale to push
+
+
+def test_truncated_journal_restarts_tail_mid_subscribe(client: TestClient, tmp_path: Path):
+    """Truncate-in-place rotation: the tail resets to the top of the (now
+    shorter) file and fresh lines flow; no crash, no stale-cursor stall."""
+    path = tmp_path / "train_log.jsonl"
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"seq": 1, "type": "subscribe", "topic": "train"})
+        out = _collector(ws)
+        assert out.get(timeout=5)["type"] == "metrics"
+        assert out.get(timeout=5)["payload"]["message"] == "history"  # seed backlog
+
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write('{"message": "pre-rotate"}\n')
+        pre = [f["payload"].get("message") for f in _drain(out) if f["type"] == "log"]
+        assert "pre-rotate" in pre  # cursor is now past the pre-rotate content
+
+        path.write_text('{"message": "fresh-0"}\n{"message": "fresh-1"}\n', encoding="utf-8")
+        fresh = [f["payload"].get("message") for f in _drain(out) if f["type"] == "log"]
+        assert "fresh-0" in fresh and "fresh-1" in fresh
+
+        # the tail keeps flowing after the rotation event
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write('{"message": "post-rotate"}\n')
+        post = [f["payload"].get("message") for f in _drain(out) if f["type"] == "log"]
+        assert "post-rotate" in post
+
+
+def test_replaced_journal_larger_than_cursor_restarts_at_top(client: TestClient, tmp_path: Path):
+    """Delete-and-recreate rotation where the NEW file already outgrew the old
+    cursor: only a file-identity check sees it — a size-only tail would seek
+    mid-file and stream a garbage slice, never the new file's head."""
+    path = tmp_path / "train_log.jsonl"
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"seq": 1, "type": "subscribe", "topic": "train"})
+        out = _collector(ws)
+        assert out.get(timeout=5)["type"] == "metrics"
+        assert out.get(timeout=5)["payload"]["message"] == "history"
+
+        with path.open("a", encoding="utf-8") as handle:  # advance the cursor ~450 bytes in
+            for i in range(20):
+                handle.write(json.dumps({"message": f"pre-{i:02d}"}) + "\n")
+        pre = [f["payload"].get("message") for f in _drain(out) if f["type"] == "log"]
+        assert "pre-19" in pre  # cursor is now past the pre-rotation content
+
+        path.unlink()  # rotate: replace with a file LARGER than the old cursor
+        _write_journal(path, [json.dumps({"message": f"rotated-{i:03d}"}) for i in range(60)])
+
+        rotated = [f["payload"].get("message") for f in _drain(out, quiet=0.8) if f["type"] == "log"]
+        assert "rotated-000" in rotated  # restarted at the new file's TOP
+        assert "rotated-059" in rotated

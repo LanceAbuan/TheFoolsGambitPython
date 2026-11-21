@@ -26,11 +26,26 @@ The tail cursor (byte offset of the next unread line) lives here so both the
 loop and the subscribe path can advance it; :func:`seek_to_now` is the
 FS-6b stale-replay guard (a fresh subscriber never receives pre-subscribe
 position frames).
+
+Two scale/ops guarantees (audit F-3):
+
+- Subscribe-time :func:`backlog` costs O(the last lines' byte span), never
+  O(file): the window start is located by walking backward in ``TAIL_CHUNK``
+  blocks counting newlines (:func:`_tail_start`), so a 100k+-line journal
+  costs the same as a fresh one on every train-topic subscribe.
+- The tail is rotation-tolerant: a journal truncated in place (size shrink)
+  or replaced under the cursor (changed ``st_dev``/``st_ino`` identity)
+  restarts at the new file's top. The training side owns any rotator and its
+  size threshold; this reader only guarantees it never crashes, never slices
+  garbage from a replacement's middle, and never replays pre-subscribe lines
+  across a rotation. Filesystems that report no file index (FAT, some
+  network mounts) degrade to size-shrink detection alone.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +54,7 @@ from . import config
 log = logging.getLogger(__name__)
 
 BACKLOG_LINES = 50  # sent on train-topic subscribe
+TAIL_CHUNK = 64 * 1024  # bytes per backward step when locating the backlog window
 
 LIVE_FRAME = "live"
 GAME_END_FRAME = "game_end"
@@ -54,7 +70,12 @@ _PLIES_KEYS: tuple[str, ...] = ("plies", "ply_count", "num_plies", "moves")
 _RUN_KEYS: tuple[str, ...] = ("run_id", "run")
 _TS_KEYS: tuple[str, ...] = ("ts", "timestamp", "time")
 
-_cursor = 0  # byte offset of the next unread journal line (event-loop use only)
+# Shared tail state (event-loop use only). ``_cursor`` is the byte offset of
+# the next unread journal line; ``_identity`` is the (st_dev, st_ino) of the
+# file that cursor points into, so a rotated/replaced file is detected even
+# when its size already exceeds the stale offset.
+_cursor = 0
+_identity: tuple[int, int] | None = None
 
 
 def _decode(raw: str | bytes) -> str:
@@ -158,6 +179,35 @@ def classify_line(raw: str | bytes) -> tuple[str, dict[str, Any]] | None:
     return ("log", payload) if payload is not None else None
 
 
+def _tail_start(path: Path, limit: int, size: int) -> int:
+    """Byte offset just after the ``limit``-th newline counting from EOF.
+
+    That offset starts a tail window holding the last ``limit`` lines when the
+    file does not end with a newline, and the last ``limit - 1`` lines when it
+    does (the trailing newline consumes one count). :func:`backlog` therefore
+    requests ``limit + 1`` and trims with ``splitlines()[-limit:]`` — exact in
+    both cases. Returns 0 when the file has fewer than ``limit`` newlines. The
+    scan walks backward in ``TAIL_CHUNK`` blocks, so the read cost is the
+    window's byte span — never the whole file.
+    """
+    remaining = limit
+    pos = size
+    with path.open("rb") as handle:
+        while pos > 0 and remaining > 0:
+            step = min(TAIL_CHUNK, pos)
+            pos -= step
+            handle.seek(pos)
+            block = handle.read(step)
+            found = block.count(b"\n")
+            if found >= remaining:
+                index = block.rfind(b"\n")
+                for _ in range(remaining - 1):
+                    index = block.rfind(b"\n", 0, index)
+                return pos + index + 1
+            remaining -= found
+    return 0
+
+
 def backlog(limit: int = BACKLOG_LINES, path: Path | None = None) -> list[dict[str, str]]:
     """Last ``limit`` journal lines as LOG payloads, oldest first.
 
@@ -166,12 +216,23 @@ def backlog(limit: int = BACKLOG_LINES, path: Path | None = None) -> list[dict[s
     onward. The window is the last ``limit`` lines, minus position frames, so
     a dense live stream can legitimately produce an empty backlog (the
     metrics snapshot + live tail cover the client).
+
+    Audit F-3: the read is O(the window's byte span), never O(file) — the
+    window start is located by :func:`_tail_start`'s backward newline scan,
+    so a 100k+-line journal costs the same as a fresh one on every subscribe.
     """
     target = path or config.TRAIN_LOG_PATH
     try:
-        lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        current = target.stat().st_size
+        if current == 0:
+            return []
+        start = _tail_start(target, limit + 1, current)
+        with target.open("rb") as handle:
+            handle.seek(start)
+            chunk = handle.read(current - start)
     except OSError:
         return []
+    lines = chunk.decode("utf-8", errors="replace").splitlines()
     frames: list[dict[str, str]] = []
     for line in lines[-limit:]:
         classified = classify_line(line)
@@ -184,7 +245,9 @@ def delta(path: Path, offset: int) -> tuple[int, list[tuple[str, dict[str, Any]]
     """Classified complete lines appended since ``offset``: ``(new_offset, events)``.
 
     A trailing partial line (writer mid-write) is left for the next call; a
-    truncated/rotated file restarts the tail from the top.
+    truncated/rotated file restarts the tail from the top. (Replacement of a
+    same-or-larger-sized file is reconciled via file identity in
+    :func:`delta_from_cursor`.)
     """
     try:
         current = path.stat().st_size
@@ -217,10 +280,41 @@ def size(path: Path | None = None) -> int:
         return 0
 
 
+def _file_id(st: os.stat_result) -> tuple[int, int] | None:
+    """(volume, file-index) identity; None where the OS reports no index (FAT, some mounts)."""
+    return (st.st_dev, st.st_ino) if st.st_ino else None
+
+
+def _reconciled_cursor(path: Path, cursor: int, identity: tuple[int, int] | None) -> int:
+    """``cursor`` after rotation reconciliation: 0 when the file was truncated
+    in place (size shrink) or replaced under it (identity change), else unchanged.
+
+    Replacement detection via ``(st_dev, st_ino)`` covers delete-and-recreate
+    rotation even when the replacement already outgrew the old cursor — the
+    case a size-only tail would answer with a garbage mid-file slice. On
+    index-less filesystems this degrades to size-shrink detection alone.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return cursor  # vanished mid-tick: the next tick reconciles its successor
+    current = _file_id(st)
+    if identity is not None and current is not None and current != identity:
+        return 0
+    if st.st_size < cursor:
+        return 0
+    return cursor
+
+
 def reset_cursor() -> None:
-    """Re-anchor the tail cursor to EOF (tail-loop start)."""
-    global _cursor
-    _cursor = size()
+    """Re-anchor the tail cursor to EOF (tail-loop start), refreshing file identity."""
+    global _cursor, _identity
+    target = config.TRAIN_LOG_PATH
+    _cursor = size(target)
+    try:
+        _identity = _file_id(target.stat())
+    except OSError:
+        _identity = None  # loop start with no file yet: nothing to reconcile against
 
 
 def seek_to_now() -> None:
@@ -228,14 +322,33 @@ def seek_to_now() -> None:
 
     Called on train-topic subscribe (before the subscriber is registered):
     lines appended while nobody watched are never replayed as live frames.
-    Recent aggregate history still arrives via :func:`backlog`.
+    Recent aggregate history still arrives via :func:`backlog`. Rotation-aware:
+    a truncated/replaced journal re-anchors at the NEW file's EOF, never at a
+    stale offset into its middle.
     """
-    global _cursor
-    _cursor = max(_cursor, size())
+    global _cursor, _identity
+    target = config.TRAIN_LOG_PATH
+    _cursor = max(_reconciled_cursor(target, _cursor, _identity), size(target))
+    try:
+        _identity = _file_id(target.stat())
+    except OSError:
+        pass  # vanished mid-tick: keep the last known identity for reconciliation
 
 
 def delta_from_cursor(path: Path | None = None) -> list[tuple[str, dict[str, Any]]]:
-    """Classified events since the shared cursor; advances it."""
-    global _cursor
-    _cursor, events = delta(path or config.TRAIN_LOG_PATH, _cursor)
+    """Classified events since the shared cursor; advances it.
+
+    Rotation-aware (:func:`_reconciled_cursor`): a journal truncated or
+    replaced under the cursor restarts the tail from the top, so the new
+    file's lines flow as fresh events and a stale offset can never slice
+    garbage from a replacement's middle.
+    """
+    global _cursor, _identity
+    target = path or config.TRAIN_LOG_PATH
+    _cursor = _reconciled_cursor(target, _cursor, _identity)
+    _cursor, events = delta(target, _cursor)
+    try:
+        _identity = _file_id(target.stat())
+    except OSError:
+        pass  # vanished mid-tick: keep the last known identity for reconciliation
     return events
