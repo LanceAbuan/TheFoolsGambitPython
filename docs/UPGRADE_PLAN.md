@@ -162,6 +162,16 @@ No throughput claim ships without a measured baseline. `scripts/bench.py` report
 
 **Honest ceiling:** AlphaZero-scale strength used thousands of TPUs for 9 hours. One 3080 with a 1–6M-param net yields a sane, tactically reasonable club-level-ish bot after days of training — not superhuman. The bench numbers make this measurable instead of hand-wavy.
 
+### 5.1 Checkpoint ladder + arena gating (WP-C — how "better" gets measured)
+
+North-star metric: **Elo per wall-clock training hour**. Loss curves don't prove strength; games do. Protocol (user directive: multiple models, playing each other, on a time interval):
+
+1. **Checkpoint ladder** — snapshot the training model on a wall-clock ladder: **5, 10, 15, 20 min**, then every 20 min. Time-based, not game-count-based, so "minutes of training" is the experiment axis. Configurable via dataclass.
+2. **Arena gate** — each checkpoint plays a match vs the reigning champion: both colors, reduced sim budget (e.g. 128 sims vs training's 400–800) so arenas fit between training bursts on the single 3080, batched NN eval shared with the trainer.
+3. **Promotion** — candidate replaces champion at **≥55% match win rate** (SPRT bounds optional later); otherwise the champion holds. The ladder IS the multi-model experiment: every checkpoint is a distinct model, the ledger records who beat whom.
+4. **Elo ledger** — arena games persist to SQLite as `kind='arena'`; per-checkpoint Elo computed from the ledger, exposed via `GET /api/metrics` + WS `train` topic → the Watch page's "EST. ELO" becomes measured and live.
+5. **Config benchmarking** — the ladder doubles as the A/B harness: change one training knob (sims, lr, batch size, parallel games), compare Elo-per-hour across runs, adopt winners (standing loop step 8).
+
 ---
 
 ## 6. Milestones
@@ -322,6 +332,8 @@ The tunnel gives visitors the exact model the owner trained, at full strength, f
 | 2026-11-20 | §8: "no Docker/Linux needed" clarification added. Per user: focus on **local hosting first** — Cloudflare tunnel (M1) and VPS path (M4) deferred; they are exposure layers on the same app, zero rework to enable later |
 | 2026-11-21 | Frontend milestone: legacy `client/` deleted; new Svelte 5 client in `web/` — custom SVG board (drag/click, promotion, glide), demo engine, **1:1 port of the user-approved static tarot mock** (Home landing added, Play/Watch/About restructured, CSS art, Cormorant Garamond + DM Mono, sepia palette). Verdicts §2 updated (React/Mantine → Svelte). `docs/TODO.md` added as the living checklist incl. the standing review loop |
 | 2026-11-21 | §14 Subagent Delegation Map written (was referenced but missing): 14.0 pinned API contract v1, 14.1 work packages WP-A…WP-E. CI rewritten for `web/` (legacy Vercel-era checks dropped) |
+| 2026-11-21 | Standing review loop automated: OpenCode automation `standing-review-loop` (cron 6h → fresh orchestrator session, dirty-tree safety gate), created paused then activated on user request. `experimental.automations` enabled |
+| 2026-11-21 | WP-A slice 1: `server/` FastAPI + WS hub + SQLite (WAL) per §14.0 — play/new·move·undo·resign, games archive + PGN, metrics/checkpoints, admin-gated train stubs, demo Fool engine, `scripts/serve.py`, pytest suite. Stale `test_sample_returns_none_when_insufficient` updated to the adaptive contract (Trainer owns the MIN_BATCH_SIZE guard) |
 
 ---
 
