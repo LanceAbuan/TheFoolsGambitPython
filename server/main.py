@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import config, db, engine, model_server, reaper, telemetry
@@ -66,7 +67,17 @@ def create_app() -> FastAPI:
     # FS-9: single-origin serving of the built web client when it exists (CORS
     # above stays for the Vite dev server). Mounted last so /api + /ws win.
     if config.WEB_DIST.is_dir():
-        app.mount("/", StaticFiles(directory=str(config.WEB_DIST), html=True), name="web")
+        app.mount("/assets", StaticFiles(directory=str(config.WEB_DIST / "assets")), name="assets")
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def spa_fallback(full_path: str) -> FileResponse:
+            """Serve real files (favicon etc.); everything else is the SPA's index.html
+            so client-side routes like /play, /watch resolve on hard navigation."""
+            candidate = (config.WEB_DIST / full_path).resolve()
+            if full_path and candidate.is_file() and candidate.is_relative_to(config.WEB_DIST.resolve()):
+                return FileResponse(candidate)
+            return FileResponse(config.WEB_DIST / "index.html")
+
         log.info("serving web client from %s", config.WEB_DIST)
 
     return app
