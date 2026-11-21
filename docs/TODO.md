@@ -22,9 +22,11 @@ appends an audit line to gitignored `data/heartbeat.log`** (watch: `Get-Content 
 
 ## Now / Next
 
-- [ ] **Responsive audit & fixes** — odd screen sizes look broken (user report). Test every view
-      (Home / Play / Watch / About) at ~320, 375, 540, 768, 850, 1024, 1180, 1280, 1440, 1920 px.
-      Fix layout breakage, board sizing, grid collapses; then keep a screenshot sweep in the loop.
+- [x] **Responsive audit & fixes** — CLOSED (2026-11-21, post-FS-6c sweep): headless chromium
+      sweep 4 pages × 10 sizes (320/375/540/768/850/1024/1180/1280/1440/1920) = **40/40 clean**
+      (0 horizontal overflow, 0 console errors, 0 failed requests) + screenshot audit at
+      320/850/1024/1920 across all pages. Root cause was the FS-8 `.chart-wrap` flex→grid fix.
+      Sweeper: `uv run python` + playwright (chromium installed in venv 2026-11-21).
 - [x] **Commit the web port** — LANDED (branch `feature/play-and-local-overhaul`, conventional commits; PR → main pending push):
       1. `chore!: remove legacy React client`
       2. `build: add python packaging and refresh ignore rules` (pyproject.toml, uv.lock, .gitignore)
