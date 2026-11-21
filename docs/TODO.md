@@ -18,12 +18,13 @@ itself takes 20–40 min, which is why the fast cadence lives in the monitor bel
 a dirty-tree safety gate: if `git status --short` is not clean it aborts without touching anything.
 Between sweeps, a second no-model automation `backend-health-monitor`
 (`aut_1feacfef4001uYCa3ylqCP080l`) probes the site (:5173) + API (:8000) **every 5 minutes** and
-alerts on up→down transitions (zero token cost). A third automation `code-patrol`
-(`aut_1feae9f48001dJ0y5fJDAxI7pg`) fires a **model-driven** quick check **every 5 minutes** —
-rotating: full test suite / lint one area / live perf bench vs the Hygiene baseline / single-file
-improvement skim / web check+build — logging findings to gitignored `data/patrol.log` (never
-committed) and committing small fixes immediately. The dirty-tree gate makes patrols self-skip
-while a deep sweep holds the repo. Pause/resume any of the three via
+alerts on up→down transitions (zero token cost; 1 run so far). The **`delegation-loop`**
+(`aut_1feb425fd001su6H23Jn4yy8WF`, every **10 min**) is the self-driving builder: integrates
+finished worker slices (scoped verification → scoped conventional commit → push → tick FS
+checkbox) when the tree holds exactly one worker's files, and spawns the next open Finish-line
+slice's worker when the tree is clean — FS-9 tunnel + FS-10 training start are hard-gated to the
+user in its prompt. `code-patrol` (`aut_1feae9f48001dJ0y5fJDAxI7pg`) is **paused** (superseded by
+the delegation loop; resume on request). Pause/resume any via
 `opencode.cmd api post /api/experimental/automation/{id}/pause` (or `/resume`).
 Keep prompts in sync with the orchestrator runbook.
 
