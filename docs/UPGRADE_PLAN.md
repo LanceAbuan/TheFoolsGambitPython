@@ -172,6 +172,24 @@ North-star metric: **Elo per wall-clock training hour**. Loss curves don't prove
 4. **Elo ledger** — arena games persist to SQLite as `kind='arena'`; per-checkpoint Elo computed from the ledger, exposed via `GET /api/metrics` + WS `train` topic → the Watch page's "EST. ELO" becomes measured and live.
 5. **Config benchmarking** — the ladder doubles as the A/B harness: change one training knob (sims, lr, batch size, parallel games), compare Elo-per-hour across runs, adopt winners (standing loop step 8).
 
+### 5.2 Training regimes — the experiment matrix (WP-C)
+
+Goal (user directive): end up with models trained *differently* and a measured answer to "which way wins".
+
+**A regime is a named training recipe.** Each run records its regime; each regime produces its own model lineage (`runs/<regime>/<run-id>/`). First-class regimes:
+
+| Regime | Data | Rationale |
+|---|---|---|
+| `scratch` | pure self-play (AlphaZero) | canonical run; highest ceiling, slowest start |
+| `sf-games` | self-play + games vs Stockfish on a fixed skill ladder | real-opponent pressure; learns to punish mistakes |
+| `sf-distill` | policy ← Stockfish move choice, value ← Stockfish eval on self-play positions | fastest early Elo; ceiling capped by SF style |
+| `hybrid` | `sf-distill` warm start → pure self-play | likely best Elo-per-hour; the hypothesis to test |
+| `finetune` | continue from a champion, or seed from a public HF net | measures transfer vs fresh init |
+
+**Cross-regime arena:** every regime's champion plays a round-robin against the others (reduced sims, §5.1 mechanics) on the same `kind='arena'` ledger — one Elo table answers "from-scratch vs Stockfish-taught". Per-regime Elo flows to `/api/metrics` and the Watch page.
+
+**Budget & storage:** one regime trains at a time at full speed; arenas run between bursts. The active schedule is dataclass config, not code. SQLite gains a `runs` table (regime id, config hash, checkpoint lineage); HF Hub publishes per regime as `<user>/gambit-<regime>` so every public model carries its provenance.
+
 ---
 
 ## 6. Milestones

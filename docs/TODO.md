@@ -43,6 +43,9 @@ gate in its prompt. Resume it once the main list below is done:
       **Arena gating per §5.1 is binding**: checkpoint ladder 5/10/15/20 min wall-clock, each checkpoint
       arenas the champion at reduced sims, promotion ≥55%, arena games persisted `kind='arena'`,
       Elo ledger → `/api/metrics` + WS `train` topic.
+      **Regime matrix per §5.2 is binding**: `scratch` / `sf-games` / `sf-distill` / `hybrid` / `finetune`,
+      per-regime lineage (`runs/` + SQLite `runs` table + HF per-regime repos), cross-regime round-robin
+      arena on one ledger.
 - [ ] **WP-D — Rust `gambit_core`**: fast movegen + perft harness via PyO3; replaces chess.js/chess
       hot paths for self-play speed.
 - [ ] **Deploy/hosting**: host the site so the user + friends can play (replace dead Vercel flow);
