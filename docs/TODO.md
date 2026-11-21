@@ -14,11 +14,11 @@ algorithms/configs (sims/sec, games/hour, strength per wall-clock hour) and log 
 
 **Enforcement:** automation roster trimmed at user request (2026-11-21) — the health monitor,
 hourly review loop, and 5-min code patrol were **removed**. The one surviving automation is the
-**`delegation-loop`** (`aut_1feb425fd001su6H23Jn4yy8WF`, every 10 min): integrates finished worker
+**`delegation-loop`** v2 (`aut_1fed98df3001bs0GXJENZPI6dA`, every 10 min): integrates finished worker
 slices (scoped verification → scoped conventional commit → push → tick FS checkbox) when the tree
 holds exactly one worker's files, and spawns the next open Finish-line slice's worker when the tree
-is clean — FS-9 tunnel + FS-10 training start are hard-gated to the user in its prompt. The standing
-review loop itself remains a **manual on-request procedure** (steps in `.opencode/agents/orchestrator.md`).
+is clean — FS-9 tunnel + FS-10 training start are hard-gated to the user in its prompt. **Every fire
+appends an audit line to gitignored `data/heartbeat.log`** (watch: `Get-Content data\heartbeat.log -Wait`).
 
 ## Now / Next
 
