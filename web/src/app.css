@@ -1072,6 +1072,26 @@ h1 {
   color: #b9a68a;
   margin: 0;
 }
+/* FS-8b: "How The Fool learns" — the plain-English training story */
+.learn-panel {
+  padding: 26px 28px;
+  margin-top: 20px;
+}
+.learn-panel h3 {
+  font-size: 30px;
+  font-weight: 500;
+  margin: 6px 0 12px;
+}
+.learn-panel p {
+  font-size: 16px;
+  line-height: 1.65;
+  color: #b9a68a;
+  margin: 0 0 12px;
+  max-width: 72ch;
+}
+.learn-panel .learn-close {
+  color: var(--paper-dim);
+}
 .status-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

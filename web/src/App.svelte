@@ -52,9 +52,9 @@
   {#if tab === 'home'}
     <HomeView onnav={(t) => goto(t)} />
   {:else if tab === 'play'}
-    <PlayView />
+    <PlayView onnav={(t) => goto(t)} />
   {:else if tab === 'watch'}
-    <WatchView />
+    <WatchView onnav={(t) => goto(t)} />
   {:else}
     <AboutView onnav={(t) => goto(t)} />
   {/if}

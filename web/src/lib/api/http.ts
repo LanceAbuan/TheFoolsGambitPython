@@ -49,6 +49,8 @@ export interface MetricsSnapshot {
   champion?: string | null;
   /** Number of arena games played (FS-2). */
   arena_games?: number;
+  /** Longest run of consecutive wins vs earlier selves (optional; absent → '—'). */
+  best_streak?: number;
   /** Per-regime Elo map (FS-2): regime name → { checkpoint tag → elo }. */
   elo_by_regime?: Record<string, Record<string, number>>;
   regime_elo?: Record<string, number>;

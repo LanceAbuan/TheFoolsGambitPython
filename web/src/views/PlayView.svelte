@@ -1,9 +1,16 @@
 <script lang="ts">
   import Board from '../lib/components/Board.svelte';
   import MoveScroll from '../lib/components/MoveScroll.svelte';
+  import Tip from '../lib/components/Tip.svelte';
   import { game } from '../lib/game.svelte';
   import { metrics as fetchMetrics, bestKnownElo, type MetricsSnapshot, type Opponent } from '../lib/api/http';
   import { settings, setSetting } from '../lib/settings.svelte';
+
+  interface Props {
+    /** Wired by App.svelte: the "not trained yet" hint sends newcomers to Watch. */
+    onnav?: (tab: 'play' | 'watch' | 'about') => void;
+  }
+  let { onnav }: Props = $props();
 
   let difficulty = $state('Curious · Intermediate');
   let side = $state('White');
@@ -27,6 +34,25 @@
   const cardBlurb = $derived(OPPONENT_META[opponent].blurb);
   /** Live Elo belongs to the trained NN; the other foes have no ledger number yet. */
   const ratingText = $derived(opponent === 'nn' && nnEloText !== null ? nnEloText : '—');
+
+  // FS-8b: plain-English helper line + tooltip copy. Blurbs name the option in
+  // the same breath they describe it, so no prior knowledge is assumed.
+  const TIP_OPPONENT =
+    'Three ways to play. The Fool — a friendly offline practice bot that lives in your browser, no connection needed. Stockfish — a world-class traditional chess engine, the strongest opponent here. The Fool (NN) — the bot that trained itself by playing thousands of games; its rating is real.';
+  const TIP_DIFFICULTY =
+    'How hard the opponent tries, in effort terms: how many candidate moves it inspects per turn — deeper thinking, slower moves. Wandering is a gentle start; Enlightened digs the deepest.';
+  const TIP_ELO_CARD =
+    "A chess rating — higher means a stronger player. A casual club player is around 1200; world champions are near 2800. The Fool's number is earned by beating earlier versions of itself in arena matches. A dash (—) means this opponent has no rating yet.";
+  const opponentHelp = $derived.by(() => {
+    if (opponent === 'stockfish')
+      return 'A world-class traditional chess engine — the strongest opponent here. It calculates moves; it does not learn.';
+    if (opponent === 'nn') {
+      return nnReady
+        ? 'The bot that trained itself by playing thousands of games against itself. Its rating is real.'
+        : 'The self-trained bot. No trained model yet — training happens live on the Watch page, and the option unlocks the moment a champion is produced.';
+    }
+    return 'An offline practice bot that lives in your browser — no connection needed. A relaxed first game.';
+  });
 
   /** Panel-top mode chip: honest about where the moves are coming from. */
   const modeLabel = $derived.by(() => {
@@ -137,12 +163,18 @@
           <h2>{cardName}</h2>
           <p><i class="live-dot"></i> {statusText}</p>
         </div>
-        <div class="rating">{ratingText}<small>EST. ELO</small></div>
+        <div class="rating">
+          {ratingText}
+          <small>EST. ELO <Tip text={TIP_ELO_CARD} label="What is EST. ELO?" /></small>
+        </div>
       </section>
 
       <section class="panel settings">
         <div class="section-title"><span>Game settings</span><span>✧</span></div>
-        <label for="opponent">Opponent</label>
+        <div class="label-row">
+          <label for="opponent">Opponent</label>
+          <Tip text={TIP_OPPONENT} label="About the opponent options" />
+        </div>
         <select id="opponent" bind:value={opponent}>
           <option value="fool">The Fool · Practice spirit</option>
           <option value="stockfish">Stockfish · The shadow</option>
@@ -150,12 +182,17 @@
             {nnReady ? `The Fool (NN) · Elo ${nnEloText}` : 'The Fool (NN) — not trained yet'}
           </option>
         </select>
-        {#if opponent === 'nn' && !nnReady}
-          <p class="nn-hint">No trained model yet — available once training produces a champion.</p>
-        {:else if opponent === 'nn'}
-          <p class="nn-hint ok">Trained mind ready · Elo {nnEloText}</p>
-        {/if}
-        <label for="difficulty">Difficulty</label>
+        <p class="select-help" class:ok={opponent === 'nn' && nnReady}>
+          {opponentHelp}
+          {#if opponent === 'nn' && !nnReady}
+            {' '}
+            <button class="text-link help-link" onclick={() => onnav?.('watch')}>Watch the training live</button>
+          {/if}
+        </p>
+        <div class="label-row">
+          <label for="difficulty">Difficulty</label>
+          <Tip text={TIP_DIFFICULTY} label="What does difficulty change?" />
+        </div>
         <select id="difficulty" bind:value={difficulty}>
           <option>Wandering · Beginner</option>
           <option>Curious · Intermediate</option>
@@ -212,14 +249,28 @@
     color: #7d6b53;
     margin: 8px 0 0;
   }
-  .nn-hint {
+  /* FS-8b: label + tooltip row, and the plain-English helper under the select */
+  .label-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .label-row label {
+    margin-bottom: 0;
+  }
+  .select-help {
     font: 10px var(--mono);
-    line-height: 1.5;
+    line-height: 1.6;
     color: #8e7c65;
     margin: 7px 0 0;
   }
-  .nn-hint.ok {
+  .select-help.ok {
     color: #a9b88b;
+  }
+  .select-help .help-link {
+    margin: 0;
+    padding-bottom: 1px;
+    font-size: 10px;
   }
   .check-row {
     display: flex !important;

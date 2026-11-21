@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Chess } from 'chess.js';
   import Board from '../lib/components/Board.svelte';
+  import Tip from '../lib/components/Tip.svelte';
   import {
     metrics as fetchMetrics,
     games as fetchGames,
@@ -8,6 +9,16 @@
     type MetricsSnapshot,
   } from '../lib/api/http';
   import { socket, type ServerMessage, type SocketStatus } from '../lib/api/ws';
+
+  interface Props {
+    /** Wired by App.svelte so the primer can send newcomers to Play/About. */
+    onnav?: (tab: 'play' | 'watch' | 'about') => void;
+  }
+  let { onnav }: Props = $props();
+
+  // FS-8b: the "What am I looking at?" primer — collapsed by default, one click
+  // to expand. No persistence: every visit starts collapsed so the page stays calm.
+  let primerOpen = $state(false);
 
   // A real miniature game, replayed frame by frame through the playback controls.
   const line = ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'Nf6', 'O-O', 'Be7', 'd3', 'd6', 'c3', 'a6'];
@@ -160,6 +171,7 @@
       regime: typeof o.regime === 'string' ? o.regime : null,
       champion: typeof o.champion === 'string' ? o.champion : null,
       arena_games: num(o.arena_games) ?? undefined,
+      best_streak: num(o.best_streak) ?? undefined,
       elo_by_regime: mapOfRegimeElo(o.elo_by_regime),
       regime_elo: mapOfNumbers(o.regime_elo),
       checkpoints: mapOfNumbers(o.checkpoints),
@@ -216,6 +228,93 @@
     }
   }
 
+  // ---- FS-8b: honest rating chart -------------------------------------------
+  // The points are REAL when the arena ledger has rows: each approved checkpoint
+  // contributes the Elo recorded right after its gauntlet. Secondary real source
+  // is the metrics checkpoint ladder. With neither, the decorative curve stays
+  // but is explicitly labelled SAMPLE — it never masquerades as data.
+  type ChartPoint = { label: string; elo: number };
+
+  const chartData = $derived.by(() => {
+    const rows = (arena ?? []).filter((r) => typeof r.elo === 'number');
+    if (rows.length > 0) {
+      const byTs = [...rows].sort(
+        (a, b) => (typeof a.ts === 'number' ? a.ts : 0) - (typeof b.ts === 'number' ? b.ts : 0),
+      );
+      const pts: ChartPoint[] = [];
+      for (const r of byTs) {
+        const label = typeof r.ckpt === 'string' && r.ckpt.length > 0 ? r.ckpt : `#${pts.length + 1}`;
+        // Same checkpoint re-gauntleted later → keep the latest rating.
+        const existing = pts.findIndex((p) => p.label === label);
+        if (existing >= 0) pts[existing] = { label, elo: r.elo as number };
+        else pts.push({ label, elo: r.elo as number });
+      }
+      return { real: true as const, pts };
+    }
+    const ladder = liveMetrics?.checkpoints;
+    if (ladder && Object.keys(ladder).length > 0) {
+      return { real: true as const, pts: Object.entries(ladder).map(([label, elo]) => ({ label, elo })) };
+    }
+    return { real: false as const, pts: [] as ChartPoint[] };
+  });
+
+  /** Real data → scaled geometry; no data → null (sample SVG renders instead). */
+  const chartView = $derived.by(() => {
+    if (!chartData.real || chartData.pts.length === 0) return null;
+    const elos = chartData.pts.map((p) => p.elo);
+    const lo = Math.min(...elos);
+    const hi = Math.max(...elos);
+    const span = Math.max(hi - lo, 40);
+    const min = lo - span * 0.15;
+    const max = hi + span * 0.15;
+    const W = 520;
+    const H = 190;
+    const xy = chartData.pts.map((p, i) => ({
+      ...p,
+      x: chartData.pts.length === 1 ? W / 2 : (i / (chartData.pts.length - 1)) * W,
+      y: H - ((p.elo - min) / (max - min)) * (H - 12) - 6,
+    }));
+    const d = xy.length > 1 ? `M${xy.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L')}` : null;
+    const ticks = [max, (max + min) / 2, min].map((v) => Math.round(v).toLocaleString('en-US'));
+    return { xy, d, ticks };
+  });
+
+  const yTicks = $derived(chartView ? chartView.ticks : ['1800', '1600', '1400', '1200', '1000']);
+
+  // ---- FS-8b: plain-English tooltip copy (bodies are pure clarity) ----------
+  const TIP_ELO =
+    'A chess rating — higher means a stronger player. A casual club player is around 1200 and world champions are near 2800. The Fool starts at 800 (a beginner) and climbs by beating versions of itself.';
+  const TIP_GAMES =
+    'How many games The Fool has played against itself. Like a musician practicing — every game is a repetition, and the bot studies each one afterwards.';
+  const TIP_WIN_RATE =
+    "How often the newest version beats the previous version in a head-to-head match. A version only becomes 'champion' — and takes over — if it wins.";
+  const TIP_LOSS =
+    "A score for how wrong The Fool's guesses were during its latest study session. High = still confused; falling over time = it's learning. Some noise is normal.";
+  const TIP_STREAK = 'Its longest run of consecutive wins against earlier versions of itself.';
+  const TIP_BOARD =
+    "This board replays a sample game so you can see what The Fool's practice looks like: it plays both sides, one move at a time. It is an illustration — the real training games run on the machine doing the training. The score and depth figures below come from the sample, too.";
+  const TIP_JOURNAL =
+    "The bot's training diary, newest at the bottom. Each entry is one round of practice: how many games it played, how wrong its guesses were, and its current rating. Some lines show raw JSON — that is the diary in its rawest form; you never need to read it.";
+  const TIP_ARENA =
+    'Every time The Fool learns something new, the new version must beat the old one in a short match before it takes over. This is the record of those matches — one row per challenge.';
+  const TIP_LEADERBOARD =
+    "The Fool can train in different 'schools' — different practice methods with their own schedules. This compares how each school's champion is rated.";
+  const chipTip = $derived(
+    conn === 'open'
+      ? "You're watching the training in real time — this page refreshes itself every couple of seconds while the bot learns."
+      : 'The training feed is not connected right now, so this page shows sample numbers. When a run is live, this chip lights up and the page updates itself every couple of seconds.',
+  );
+  const telemetryTip = $derived(
+    liveMetrics !== null
+      ? 'These numbers come straight from the live training run — they update on their own.'
+      : 'The bot is not connected right now, so these are sample numbers showing what the panel looks like. Real figures appear as soon as training telemetry arrives.',
+  );
+  const chartTip = $derived(
+    chartData.real
+      ? "When The Fool finishes training a new version, that version must beat the old one in a short match (a 'gauntlet') before it takes over. Each point is the official rating recorded right after one of those matches — newest on the right. Up means the challenger won the title. These points are real: they come from the arena ledger below."
+      : "When The Fool finishes training a new version, that version must beat the old one in a short match (a 'gauntlet') before it takes over. This panel will plot its rating after each of those matches. No matches are recorded yet, so the curve shown is a labelled sample — not real data.",
+  );
+
   function onMessage(msg: ServerMessage): void {
     if (msg.topic !== 'train') return;
     if (msg.type === 'metrics') {
@@ -262,6 +361,13 @@
   const gamesText = $derived(
     liveMetrics?.games_played != null ? liveMetrics.games_played.toLocaleString('en-US') : '12,482',
   );
+  // Honesty: the streak only displays when the run reports it; the illustrative
+  // sample keeps its number under the ILLUSTRATIVE DATA chip.
+  const streakText = $derived.by(() => {
+    if (liveMetrics === null) return '08 W';
+    const s = liveMetrics.best_streak;
+    return typeof s === 'number' ? `${Math.round(s)} W` : '—';
+  });
   const telemetryLabel = $derived(liveMetrics !== null ? 'LIVE TELEMETRY' : 'ILLUSTRATIVE DATA');
   const regimeText = $derived(liveMetrics?.regime ?? null);
   const journalLabel = $derived(journal.length > 0 ? (conn === 'open' ? 'LIVE FEED' : 'BUFFERED') : 'IDLE');
@@ -279,15 +385,51 @@
     </div>
     <div class="training-state" class:off={conn !== 'open'}>
       <i class="live-dot"></i>
-      {chip}
+      <span>{chip}</span>
+      <Tip text={chipTip} label="What does this connection chip mean?" />
     </div>
   </div>
+
+  <!-- FS-8b: the newcomer primer — the whole training loop in story form. -->
+  <section class="panel primer">
+    <button
+      class="primer-toggle"
+      aria-expanded={primerOpen}
+      aria-controls="primer-body"
+      onclick={() => (primerOpen = !primerOpen)}
+    >
+      <span class="primer-mark">✦</span>
+      <span class="primer-title">New here? <b>What am I looking at?</b></span>
+      <span class="primer-hint">{primerOpen ? 'HIDE −' : 'SHOW +'}</span>
+    </button>
+    {#if primerOpen}
+      <div class="primer-body" id="primer-body">
+        <p>
+          The Fool is a chess bot that is teaching itself, and this page is its training diary. The whole loop, in
+          order:
+        </p>
+        <ol>
+          <li><b>It plays itself.</b> Thousands of fast games, both sides, no teacher — just the rules and curiosity.</li>
+          <li><b>It studies.</b> After each round it reviews every game and adjusts its guesses about good moves.</li>
+          <li><b>It must defend the title.</b> A newly trained version only becomes the champion if it beats the previous champion in a short match.</li>
+          <li><b>Its rating climbs.</b> Every approved champion adds a point on the Elo scale — higher means stronger — recorded in the arena ledger.</li>
+          <li><b>You can play the champion.</b> The current version is always ready for a game on the Play page.</li>
+        </ol>
+        <p class="primer-close">
+          No chess knowledge needed to watch — and you can play it yourself on the
+          <button class="text-link primer-link" onclick={() => onnav?.('play')}>Play page</button>.
+          The full story lives on the
+          <button class="text-link primer-link" onclick={() => onnav?.('about')}>About page</button>.
+        </p>
+      </div>
+    {/if}
+  </section>
 
   <div class="watch-grid">
     <section class="panel training-board">
       <div class="panel-top">
-        <span><i class="live-dot"></i> SELF-PLAY TABLE</span>
-        <span class="tiny-label">GAME #12,483</span>
+        <span><i class="live-dot"></i> SELF-PLAY TABLE <Tip text={TIP_BOARD} label="About the self-play board" /></span>
+        <span class="tiny-label">SAMPLE GAME · REPLAY</span>
       </div>
       <div class="board-shell small-board">
         <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
@@ -314,37 +456,81 @@
     </section>
 
     <section class="panel progress-panel">
-      <div class="section-title"><span>Training progress</span><span class="tiny-label">{telemetryLabel}</span></div>
+      <div class="section-title">
+        <span>Training progress <Tip text={chartTip} label="What does this chart show?" /></span>
+        <span class="tiny-label">{telemetryLabel} <Tip text={telemetryTip} label="Is this data real?" /></span>
+      </div>
       <div class="metric-main">
         <strong>{eloText}</strong>
-        <span>ESTIMATED ELO</span>
+        <span>ESTIMATED ELO <Tip text={TIP_ELO} label="What is Estimated Elo?" /></span>
         <em>{liveMetrics !== null ? 'LIVE · WS FEED' : '↗ +42 THIS WEEK'}</em>
       </div>
       <div class="chart-wrap">
-        <div class="chart-y"><span>1800</span><span>1600</span><span>1400</span><span>1200</span><span>1000</span></div>
-        <svg class="line-chart" viewBox="0 0 520 190" preserveAspectRatio="none" role="img" aria-label="Rating over training, rising trend">
-          <path class="chart-grid" d="M0 20H520 M0 60H520 M0 100H520 M0 140H520 M0 180H520" />
-          <path
-            class="chart-area"
-            d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18 L520 180 L0 180Z"
-          />
-          <path
-            class="chart-line"
-            d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18"
-          />
-        </svg>
+        <div class="chart-y">{#each yTicks as t (t)}<span>{t}</span>{/each}</div>
+        {#if chartView}
+          <svg
+            class="line-chart"
+            viewBox="0 0 520 190"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="Real Elo rating after each arena-approved checkpoint"
+          >
+            <path class="chart-grid" d="M0 20H520 M0 60H520 M0 100H520 M0 140H520 M0 180H520" />
+            {#if chartView.d}
+              <path class="chart-line" d={chartView.d} />
+            {/if}
+            {#each chartView.xy as p, i (`${i}-${p.label}`)}
+              <rect class="chart-pt" x={p.x - 3.5} y={p.y - 3.5} width="7" height="7" />
+            {/each}
+          </svg>
+        {:else}
+          <svg class="line-chart" viewBox="0 0 520 190" preserveAspectRatio="none" role="img" aria-label="Sample rating curve, rising trend — an illustration until real arena results arrive">
+            <path class="chart-grid" d="M0 20H520 M0 60H520 M0 100H520 M0 140H520 M0 180H520" />
+            <path
+              class="chart-area"
+              d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18 L520 180 L0 180Z"
+            />
+            <path
+              class="chart-line chart-line-sample"
+              d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18"
+            />
+          </svg>
+        {/if}
       </div>
-      <div class="chart-legend"><span><i></i> RATING OVER TRAINING</span><span>LAST 30 SESSIONS</span></div>
+      <div class="chart-legend">
+        {#if chartView}
+          <span><i></i> RATING AFTER EACH GAUNTLET · REAL</span>
+          <span>SOURCE · ARENA LEDGER</span>
+        {:else}
+          <span><i></i> SAMPLE CURVE</span>
+          <span>REAL PLOTS APPEAR AFTER THE FIRST ARENA MATCH</span>
+        {/if}
+      </div>
       <div class="stat-grid">
-        <div><small>GAMES PLAYED</small><strong>{gamesText}</strong></div>
-        <div><small>WIN RATE</small><strong>{winRateText}</strong></div>
-        <div><small>TRAINING LOSS</small><strong>{lossText}</strong></div>
-        <div><small>BEST STREAK</small><strong>08 W</strong></div>
+        <div>
+          <small>GAMES PLAYED <Tip text={TIP_GAMES} label="What counts as games played?" /></small>
+          <strong>{gamesText}</strong>
+        </div>
+        <div>
+          <small>WIN RATE <Tip text={TIP_WIN_RATE} label="What is win rate here?" /></small>
+          <strong>{winRateText}</strong>
+        </div>
+        <div>
+          <small>TRAINING LOSS <Tip text={TIP_LOSS} label="What is training loss?" /></small>
+          <strong>{lossText}</strong>
+        </div>
+        <div>
+          <small>BEST STREAK <Tip text={TIP_STREAK} label="What is the best streak?" /></small>
+          <strong>{streakText}</strong>
+        </div>
       </div>
     </section>
 
     <section class="panel log-panel">
-      <div class="section-title"><span>Training journal</span><span class="tiny-label">{journalLabel}</span></div>
+      <div class="section-title">
+        <span>Training journal <Tip text={TIP_JOURNAL} label="What is the training journal?" /></span>
+        <span class="tiny-label">{journalLabel}</span>
+      </div>
       <div class="journal" bind:this={feedEl} onscroll={onFeedScroll}>
         {#if journal.length === 0}
           <p class="journal-empty">Awaiting training telemetry — the journal fills as the pipeline runs.</p>
@@ -362,7 +548,10 @@
     </section>
 
     <section class="panel lb-panel">
-      <div class="section-title"><span>Regime leaderboard</span><span class="tiny-label">PER-REGIME ELO</span></div>
+      <div class="section-title">
+        <span>Regime leaderboard <Tip text={TIP_LEADERBOARD} label="What is the regime leaderboard?" /></span>
+        <span class="tiny-label">PER-REGIME ELO</span>
+      </div>
       {#if regimeElo.length === 0}
         <p class="panel-empty">No per-regime Elo reported yet — the ledger appears once arenas are scored.</p>
       {:else}
@@ -379,7 +568,10 @@
     </section>
 
     <section class="panel arena-panel">
-      <div class="section-title"><span>Arena results</span><span class="tiny-label">LEDGER</span></div>
+      <div class="section-title">
+        <span>Arena results <Tip text={TIP_ARENA} label="What is the arena ledger?" /></span>
+        <span class="tiny-label">LEDGER</span>
+      </div>
       {#if arena === null}
         <p class="panel-empty">Arena ledger not available yet.</p>
       {:else if arena.length === 0}
@@ -421,6 +613,89 @@
 </main>
 
 <style>
+  /* ---- FS-8b: newcomer primer (spans the full grid width) ---- */
+  .primer {
+    grid-column: 1 / -1;
+    padding: 14px 20px;
+  }
+  .primer-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    color: var(--paper);
+    text-align: left;
+    font-family: inherit;
+  }
+  .primer-toggle:focus-visible {
+    outline: 1px solid var(--gold-bright);
+    outline-offset: 3px;
+  }
+  .primer-mark {
+    color: var(--gold);
+    font-size: 13px;
+  }
+  .primer-title {
+    font: 15px var(--serif);
+  }
+  .primer-title b {
+    color: var(--gold-bright);
+    font-weight: 600;
+  }
+  .primer-hint {
+    margin-left: auto;
+    font: 9px var(--mono);
+    letter-spacing: 0.14em;
+    color: #927e63;
+    white-space: nowrap;
+  }
+  .primer-body {
+    margin-top: 12px;
+    border-top: 1px solid #594634;
+    padding-top: 12px;
+  }
+  .primer-body > p {
+    margin: 0 0 10px;
+    font: 14px/1.6 var(--serif);
+    color: var(--paper-dim);
+  }
+  .primer-body ol {
+    margin: 0 0 10px;
+    padding-left: 20px;
+    display: grid;
+    gap: 7px;
+  }
+  .primer-body li {
+    font: 13.5px/1.6 var(--serif);
+    color: var(--paper-dim);
+  }
+  .primer-body li b {
+    color: var(--paper);
+    font-weight: 600;
+  }
+  .primer-close {
+    margin: 0;
+  }
+  .primer-close .primer-link {
+    margin: 0 2px;
+    padding-bottom: 1px;
+    font-size: 13px;
+  }
+  /* sample curve reads as an illustration: dashed stroke, no marker squares */
+  .chart-line-sample {
+    stroke-dasharray: 6 5;
+    opacity: 0.85;
+  }
+  .chart-pt {
+    fill: var(--gold-bright);
+    stroke: #2a2118;
+    stroke-width: 1;
+  }
+
   .training-state.off .live-dot {
     background: var(--red);
     box-shadow: 0 0 9px var(--red);

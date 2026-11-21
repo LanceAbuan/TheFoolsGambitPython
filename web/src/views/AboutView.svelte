@@ -1,8 +1,19 @@
 <script lang="ts">
+  import { metrics as fetchMetrics, bestKnownElo } from '../lib/api/http';
+
   interface Props {
     onnav?: (tab: 'play' | 'watch' | 'about') => void;
   }
   let { onnav }: Props = $props();
+
+  // FS-8b: one-shot metrics fetch so the status strip tells the truth about the
+  // model instead of repeating the static mock's "Not yet connected".
+  let elo = $state<number | null>(null);
+  $effect(() => {
+    fetchMetrics()
+      .then((m) => (elo = bestKnownElo(m)))
+      .catch(() => {});
+  });
 </script>
 
 <main class="page-wrap about-wrap">
@@ -72,9 +83,39 @@
     </article>
   </section>
 
+  <!-- FS-8b: the whole training story in plain English, zero knowledge assumed. -->
+  <section class="panel learn-panel">
+    <div class="eyebrow">THE TRAINING LOOP · IN PLAIN ENGLISH</div>
+    <h3>How The Fool learns</h3>
+    <p>
+      The Fool learns chess the way the AlphaZero project taught a machine the game: it starts knowing only the
+      rules, then plays thousands of quick games against itself. After each round it studies what happened — which
+      guesses were wrong, which moves led to wins — and nudges its internal web of numbers (a neural network) a
+      little closer to good chess. Every so often, a freshly trained version has to earn its title: it plays a short
+      match against the reigning champion, and only takes over if it wins. Each promotion is recorded in the arena
+      ledger you can see on the Watch page, along with the version's Elo rating — the same rating scale chess clubs
+      use, where higher means stronger. Nothing about its strength is hand-set: every point was earned by beating an
+      earlier version of itself. Training runs on this machine's own GPU, and the Watch page follows the journal as
+      it happens.
+    </p>
+    <p class="learn-close">
+      No chess knowledge needed to follow along — you can play the current champion at any time.
+    </p>
+    <button class="text-link" onclick={() => onnav?.('watch')}>Watch the training live <span>→</span></button>
+  </section>
+
   <section class="panel status-strip">
-    <div><small>PROJECT STATUS</small><strong>Client live · backend next</strong></div>
-    <div><small>MODEL STRENGTH</small><strong>Not yet connected</strong></div>
-    <div><small>THE NEXT STEP</small><strong>Begin training</strong></div>
+    <div>
+      <small>PROJECT STATUS</small>
+      <strong>{elo !== null ? 'Training loop active' : 'Awaiting the first training run'}</strong>
+    </div>
+    <div>
+      <small>MODEL STRENGTH</small>
+      <strong>{elo !== null ? `Elo ${Math.round(elo)} · self-trained` : 'Not yet rated'}</strong>
+    </div>
+    <div>
+      <small>THE NEXT STEP</small>
+      <strong>Play the champion yourself</strong>
+    </div>
   </section>
 </main>
