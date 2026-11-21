@@ -197,8 +197,8 @@ Data flows from backend → browser via **Server-Sent Events** (SSE). The fronte
 
 ```bash
 # Clone and install
-git clone https://github.com/LanceAbuan/TheFoolsGambitPython
-cd TheFoolsGambitPython
+git clone https://github.com/LanceAbuan/fools-gambit
+cd fools-gambit
 pip install -r requirements.txt
 
 # Set environment
