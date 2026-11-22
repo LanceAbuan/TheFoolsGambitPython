@@ -324,3 +324,11 @@ all read, fixes deployed to `web/dist` and verified on production each round).
 - [ ] **Watch: gate stat hint format** — currently `last result 0.500` (score); consider
       `0-16-0` W/D/L form to match the ledger rows.
 
+
+## Findings 2026-11-23 (SF benchmark session)
+
+| ID | Finding | Status |
+|----|---------|--------|
+| FB-1 | **Arena gate has an effective N of 2**: `play_match_game` is argmax-deterministic (no root noise, no opening variation) and colors alternate - a "16-game" match is the same two games repeated 8x each. The 0W/16D streaks and the 8W/8D promotion are structurally guaranteed; SPRT over duplicated games is meaningless. Fix: randomized (or book) openings per gate game, balanced across colors - makes SPRT legitimate and lets Elo move. | TODO (training-dev; pipeline change, takes effect next run) |
+| FB-2 | **`champion.json` tag/path divergence**: the writer updates `checkpoint_path` on every save but `tag` only on promotion (currently tag `ckpt-001536-0768`, path -> `ckpt-001728-0864.pt`). The play server's "nn" opponent therefore plays the *newest* checkpoint, not the champion. Decide intended semantics; if "newest" is intentional, rename/document; if not, fix the writer. | TODO (training-dev) |
+| FB-3 | **External SF axis landed**: `scripts/bench_sf.py` - champion vs server Stockfish presets (wandering/curious/enlightened), randomized seeded openings, argmax 128 sims (gate strength), results appended to `data/sf_bench.jsonl`. Baseline (ckpt-001536, 128 sims): 0-1-5 vs wandering, 0-1-11 vs curious, 0-2-10 vs enlightened (~4-8% score everywhere). Self-play ladder Elo (~814) is lineage-relative only; rerun the bench per promotion for the true strength curve. Bench openings are out-of-distribution for a start-position-only self-play run - consider a curated opening book for later runs. Wire into pipeline post-promotion when a restart is acceptable. | tool landed; pipeline wiring TODO |
