@@ -265,4 +265,25 @@ pass (5–18).
 Fifteenth consecutive clean pass (5–19). Gate/sample panel (replay controls, disclaimer) verified
 on watch; data uniform across all shots.
 
+## Pass 20 (tag `p20`, 2026-11-23, same bundle — FINAL stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Sixteenth consecutive clean pass (5–20). Final verification suite: `tsc --noEmit` exit 0;
+functional probe green (board fill correct, 1.e4 → engine reply, analysis evals −0.01/+0.36 with
+2 arrows, 0 console errors).
+
+---
+
+## Loop complete — 20 passes, verdict
+
+**20/20 passes executed** (fix rounds after passes 1–4; verification cycles 5–20, sixteen
+consecutive clean sweeps with zero defects and zero regressions). All P1–P3 and P4-1…P4-3 defects
+fixed and verified with pixel-sampled WCAG math; P4-4 accepted (asset-level); accepted/deferred
+items harvested to `docs/TODO.md`. Functionality intact throughout: watch feed + pinned featured
+game + live Fool eval bar, play vs engine with animated moves, analysis evals/arrows/editor,
+home metrics. Design standard held: one emerald accent, flat 1px cards, 12/14/16/20/28 type scale,
+4/8px grid, AA contrast in both themes, sentence case, no gradients/glow/ornament.
+
+**PR evidence:** before = `%TEMP%\ui_shots\pass01\`, after = `%TEMP%\ui_shots\pass20\`
+(5 routes × 2 viewports × 2 themes per set); per-pass detail in this ledger.
+
 
