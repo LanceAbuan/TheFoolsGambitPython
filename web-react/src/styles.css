@@ -1,0 +1,829 @@
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--mantine-primary-color-light);
+}
+
+/* One soft light source behind the hero; theme-aware via light-dark(). */
+.app-glow {
+  background:
+    radial-gradient(
+      60rem 30rem at 50% -8rem,
+      light-dark(rgba(42, 140, 97, 0.14), rgba(78, 163, 125, 0.18)),
+      transparent 70%
+    );
+}
+
+.mono {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- chrome ------------------------------------------------------------- */
+
+.site-head {
+  background: light-dark(rgba(255, 255, 255, 0.82), rgba(26, 26, 26, 0.82));
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.brand {
+  color: var(--mantine-color-text);
+  border-radius: var(--mantine-radius-md);
+  padding: 4px 6px;
+}
+
+.brand:hover {
+  background: var(--mantine-color-default-hover);
+}
+
+.brand:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--mantine-radius-md);
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+  color: var(--mantine-color-dimmed);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.nav-link:hover {
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+}
+
+.nav-link.active {
+  color: var(--mantine-primary-color-light-color);
+  background: var(--mantine-primary-color-light);
+  font-weight: 600;
+}
+
+.site-foot {
+  border-top: 1px solid var(--mantine-color-default-border);
+  background: light-dark(rgba(0, 0, 0, 0.015), rgba(255, 255, 255, 0.02));
+}
+
+/* Compact chrome: 390 px must fit brand + four routes + the scheme toggle on
+   one row, so labels tighten instead of wrapping to two lines. */
+@media (max-width: 479px) {
+  .nav-link {
+    padding: 0 9px;
+    font-size: 13px;
+    height: 32px;
+  }
+}
+
+/* ---- shared view primitives -------------------------------------------- */
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--mantine-color-emerald-6);
+  display: inline-block;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 3px var(--mantine-primary-color-light);
+}
+
+.live-dot.pulse {
+  animation: dot-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.status-think {
+  animation: dot-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot.pulse,
+  .status-think {
+    animation: none;
+  }
+}
+
+.board-coords {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 2px;
+  user-select: none;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--mantine-color-dimmed);
+}
+
+.hint-icon {
+  color: var(--mantine-color-dimmed);
+  cursor: help;
+  vertical-align: middle;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend-dot.you {
+  background: var(--mantine-color-emerald-6);
+}
+
+.legend-dot.fool {
+  background: light-dark(#2f4a3d, #8fb8a2);
+}
+
+.move-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  line-height: 1.75;
+}
+
+.move-row .move-no {
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+}
+
+.move-row b {
+  font-weight: 500;
+}
+
+.move-row .move-cur {
+  color: var(--mantine-primary-color-filled);
+  font-weight: 700;
+}
+
+/* ---- Board-page layout (Play + Analyze) --------------------------------
+   App-first, not a marketing page: the board column is sized from the viewport
+   so the full board AND its controls fit a laptop screen, and the card width
+   hugs the board (no dead air). The rail takes the rest. */
+.board-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-md);
+}
+
+.board-layout .board-wrap {
+  max-width: min(100%, calc(100dvh - 300px));
+  margin-inline: auto;
+}
+
+@media (min-width: 62em) {
+  .board-layout {
+    --board-size: clamp(320px, min(calc(100dvh - 350px), calc(100vw - 400px)), 700px);
+    grid-template-columns: calc(var(--board-size) + 34px) minmax(300px, 440px);
+    gap: 20px;
+    align-items: start;
+    justify-content: center;
+  }
+
+  .board-layout .board-wrap {
+    max-width: 100%;
+  }
+}
+
+/* ---- Watch dashboard --------------------------------------------------- */
+
+.watch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.watch-row.feed-row {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+@media (max-width: 61.99em) {
+  .watch-row,
+  .watch-row.feed-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* live feature: one large board + its context */
+.live-feature {
+  display: grid;
+  grid-template-columns: minmax(0, 500px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.live-board .board-wrap {
+  border-radius: var(--mantine-radius-md);
+}
+
+.live-context {
+  min-width: 0;
+  min-height: 260px;
+}
+
+.live-movelist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.move-chip {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 7px;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+}
+
+.thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.thumb .board-wrap {
+  border-radius: var(--mantine-radius-sm);
+}
+
+.gate-empty {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: 20px;
+  align-items: start;
+  padding-top: 4px;
+}
+
+.gate-sample {
+  border-left: 1px solid var(--mantine-color-default-border);
+  padding-left: 20px;
+}
+
+@media (max-width: 61.99em) {
+  .live-feature,
+  .gate-empty {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .thumb-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .gate-sample {
+    border-left: 0;
+    padding-left: 0;
+  }
+}
+
+/* sample replay */
+.sample-board {
+  max-width: 340px;
+  margin: 12px auto 0;
+}
+
+.sample.compact .sample-board {
+  max-width: 280px;
+}
+
+/* journal */
+.journal-feed {
+  height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--mantine-color-default-border);
+  scrollbar-width: thin;
+}
+
+.journal-row {
+  display: grid;
+  grid-template-columns: 62px 48px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.journal-time {
+  color: var(--mantine-color-dimmed);
+}
+
+.journal-level {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 1px 0;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: 3px;
+  color: var(--mantine-color-dimmed);
+}
+
+.journal-level.warning,
+.journal-level.warn {
+  color: var(--mantine-color-orange-6);
+  border-color: var(--mantine-color-orange-6);
+}
+
+.journal-level.error {
+  color: var(--mantine-color-red-6);
+  border-color: var(--mantine-color-red-6);
+}
+
+.journal-text {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* arena ledger */
+.arena-tags {
+  min-width: 0;
+}
+
+.arena-row {
+  padding: 2px 0;
+}
+
+.wdl {
+  display: flex;
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--mantine-color-default-hover);
+  min-width: 40px;
+}
+
+.wdl-w {
+  background: var(--mantine-color-emerald-6);
+}
+
+.wdl-d {
+  background: var(--mantine-color-gray-5);
+}
+
+.wdl-l {
+  background: var(--mantine-color-orange-6);
+}
+
+/* Elo chart */
+.elo-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-grid {
+  stroke: var(--mantine-color-default-border);
+  stroke-width: 1;
+}
+
+.chart-tick,
+.chart-x {
+  fill: var(--mantine-color-dimmed);
+  font-size: 10px;
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--mantine-primary-color-filled);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: chart-draw 700ms ease-out forwards;
+}
+
+@keyframes chart-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.chart-dot {
+  fill: var(--mantine-primary-color-filled);
+}
+
+.chart-dot.champion {
+  fill: var(--mantine-color-body);
+  stroke: var(--mantine-primary-color-filled);
+  stroke-width: 2.5;
+}
+
+.chart-champion-ring {
+  fill: none;
+  stroke: var(--mantine-primary-color-filled);
+  stroke-width: 1.5;
+  opacity: 0.45;
+}
+
+.chart-last {
+  fill: var(--mantine-primary-color-filled);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.chart-best {
+  fill: var(--mantine-color-dimmed);
+  font-size: 10px;
+  font-family: var(--mantine-font-family-monospace);
+}
+
+.chart-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--mantine-color-dimmed);
+}
+
+.chart-empty {
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-line {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* offline variant of the status dot */
+.live-dot.offline {
+  background: var(--mantine-color-gray-5);
+  box-shadow: none;
+}
+
+/* ---- Analysis ----------------------------------------------------------- */
+
+.rail {
+  min-width: 0;
+}
+
+/* engine identity dots */
+.engine-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.engine-dot.fool {
+  background: #2f9e6e;
+}
+
+.engine-dot.stockfish {
+  background: #e8590c;
+}
+
+.eval-card {
+  transition: opacity 200ms ease;
+}
+
+.eval-card.eval-dim {
+  opacity: 0.62;
+}
+
+.eval-divider {
+  height: 1px;
+  background: var(--mantine-color-default-border);
+  margin: 14px 0;
+}
+
+.eval-score {
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+/* expected-white bar: white fill on a dark track, 50% notch */
+.expected {
+  position: relative;
+  height: 10px;
+  border-radius: 99px;
+  background: #5d5d5d;
+  border: 1px solid var(--mantine-color-default-border);
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.expected-fill {
+  height: 100%;
+  background: #f6f8f6;
+  transition: width 300ms ease;
+}
+
+.expected-mid {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.top-move .top-move-san {
+  font-weight: 650;
+  font-size: 12.5px;
+}
+
+.top-move .top-move-meta {
+  color: var(--mantine-color-dimmed);
+  font-size: 10.5px;
+  font-family: var(--mantine-font-family-monospace);
+}
+
+/* setup palette */
+.palette {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.palette-btn {
+  aspect-ratio: 1;
+  border-radius: var(--mantine-radius-sm);
+  border: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-default-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--mantine-color-text);
+}
+
+.palette-btn img {
+  width: 84%;
+  height: 84%;
+}
+
+.palette-btn:hover {
+  background: var(--mantine-color-default-border);
+}
+
+.palette-btn.selected {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 1px;
+}
+
+.move-strip {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.terminal-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--mantine-radius-sm);
+  border: 1px solid var(--mantine-color-orange-6);
+  color: var(--mantine-color-orange-6);
+  margin-bottom: 12px;
+}
+
+/* ---- About ---------------------------------------------------------------- */
+
+.chapter-mark {
+  letter-spacing: 0.22em;
+  white-space: nowrap;
+}
+
+.about-hero {
+  --gold: light-dark(#8a6a2f, #c9a227);
+  --gold-dim: light-dark(#b3a273, #7a6427);
+  --gold-bright: light-dark(#755927, #e3b93e);
+  --card-field: light-dark(#f7f4ea, #262218);
+  --card-ink: light-dark(#37311f, #14110b);
+  --card-paper: light-dark(#efe8d6, #d9d0b8);
+  --card-glow: light-dark(rgba(138, 106, 47, 0.28), rgba(227, 185, 62, 0.3));
+
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  align-items: center;
+  gap: clamp(24px, 6vw, 80px);
+  padding: clamp(28px, 5vw, 48px) !important;
+}
+
+/* the medallion: a CSS-drawn tarot card */
+.tarot-card {
+  width: min(100%, 280px);
+  aspect-ratio: 2 / 3;
+  margin: auto;
+  padding: 10px;
+  border: 1px solid var(--gold);
+  outline: 1px solid var(--gold-dim);
+  outline-offset: 4px;
+  border-radius: 10px;
+  background: var(--card-field);
+  box-shadow: 0 18px 40px -18px light-dark(rgba(35, 30, 15, 0.4), rgba(0, 0, 0, 0.65));
+}
+
+.tarot-inner {
+  height: 100%;
+  border: 1px solid var(--gold-dim);
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: radial-gradient(
+      circle at 50% 34%,
+      var(--card-glow) 0 20%,
+      var(--gold-dim) 20.5% 21%,
+      transparent 21.5%
+    ),
+    var(--card-field);
+}
+
+.tarot-number,
+.tarot-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 11px var(--mantine-font-family-monospace);
+  letter-spacing: 0.2em;
+  color: var(--gold-bright);
+}
+
+.tarot-number {
+  top: 9px;
+}
+
+.tarot-title {
+  bottom: 9px;
+}
+
+.tarot-sun {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 88px;
+  line-height: 1;
+  color: var(--gold-bright);
+  text-shadow: 0 0 20px var(--card-glow);
+}
+
+.tarot-moon {
+  position: absolute;
+  top: 28%;
+  right: 17%;
+  font-size: 30px;
+  color: var(--card-paper);
+}
+
+.tarot-mountains {
+  position: absolute;
+  bottom: 14%;
+  left: -15%;
+  width: 130%;
+  height: 42%;
+  background: var(--card-ink);
+  clip-path: polygon(0 100%, 20% 25%, 37% 65%, 58% 0, 76% 63%, 100% 15%, 100% 100%);
+  border-top: 1px solid var(--gold);
+}
+
+.tarot-traveler {
+  position: absolute;
+  bottom: 24%;
+  left: 48%;
+  font-size: 55px;
+  line-height: 1;
+  color: var(--card-paper);
+  transform: rotate(-10deg);
+  text-shadow: 2px 2px var(--card-ink);
+}
+
+.tarot-stars {
+  position: absolute;
+  top: 49%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--gold-bright);
+  font-size: 17px;
+}
+
+.about-title {
+  font-size: clamp(30px, 4.5vw, 40px);
+  font-weight: 500;
+  line-height: 0.95;
+}
+
+.about-copy {
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--mantine-color-dimmed);
+  max-width: 570px;
+}
+
+.text-link {
+  display: inline-block;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--mantine-primary-color-filled);
+  padding-bottom: 6px;
+  color: var(--mantine-primary-color-filled);
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.text-link span {
+  margin-left: 16px;
+}
+
+.story-card {
+  min-height: 210px;
+}
+
+.story-icon {
+  font-size: 26px;
+  color: var(--mantine-primary-color-filled);
+  line-height: 1;
+}
+
+.learn-panel .learn-close {
+  color: var(--mantine-color-text);
+}
+
+.status-cell {
+  border-left: 3px solid var(--mantine-primary-color-filled);
+}
+
+@media (max-width: 61.99em) {
+  .about-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .tarot-card {
+    width: 210px;
+  }
+
+  .about-intro {
+    text-align: center;
+  }
+
+  .about-copy {
+    margin-inline: auto;
+  }
+
+  .about-title {
+    font-size: 30px;
+  }
+}

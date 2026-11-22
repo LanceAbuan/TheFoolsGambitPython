@@ -890,7 +890,11 @@
     </div>
   </div>
 
-  <!-- FS-8b: the newcomer primer — the whole training loop in story form. -->
+  <!-- FS-8b: the newcomer primer — the whole training loop in story form.
+       It lives INSIDE .watch-grid so its `grid-column: 1 / -1` actually spans,
+       and so the grid's gap separates it from the live panel (as a sibling it
+       butted directly against it: two panels with 0 px between them). -->
+  <div class="watch-grid">
   <section class="panel primer">
     <button
       class="primer-toggle"
@@ -925,7 +929,6 @@
     {/if}
   </section>
 
-  <div class="watch-grid">
     <section class="panel training-board live-panel">
       <div class="section-title">
         <span><i class="live-dot"></i> LIVE GAMES <Tip text={TIP_LIVE_GAMES} label="What is this wall of boards?" /></span>
@@ -1009,28 +1012,34 @@
             <span class="tiny-label">SAMPLE GAME · REPLAY</span>
             <Tip text={TIP_BOARD} label="About the sample game" />
           </div>
-          <div class="board-shell small-board">
-            <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
-            <Board mini fen={current.fen} lastMove={current.lm} />
-            <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
+          <!-- Two columns on wide screens (board | transport + analysis). The
+               single narrow column used to leave ~55 % of this panel empty. -->
+          <div class="sample-body">
+            <div class="board-shell">
+              <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
+              <Board mini fen={current.fen} lastMove={current.lm} />
+              <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
+            </div>
+            <div class="sample-side">
+              <div class="playback">
+                <button class="round-button" onclick={() => step(-1)} aria-label="previous position">←</button>
+                <button class="round-button play-toggle" onclick={toggle} aria-label={playing ? 'pause' : 'play'}>
+                  {playing ? '❙❙' : '▶'}
+                </button>
+                <button class="round-button" onclick={() => step(1)} aria-label="next position">→</button>
+                <span>POSITION {String(frame + 1).padStart(2, '0')} / {String(frames.length).padStart(2, '0')}</span>
+                <input type="range" min="0" max={frames.length - 1} bind:value={frame} oninput={stop} aria-label="timeline" />
+              </div>
+              <div class="analysis-row">
+                <div><small>CURRENT MOVE</small><strong>{current.label}</strong></div>
+                <div><small>POSITION SCORE</small><strong>{score}</strong></div>
+                <div><small>SEARCH DEPTH</small><strong>{depth}</strong></div>
+              </div>
+              {#if regimeText}
+                <p class="regime-line">REGIME <b>{regimeText}</b>{#if liveMetrics?.champion} · CHAMPION <b>{liveMetrics.champion}</b>{/if}</p>
+              {/if}
+            </div>
           </div>
-          <div class="playback">
-            <button class="round-button" onclick={() => step(-1)} aria-label="previous position">←</button>
-            <button class="round-button play-toggle" onclick={toggle} aria-label={playing ? 'pause' : 'play'}>
-              {playing ? '❙❙' : '▶'}
-            </button>
-            <button class="round-button" onclick={() => step(1)} aria-label="next position">→</button>
-            <span>POSITION {String(frame + 1).padStart(2, '0')} / {String(frames.length).padStart(2, '0')}</span>
-            <input type="range" min="0" max={frames.length - 1} bind:value={frame} oninput={stop} aria-label="timeline" />
-          </div>
-          <div class="analysis-row">
-            <div><small>CURRENT MOVE</small><strong>{current.label}</strong></div>
-            <div><small>POSITION SCORE</small><strong>{score}</strong></div>
-            <div><small>SEARCH DEPTH</small><strong>{depth}</strong></div>
-          </div>
-          {#if regimeText}
-            <p class="regime-line">REGIME <b>{regimeText}</b>{#if liveMetrics?.champion} · CHAMPION <b>{liveMetrics.champion}</b>{/if}</p>
-          {/if}
         </div>
       {/if}
 
@@ -1550,13 +1559,28 @@
   }
   /* honest empty state keeps the sample replay, clearly labelled */
   .sample-block {
-    max-width: 440px;
+    max-width: 100%;
   }
   .sample-head {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+  }
+  /* Board + transport/analysis side by side: the old single 440 px column left
+     most of this panel empty and pinned the board to a fixed narrow size. */
+  .sample-body {
+    display: grid;
+    grid-template-columns: minmax(0, 560px) minmax(0, 1fr);
+    gap: 18px;
+    align-items: stretch;
+  }
+  .sample-side {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    min-width: 0;
   }
   .live-grid {
     display: grid;
@@ -1703,6 +1727,12 @@
     }
     .featured-board {
       max-width: 340px;
+    }
+    .sample-body {
+      grid-template-columns: 1fr;
+    }
+    .sample-body .board-shell {
+      max-width: 420px;
     }
   }
   @media (max-width: 820px) {

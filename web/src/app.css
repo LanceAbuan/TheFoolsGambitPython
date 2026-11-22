@@ -800,9 +800,13 @@ h1 {
   padding: 22px 26px;
 }
 .board-shell {
-  max-width: 610px;
-  margin: 20px auto 10px;
-  padding: 0 22px;
+  /* The board fills its host card: the old `max-width: 610px` cap left ~200 px
+     of dead air in the Play card at 1440 px and made the Watch panel look
+     broken at ~950 px. Full width + the card's own padding is the gutter. */
+  width: 100%;
+  max-width: 100%;
+  margin: 18px 0 10px;
+  padding: 0;
   position: relative;
 }
 .coordinates {

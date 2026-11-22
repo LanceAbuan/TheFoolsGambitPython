@@ -26,32 +26,32 @@
   const nnEloText = $derived(bestKnownElo(nnMetrics) !== null ? String(Math.round(bestKnownElo(nnMetrics)!)) : null);
 
   const OPPONENT_META: Record<Opponent, { name: string; blurb: string }> = {
-    fool: { name: 'The Fool', blurb: 'Practice spirit of the house.' },
-    stockfish: { name: 'Stockfish', blurb: 'The shadow that calculates.' },
-    nn: { name: 'The Fool (NN)', blurb: 'A mind trained on the board.' },
+    fool: { name: 'The Fool', blurb: 'Built-in practice bot. Runs offline in your browser.' },
+    stockfish: { name: 'Stockfish', blurb: 'Traditional chess engine. The strongest opponent.' },
+    nn: { name: 'The Fool (trained)', blurb: 'The neural network trained on this site.' },
   };
   const cardName = $derived(OPPONENT_META[opponent].name);
   const cardBlurb = $derived(OPPONENT_META[opponent].blurb);
   /** Live Elo belongs to the trained NN; the other foes have no ledger number yet. */
   const ratingText = $derived(opponent === 'nn' && nnEloText !== null ? nnEloText : '—');
 
-  // FS-8b: plain-English helper line + tooltip copy. Blurbs name the option in
-  // the same breath they describe it, so no prior knowledge is assumed.
+  // FS-8b: plain-English helper line + tooltip copy. No jargon: a newcomer
+  // should know who they are playing without knowing what an NN is.
   const TIP_OPPONENT =
-    'Three ways to play. The Fool — a friendly offline practice bot that lives in your browser, no connection needed. Stockfish — a world-class traditional chess engine, the strongest opponent here. The Fool (NN) — the bot that trained itself by playing thousands of games; its rating is real.';
+    'Three ways to play. The Fool — a practice bot that runs entirely in your browser, no connection needed. Stockfish — a traditional chess engine, the strongest opponent here. The Fool (trained) — the neural network this site is teaching to play; its rating comes from real arena games.';
   const TIP_DIFFICULTY =
     'How hard the opponent tries, in effort terms: how many candidate moves it inspects per turn — deeper thinking, slower moves. Wandering is a gentle start; Enlightened digs the deepest.';
   const TIP_ELO_CARD =
-    "A chess rating — higher means a stronger player. A casual club player is around 1200; world champions are near 2800. The Fool's number is earned by beating earlier versions of itself in arena matches. A dash (—) means this opponent has no rating yet.";
+    'A chess rating — higher means a stronger player. A casual club player is around 1200; world champions are near 2800. The trained bot earns its number by beating earlier versions of itself in arena matches. A dash (—) means this opponent has no rating yet.';
   const opponentHelp = $derived.by(() => {
     if (opponent === 'stockfish')
-      return 'A world-class traditional chess engine — the strongest opponent here. It calculates moves; it does not learn.';
+      return 'A traditional chess engine. It calculates the strongest move it can find; it does not learn.';
     if (opponent === 'nn') {
       return nnReady
-        ? 'The bot that trained itself by playing thousands of games against itself. Its rating is real.'
-        : 'The self-trained bot. No trained model yet — training happens live on the Watch page, and the option unlocks the moment a champion is produced.';
+        ? 'The neural network this site has been training. Its rating is earned in arena matches against earlier versions of itself.'
+        : 'The trained bot. There is no champion checkpoint yet, so it stays locked — training runs live on the Watch page, and this option unlocks when one is crowned.';
     }
-    return 'An offline practice bot that lives in your browser — no connection needed. A relaxed first game.';
+    return 'A built-in practice bot that runs in your browser — no connection needed. A relaxed first game.';
   });
 
   /** Panel-top mode chip: honest about where the moves are coming from. */
@@ -78,7 +78,7 @@
       const iWon = game.winner === (game.playColor === 'white' ? 'w' : 'b');
       return iWon ? 'The game is decided — you prevail. ✦' : 'The game is decided — The Fool prevails.';
     }
-    if (game.thinking) return opponent === 'nn' ? 'The Fool (NN) is thinking…' : 'The Fool is thinking…';
+    if (game.thinking) return opponent === 'nn' ? 'The Fool (trained) is thinking…' : 'The Fool is thinking…';
     if (game.turn !== (game.playColor === 'white' ? 'w' : 'b')) return 'The opponent is on the move…';
     if (game.inCheck) return 'You are in check.';
     return 'Awaiting your move';
@@ -189,10 +189,10 @@
           <Tip text={TIP_OPPONENT} label="About the opponent options" />
         </div>
         <select id="opponent" bind:value={opponent}>
-          <option value="fool">The Fool · Practice spirit</option>
-          <option value="stockfish">Stockfish · The shadow</option>
+          <option value="fool">The Fool — practice bot (offline)</option>
+          <option value="stockfish">Stockfish — classic engine</option>
           <option value="nn" disabled={!nnReady}>
-            {nnReady ? `The Fool (NN) · Elo ${nnEloText}` : 'The Fool (NN) — not trained yet'}
+            {nnReady ? `The Fool (trained) · Elo ${nnEloText}` : 'The Fool (trained) — unlocks when a champion exists'}
           </option>
         </select>
         <p class="select-help" class:ok={opponent === 'nn' && nnReady}>

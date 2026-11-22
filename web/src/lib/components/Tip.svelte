@@ -219,8 +219,11 @@
     max-width: min(280px, calc(100vw - 16px));
     max-height: 45vh;
     overflow: auto;
-    background: var(--paper);
-    color: var(--ink-text);
+    /* Tooltips must stay readable in every theme. `--panel2`/`--paper` are the
+       one pair whose contrast holds everywhere; the old `--paper` background +
+       `--ink-text` was white-on-cream in classical-dark. */
+    background: var(--panel2);
+    color: var(--paper);
     border: 1px solid var(--gold);
     padding: 9px 11px;
     font: 12px/1.55 var(--serif);
