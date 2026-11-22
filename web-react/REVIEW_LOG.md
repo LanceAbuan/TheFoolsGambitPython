@@ -81,7 +81,36 @@ centrepiece, and one real layout bug.
 `fix(watch): …`, `style(analysis): …`.
 
 ## Pass 2 (tag `p02`, 2026-11-22, production build after fix round 1)
-20/20 captured, 0 horizontal overflow, 0 console errors. Verification in progress: 5 per-page
-subagent reads (4 shots each — a single 20-shot subagent read hit the provider request-size cap;
-image reviews are now split per page).
+20/20 captured, 0 horizontal overflow, 0 console errors. Read via 5 per-page subagent reads
+(a single 20-shot subagent read hit the provider request-size cap; image reviews are split per page).
+
+### Verified landed (spot list)
+Play two-column layout; About rewrite (zero tarot/ornaments/left-borders); Watch merged stats with
+real Gate hint and derived losses ("0W 16D 0L" correct); no chart gradient fill; shared gutters;
+no bottom UPDATED strip; FEN ellipsis; no "−0.00"; labeled Flip; no WHITE POV labels; Home flat hero;
+footer both texts at 390px.
+
+### Pass-2 defects found
+- **P2-1** Uppercase badges everywhere ("TRAINING LIVE", "WHITE TO MOVE", "HELD", "REPLAY · ILLUSTRATIVE", "DEPTH 16", "LIVE") — **Mantine's Badge CSS applies `text-transform: uppercase` by default**, so sentence-case strings rendered uppercase. [theme: Badge `textTransform: 'none'`; intentionally-typed uppercase mono chips like "DEMO · PRACTICE" stay as authored]
+- **P2-2** Theme toggle shows a moon icon while the page renders dark — `colorScheme === 'dark'` is false for `'auto'`. [ColorSchemeToggle now uses `useComputedColorScheme`]
+- **P2-3** Disabled "Undo" still borderless — Mantine's disabled style sets `border-color: transparent`, my earlier rule didn't override it. [rule now sets `border-color: var(--mantine-color-default-border)`; verified live: bg `rgb(46,46,46)`, border `rgb(66,66,66)`, dimmed text]
+- **P2-4** Footer floats mid-page on short desktop pages (~125–190px dead background below it). [AppShell main is now a flex column with `min-height: 100dvh`, routes grow, footer pinned]
+- **P2-5** Elo inconsistency: About showed 810 (`bestKnownElo` regime-map peak) vs 801 elsewhere; Play used the same. [About + Play now show the champion's current `metrics.elo`]
+- **P2-6** Dark secondary text at the readability floor (footer right text, status labels, blurbs, ledger timestamps ~3.5–4:1). [dark `--mantine-color-dimmed` raised one step to gray-5]
+- **P2-7** Board coordinates illegible, worst on dark squares (~8px effective, 0.72 opacity). [coord text 12px/600, fills raised to 0.9/0.95 with brighter tokens]
+- **P2-8** Dark board squares nearly uniform (#2f4a3d vs #556459) — black pieces survived only via outlines. [dark palette lightened: `#40584b` / `#5b6a5e`]
+- **P2-9** Analysis: board grid inset ~52px vs page header on desktop (grid was centered with a fixed 440px rail). [grid stretches to the container; rail `minmax(300px, 1fr)`]
+- **P2-10** Analysis: Stockfish move rows un-jammed but scores sat next to the move, not right-aligned — Mantine `Button justify` doesn't reach the label wrapper. [MoveButton wraps both spans in a `top-move-inner` flex with `space-between`]
+- **P2-11** Analysis: green Fool arrow (#2f9e6e) camouflaged against green squares — single-stroke arrows, no casing. [Board now draws white-cased two-layer arrows; brand color kept]
+- **P2-12** Watch: journal card retained a ~220px internal void (fixed 240px scroll area with 1 line). [feed height auto, max-height 240]
+- **P2-13** Watch: live-games card left-column void. [sample replay board reduced 340→260/220]
+- **P2-14** Watch: W/D/L bar renders 100% gray on all-draw matches — degenerate, carries nothing the adjacent mono score doesn't. [WdlBar removed — subtraction]
+- **P2-15** Watch: Elo chart micro-labels ~5px effective at 390px (560-unit viewBox scales text down). [tick/x 12px, last 14px, best 12px]
+- **P2-16 (accepted)** Row-1 card bottoms unequal on desktop — cards hug content by design (`align-items: start`); stretching would re-introduce internal voids. Data-honest heights.
+- **P2-17 (accepted)** Chart champion ring sits on the champion checkpoint's 810 point while current Elo reads 801 — the ring marks the checkpoint, caption is accurate; Elo drifts between gauntlets.
+- **P2-18 (accepted)** Progress-bar fill differences between engines (+0.01 → ~58% vs +0.20 → ~52%) are engine-provided `expected_white` values, not a mapping bug. Verified mapping is direct ×100%.
+- **P2-19 (logged, deferred)** 390px nav is one tight row (fits, no overflow); a menu/priority-nav is a feature decision — logged to docs/TODO, not silently changed.
+
+**Pass-2 disposition:** P2-1…P2-15 fixed and deployed (round 2); P2-16…P2-19 accepted/deferred with rationale.
+
 
