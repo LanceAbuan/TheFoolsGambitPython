@@ -260,4 +260,9 @@ Thirteenth consecutive clean pass (5–17).
 Live and gate/sample states both verified on watch; data uniform. Fourteenth consecutive clean
 pass (5–18).
 
+## Pass 19 (tag `p19`, 2026-11-23, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Fifteenth consecutive clean pass (5–19). Gate/sample panel (replay controls, disclaimer) verified
+on watch; data uniform across all shots.
+
 
