@@ -63,6 +63,10 @@ class RunState:
     champion_tag: str | None
     champion_elo: float
     profile_signature: dict[str, object]
+    # U9: the champion lineage's Glicko-2 record {r, rd, sigma}; None on
+    # state files written before U9 (restore falls back to the ledger
+    # replay, then the default prior — never a crash).
+    champion_glicko: dict[str, float] | None = None
 
 
 def profile_signature(profile: object) -> dict[str, object]:
@@ -173,13 +177,16 @@ def save_run_state(
     champion_tag: str | None,
     champion_elo: float,
     profile: object,
+    champion_glicko: dict[str, float] | None = None,
 ) -> Path:
     """Persist everything needed to rebuild the run exactly (FS-5).
 
     Buffer tensors go in as an fp16 npz blob (see _BUFFER_FP16): the pickled
     per-example list this replaced cost ~26 KB/example and made night-profile
     state files multi-GB. Older state files are pruned to the newest
-    STATE_FILES_TO_KEEP.
+    STATE_FILES_TO_KEEP. `champion_glicko` (U9) is additive: state files
+    from before it existed simply lack the key, and restore reads it with a
+    default so a crash-restart across the upgrade stays resume-exact.
     """
     examples = list(buffer.buffer)
     payload = {
@@ -196,6 +203,7 @@ def save_run_state(
         "play_rng_state": play_rng.bit_generator.state,
         "champion_tag": champion_tag,
         "champion_elo": champion_elo,
+        "champion_glicko": champion_glicko,
         "profile_signature": profile_signature(profile),
         "regime": paths.regime,
         "run_id": paths.run_id,
@@ -257,6 +265,7 @@ def restore_run_state(
         champion_tag=state.get("champion_tag"),  # type: ignore[arg-type]
         champion_elo=float(state.get("champion_elo", 800.0)),  # type: ignore[arg-type]
         profile_signature=dict(state.get("profile_signature", {})),  # type: ignore[arg-type]
+        champion_glicko=state.get("champion_glicko") if isinstance(state.get("champion_glicko"), dict) else None,
     )
     log.info(
         "[RESUME] restored: iterations=%d steps=%d games=%d buffer=%d champion=%s",

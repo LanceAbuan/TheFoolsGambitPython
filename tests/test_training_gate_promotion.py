@@ -112,8 +112,11 @@ class TestWithinRunPromotion:
         """A candidate that WINS its arena promotes mid-run, and every later
         gate arenas a frozen champion snapshot: a distinct object whose weights
         equal the promoted checkpoint exactly. Match outcomes are scripted
-        (win then loss) so the gate mechanics are deterministic; measuring
-        real strength is the ablation bench's job, not a unit test's.
+        (16-game win then 16-game loss) so the gate mechanics are
+        deterministic; measuring real strength is the ablation bench's job,
+        not a unit test's. Matches are gate-sized (16 games) because U9's RD
+        cap deliberately refuses promotion to sub-gate matches (a 4-game
+        match lands at RD ~208 > cap 150).
         """
         runs = tmp_path / "runs"
         data = tmp_path / "data"
@@ -128,9 +131,9 @@ class TestWithinRunPromotion:
                     "champion_digest": _digest(champion),
                 }
             )
-            if len(calls) == 1:  # first match: candidate wins 3-1 -> promote
-                return MatchResult(candidate=ctag, champion=htag, games=4, wins=3, draws=1, losses=0)
-            return MatchResult(candidate=ctag, champion=htag, games=4, wins=0, draws=0, losses=4)
+            if len(calls) == 1:  # first match: candidate wins 12-4 -> promote
+                return MatchResult(candidate=ctag, champion=htag, games=16, wins=12, draws=4, losses=0)
+            return MatchResult(candidate=ctag, champion=htag, games=16, wins=0, draws=0, losses=16)
 
         monkeypatch.setattr(pipeline, "_arena_match", scripted)
 

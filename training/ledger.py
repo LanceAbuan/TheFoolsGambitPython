@@ -3,6 +3,13 @@
 `data/arena.jsonl` — one line per arena match:
     {run_id, regime, checkpoint, opponent, games, wins, draws, elo, ...}
 
+U9 additive fields `glicko_r` / `glicko_rd` carry the candidate's own
+Glicko-2 record after the gate (every gated candidate now has a rating
+record, promoted or not). The `elo` field keeps meaning exactly what it
+meant before (the champion lineage's post-match Elo on a promoted row,
+None otherwise); readers must tolerate rows from before U9 that carry no
+glicko keys at all (`recompute_glickos` and the server backfill both do).
+
 `data/metrics.json` — flat dict consumed by the backend's `GET /api/metrics`
 (server/api/train.py merges it over {elo, loss, win_rate, games_played}).
 The writer is read-modify-write with an atomic replace so a concurrent reader
@@ -10,7 +17,9 @@ never sees a torn file.
 
 Per-checkpoint Elo is recomputed from the ledger itself (§5.1: "per-checkpoint
 Elo computed from the ledger") with a simple symmetric K-factor update per
-match. SPRT/uncertainty bounds are optional later per §5.1.
+match; U9 adds the same replay for Glicko-2 records (`recompute_glickos`),
+which also applies the one-period RD decay to every lineage a row's rating
+period leaves inactive.
 """
 from __future__ import annotations
 
@@ -20,6 +29,8 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from .glicko import GlickoRating, rate_inactive, rate_player
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +60,11 @@ class LedgerEntry:
     # None to base because of its NOT NULL schema; the JSONL source of truth
     # carries no claim.
     elo: float | None
+    # U9 additive fields: the candidate's own Glicko-2 record after the gate,
+    # written for promoted AND held candidates alike (a held candidate now
+    # has a rating record even though `elo` stays None). None on pre-U9 rows.
+    glicko_r: float | None = None
+    glicko_rd: float | None = None
     kind: str = "arena"
     losses: int = 0
     promoted: bool = False
@@ -121,6 +137,54 @@ def recompute_elos(
         elos[candidate] = cand_elo + delta
         elos[opponent] = opp_elo - delta
     return elos
+
+
+def recompute_glickos(
+    entries: list[dict[str, object]],
+    initial: GlickoRating | None = None,
+) -> dict[str, GlickoRating]:
+    """Replay the ledger chronologically into per-checkpoint Glicko records.
+
+    Each arena row is one rating period: both parties update from the
+    match's games against each other's pre-period rating, and every OTHER
+    known lineage decays one period of inactivity (`rate_inactive`).
+    Tolerance rules (the live ledger mixes formats):
+      * pre-U9 rows carry no `kind` and no glicko keys — treated as arena
+        rows when games > 0 and the opponent is real, exactly like
+        `recompute_elos` treats them;
+      * baseline rows (games == 0 or opponent "none"/"") only seed the
+        checkpoint's record;
+      * self-play rows (candidate == opponent, the pre-F-1 bug) carry no
+        information — mirrored from `recompute_elos`' net-zero behavior,
+        they only seed the record.
+    """
+    start = initial or GlickoRating()
+    ratings: dict[str, GlickoRating] = {}
+
+    def seed(tag: str) -> GlickoRating:
+        return ratings.setdefault(tag, start)
+
+    for entry in entries:
+        candidate = str(entry.get("checkpoint", ""))
+        opponent = str(entry.get("opponent", ""))
+        games = int(entry.get("games", 0) or 0)
+        if not candidate:
+            continue
+        if games <= 0 or opponent in ("none", "") or candidate == opponent:
+            seed(candidate)
+            continue
+        wins = float(entry.get("wins", 0) or 0)
+        draws = float(entry.get("draws", 0) or 0)
+        losses = games - wins - draws
+        cand_pre, opp_pre = seed(candidate), seed(opponent)
+        candidate_scores = [1.0] * int(wins) + [0.5] * int(draws) + [0.0] * max(int(losses), 0)
+        champion_scores = [1.0 - s for s in candidate_scores]
+        ratings[candidate] = rate_player(cand_pre, [(opp_pre, s) for s in candidate_scores])
+        ratings[opponent] = rate_player(opp_pre, [(cand_pre, s) for s in champion_scores])
+        for tag, rating in ratings.items():
+            if tag not in (candidate, opponent):
+                ratings[tag] = rate_inactive(rating)
+    return ratings
 
 
 class MetricsWriter:

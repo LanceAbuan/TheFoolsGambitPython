@@ -1513,11 +1513,26 @@ def parallel_self_play(
 
 @dataclass(frozen=True)
 class ArenaConfig:
-    """Match settings for §5.1 arena gating (reduced sims, both colors)."""
+    """Match settings for §5.1 arena gating (reduced sims, both colors).
+
+    The `sprt_*` fields are the transport for U9 sequential early-stopping:
+    the pipeline copies the gate's LadderConfig SPRT knobs into them via
+    `replace()` (LadderConfig stays the single source of truth) and
+    `Arena.match` stops the match at an even game count the moment the LLR
+    crosses a bound. Disabled by default: at the default 16-game gates the
+    bounds are unreachable (max |LLR| ~ 16 x 0.074 = 1.19 < ln 19 = 2.944),
+    so enabling it is behavior-preserving tonight and caps the cost of any
+    future larger match sizes.
+    """
 
     num_simulations: int = 128  # reduced vs training's 400-800
     max_plies: int = 200
     games: int = 16  # forced even below, so colors are balanced
+    sprt_early_stop: bool = False
+    sprt_elo0: float = 0.0
+    sprt_elo1: float = 10.0
+    sprt_alpha: float = 0.05
+    sprt_beta: float = 0.05
 
 
 def play_match_game(

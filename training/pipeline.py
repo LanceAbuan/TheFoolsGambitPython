@@ -29,17 +29,20 @@ import torch
 
 from .encoder import NUM_PLANES
 from .evaluator import QueuedNNEvaluator
+from .glicko import GlickoRating, expected_games_to_accept, match_honesty
 from .hf import upload_checkpoint
 from .journal import TrainingJournal
 from .ladder import (
     Arena,
     LadderConfig,
     MatchResult,
+    PromotionDecision,
+    decide_promotion,
     due_snapshot_minutes,
-    should_promote,
     update_elo,
+    update_match_pair,
 )
-from .ledger import ArenaLedger, LedgerEntry, MetricsWriter, recompute_elos
+from .ledger import ArenaLedger, LedgerEntry, MetricsWriter, recompute_elos, recompute_glickos
 from .model import GambitNet, ModelConfig
 from .regimes import RegimeConfig, RunPaths, build_data_provider, create_run, get_regime
 from .resume import (
@@ -214,8 +217,12 @@ def _champion_snapshot(
     return frozen
 
 
-def _load_champion_pointer(champion_file: Path) -> tuple[Path, float] | None:
-    """Read champion.json -> (checkpoint path, elo); None when absent/broken."""
+def _load_champion_pointer(champion_file: Path) -> tuple[Path, float, dict[str, float] | None]:
+    """Read champion.json -> (checkpoint path, elo, glicko dict | None).
+
+    The glicko key is U9-additive; pointers written before it existed load
+    as (path, elo, None) and the caller falls back to other seeds.
+    """
     try:
         data = json.loads(champion_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -224,7 +231,8 @@ def _load_champion_pointer(champion_file: Path) -> tuple[Path, float] | None:
     if not path.exists():
         log.warning("[CHAMPION] pointer %s missing checkpoint %s", champion_file, path)
         return None
-    return path, float(data.get("elo", 800.0))
+    glicko = data.get("glicko")
+    return path, float(data.get("elo", 800.0)), glicko if isinstance(glicko, dict) else None
 
 
 def _apply_warmstart(
@@ -298,6 +306,11 @@ def run_training(
     champion_file = Path(base_dir) / regime.name / CHAMPION_FILENAME
     champion_tag: str | None = None
     champion_elo = profile.ladder.base_elo
+    # U9: the champion lineage's Glicko-2 record (r, RD, sigma). Seeded from
+    # (in order) the resumed run state, the ledger replay for the champion
+    # tag, the champion.json pointer, then the default prior. Kept separate
+    # from champion_elo: the Elo series keeps its exact old meaning.
+    champion_glicko: GlickoRating | None = None
 
     # --- FS-5 resume: exact rebuild from persisted state -------------------
     state = load_latest_run_state(paths) if is_resume else None
@@ -311,6 +324,13 @@ def run_training(
         iteration_start = restored.iterations_completed
         champion_tag = restored.champion_tag
         champion_elo = restored.champion_elo
+        if restored.champion_glicko is not None:
+            champion_glicko = GlickoRating.from_dict(restored.champion_glicko)
+            log.info(
+                "[RESUME] champion glicko record r=%.1f rd=%.1f",
+                champion_glicko.r,
+                champion_glicko.rd,
+            )
         log.info(
             "[RESUME] run %s continues at iteration %d (steps %d, games %d)",
             resolved_run_id,
@@ -347,6 +367,25 @@ def run_training(
             champion_model, champion_tag, champion_elo = loaded[0], loaded[1], pointer[1]
             log.info("[CHAMPION] reigning champion %s (elo %.1f)", champion_tag, champion_elo)
 
+    # --- U9: champion Glicko bootstrap (resume-state -> ledger -> pointer) --
+    # A state file written before U9 carries no glicko key; the ledger replay
+    # reconstructs the champion lineage's record from its recorded gates so a
+    # crash-restart across the upgrade keeps a continuous rating series.
+    if champion_glicko is None and champion_tag is not None:
+        champion_glicko = recompute_glickos(ledger.read()).get(champion_tag)
+        if champion_glicko is not None:
+            log.info(
+                "[GLICKO] champion %s record rebuilt from ledger: r=%.1f rd=%.1f",
+                champion_tag,
+                champion_glicko.r,
+                champion_glicko.rd,
+            )
+    if champion_glicko is None and pointer is not None and pointer[2] is not None:
+        champion_glicko = GlickoRating.from_dict(pointer[2])
+    if champion_glicko is None and champion_tag is not None:
+        champion_glicko = GlickoRating()
+        log.info("[GLICKO] champion %s seeded at the default prior (r=1500, rd=350)", champion_tag)
+
     summary = RunSummary(
         run_id=resolved_run_id,
         regime=regime.name,
@@ -361,6 +400,7 @@ def run_training(
     last_policy_loss: float | None = None
     last_value_loss: float | None = None
     last_match: MatchResult | None = None
+    last_decision: PromotionDecision | None = None
     collect_seconds_total = 0.0
     session_games = 0  # games collected in THIS invocation (resume-aware g/h)
 
@@ -522,6 +562,7 @@ def run_training(
             opponent_for_event = champion_tag or "unknown"
             if champion_model is None:
                 # First checkpoint becomes champion by default; recorded as baseline.
+                first_glicko = champion_glicko or GlickoRating()
                 ledger.append(
                     LedgerEntry(
                         run_id=resolved_run_id,
@@ -532,6 +573,8 @@ def run_training(
                         wins=0,
                         draws=0,
                         elo=provisional_elo,
+                        glicko_r=first_glicko.r,
+                        glicko_rd=first_glicko.rd,
                         kind="baseline",
                         promoted=True,
                     )
@@ -541,20 +584,43 @@ def run_training(
                 # later gate play the model against itself (0.5 forever).
                 champion_model = _champion_snapshot(ckpt_path, device, model)
                 champion_tag, champion_elo = tag, provisional_elo
+                champion_glicko = first_glicko
                 promote = True
                 log.info("[GATE] %s becomes the first champion (baseline elo %.1f)", tag, provisional_elo)
                 last_match = None
+                last_decision = None
                 opponent_for_event = "none"
             else:
+                # U9: LadderConfig is the single source of truth for the SPRT
+                # knobs; they are copied onto the match config so `Arena.match`
+                # can stop sequentially (gate economics — decisive matches
+                # cost fewer games; at 16-game gates this is a provable no-op).
+                arena_config = replace(
+                    profile.ladder.arena,
+                    sprt_early_stop=True,
+                    sprt_elo0=profile.ladder.sprt_elo0,
+                    sprt_elo1=profile.ladder.sprt_elo1,
+                    sprt_alpha=profile.ladder.sprt_alpha,
+                    sprt_beta=profile.ladder.sprt_beta,
+                )
                 match: MatchResult = _arena_match(
-                    model, champion_model, device, profile.ladder.arena, tag, champion_tag or "unknown"
+                    model, champion_model, device, arena_config, tag, champion_tag or "unknown"
                 )
                 last_match = match
                 arena_games_total += match.games
                 _, champion_elo = update_elo(
                     provisional_elo, champion_elo, match, profile.ladder.k_factor
                 )
-                promote = should_promote(match, profile.ladder.promote_win_rate)
+                # U9: both parties take a Glicko-2 update from the same games —
+                # the candidate keeps its own record even when it does not
+                # promote (previously candidates had no rating record at all).
+                candidate_glicko = GlickoRating()
+                candidate_glicko, champion_glicko = update_match_pair(
+                    candidate_glicko, champion_glicko or GlickoRating(), match
+                )
+                decision = decide_promotion(match, candidate_glicko, profile.ladder)
+                last_decision = decision
+                promote = decision.promote
                 ledger.append(
                     LedgerEntry(
                         run_id=resolved_run_id,
@@ -565,6 +631,8 @@ def run_training(
                         wins=match.wins,
                         draws=match.draws,
                         elo=champion_elo if promote else None,
+                        glicko_r=candidate_glicko.r,
+                        glicko_rd=candidate_glicko.rd,
                         losses=match.losses,
                         promoted=promote,
                     )
@@ -574,16 +642,33 @@ def run_training(
                     # just-saved checkpoint; never alias the live model.
                     champion_model = _champion_snapshot(ckpt_path, device, model)
                     champion_tag = tag
-                    log.info("[GATE] %s promoted (score %.3f >= %.2f)",
-                             tag, match.win_rate, profile.ladder.promote_win_rate)
+                    log.info(
+                        "[GATE] %s promoted (%s: score %.3f, llr %.3f in [%.3f, %.3f], rd %.1f)",
+                        tag,
+                        decision.reason,
+                        match.win_rate,
+                        decision.llr,
+                        decision.lower,
+                        decision.upper,
+                        candidate_glicko.rd,
+                    )
                 else:
-                    log.info("[GATE] champion %s holds (score %.3f < %.2f)",
-                             champion_tag, match.win_rate, profile.ladder.promote_win_rate)
+                    log.info(
+                        "[GATE] champion %s holds (%s: score %.3f vs %.2f, llr %.3f, rd %.1f)",
+                        champion_tag,
+                        decision.reason,
+                        match.win_rate,
+                        profile.ladder.promote_win_rate,
+                        decision.llr,
+                        candidate_glicko.rd,
+                    )
 
             # --- champion + metrics feed -------------------------------------
             _save_champion(champion_file, champion_model, champion_tag or tag, champion_elo,
-                           resolved_run_id, ckpt_path)
-            elo_map = recompute_elos(ledger.read(), profile.ladder.base_elo, profile.ladder.k_factor)
+                           resolved_run_id, ckpt_path, champion_glicko)
+            ledger_rows = ledger.read()
+            elo_map = recompute_elos(ledger_rows, profile.ladder.base_elo, profile.ladder.k_factor)
+            glicko_map = recompute_glickos(ledger_rows)
             summary.arena_games = arena_games_total
             summary.champion = champion_tag
             summary.elo = champion_elo
@@ -596,12 +681,31 @@ def run_training(
                 champion=champion_tag,
                 regime=regime.name,
                 checkpoints={k: round(v, 1) for k, v in elo_map.items()},
+                # U9: per-checkpoint Glicko records + the champion's own record
+                # + the last gate's SPRT state, for the Watch/metrics feed.
+                glicko={
+                    k: {"r": round(v.r, 1), "rd": round(v.rd, 1)} for k, v in glicko_map.items()
+                },
+                champion_glicko=champion_glicko.to_dict() if champion_glicko is not None else None,
+                sprt=last_decision.to_dict() if last_decision is not None else None,
                 parallel_games=effective_parallel,
             )
 
             # --- FS-6 journal: one event per arena gate ----------------------
             # Arena events carry the full required key set too (loss family
-            # reflects the iteration that produced this checkpoint).
+            # reflects the iteration that produced this checkpoint). U9 adds
+            # the SPRT state (LLR + bounds + verdict), both parties' Glicko
+            # records, and the match-size honesty report so the feed can show
+            # what the gate size can actually claim.
+            candidate_glicko_after = (
+                glicko_map.get(tag, GlickoRating()) if last_match is not None else (champion_glicko or GlickoRating())
+            )
+            champion_glicko_after = champion_glicko or GlickoRating()
+            honesty = (
+                match_honesty(candidate_glicko_after, champion_glicko_after, last_match.games)
+                if last_match is not None
+                else None
+            )
             journal.append(
                 {
                     "kind": "arena",
@@ -614,12 +718,31 @@ def run_training(
                     "losses": last_match.losses if last_match is not None else 0,
                     "arena_result": {
                         "win_rate": last_match.win_rate,
-                        "promoted": last_match is not None and should_promote(
-                            last_match, profile.ladder.promote_win_rate
-                        ),
+                        "promoted": promote,
+                        "decision": last_decision.to_dict() if last_decision is not None else None,
                     }
                     if last_match is not None
                     else None,
+                    "sprt": last_decision.to_dict() if last_decision is not None else None,
+                    "glicko": {
+                        "candidate_r": round(candidate_glicko_after.r, 2),
+                        "candidate_rd": round(candidate_glicko_after.rd, 2),
+                        "champion_r": round(champion_glicko_after.r, 2),
+                        "champion_rd": round(champion_glicko_after.rd, 2),
+                    },
+                    "honesty": honesty.to_dict() if honesty is not None else None,
+                    "sprt_games_to_accept": (
+                        expected_games_to_accept(
+                            last_match.win_rate,
+                            last_match.draws / last_match.games if last_match.games else 0.0,
+                            elo0=profile.ladder.sprt_elo0,
+                            elo1=profile.ladder.sprt_elo1,
+                            alpha=profile.ladder.sprt_alpha,
+                            beta=profile.ladder.sprt_beta,
+                        )
+                        if last_match is not None
+                        else None
+                    ),
                     "elo": champion_elo,
                     "loss": last_loss,
                     "policy_loss": last_policy_loss,
@@ -642,6 +765,7 @@ def run_training(
                 champion_tag=champion_tag,
                 champion_elo=champion_elo,
                 profile=profile,
+                champion_glicko=champion_glicko.to_dict() if champion_glicko is not None else None,
             )
 
             # --- FS-5: per-regime HF publish (no-op without HF_TOKEN) --------
@@ -700,9 +824,20 @@ def _arena_match(
 
 
 def _save_champion(
-    champion_file: Path, model: GambitNet, tag: str, elo: float, run_id: str, checkpoint_path: Path
+    champion_file: Path,
+    model: GambitNet,
+    tag: str,
+    elo: float,
+    run_id: str,
+    checkpoint_path: Path,
+    glicko: GlickoRating | None = None,
 ) -> None:
-    """champion.json is a POINTER to the champion checkpoint (.pt holds weights)."""
+    """champion.json is a POINTER to the champion checkpoint (.pt holds weights).
+
+    U9: carries the champion lineage's Glicko record additively (`glicko`
+    key) so a fresh run seeding from the pointer continues the rating
+    series; older pointers without the key are read fine.
+    """
     champion_file.parent.mkdir(parents=True, exist_ok=True)
     champion_file.write_text(
         json.dumps(
@@ -710,6 +845,7 @@ def _save_champion(
                 "tag": tag,
                 "checkpoint_path": str(checkpoint_path),
                 "elo": elo,
+                "glicko": glicko.to_dict() if glicko is not None else None,
                 "run_id": run_id,
                 "model_config": model.config.to_dict(),
                 "updated_at": time.time(),
