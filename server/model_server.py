@@ -213,6 +213,16 @@ def loaded() -> Champion | None:
     return _singleton.loaded
 
 
+def current() -> Champion | None:
+    """Singleton: current champion (mtime-checked reload; None when absent).
+
+    Public wrapper over :meth:`ModelServer.current` so callers that need the
+    model itself (position analysis) use the exact same singleton/reload path
+    as the play opponent, and tests can swap it without touching private state.
+    """
+    return _singleton.current()
+
+
 def best_move(session: Session) -> chess.Move | None:
     """Singleton: blocking NN reply (see :meth:`ModelServer.best_move`)."""
     return _singleton.best_move(session)

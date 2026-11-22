@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import backfill, config, db, engine, model_server, reaper, telemetry
-from .api import games, play, train
+from .api import analyze, games, play, train
 from .config import ALLOWED_ORIGINS
 from .ratelimit import TokenBucketRateLimit
 from .ws import router as ws_router
@@ -53,6 +53,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         stopped = await engine.shutdown_engines()
         if stopped:
             log.info("stopped %d stockfish process(es) on shutdown", stopped)
+        if await analyze.shutdown():
+            log.info("stopped analysis stockfish on shutdown")
         model_server.shutdown()
 
 
@@ -71,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(play.router, prefix="/api")
     app.include_router(games.router, prefix="/api")
     app.include_router(train.router, prefix="/api")
+    app.include_router(analyze.router, prefix="/api")
     app.include_router(ws_router)
 
     @app.get("/api/health")
