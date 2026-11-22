@@ -208,4 +208,11 @@ the usual checklist. Functional prod probe re-run after this pass: `rect.light` 
 Gate/sample panel verified again (caption, badges, centered board); journal wrap at 390px clean;
 all tokens, rows, pins stable. Fifth consecutive clean pass (5–9).
 
+## Pass 10 (tag `p10`, 2026-11-23, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Flagged item investigated and resolved: About/Home "Elo 793" (was 801) is **live data drift, not a
+UI defect** — gate 22 concluded and `ckpt-001536-0768` dethroned `ckpt-000128-0064` (8W/8D/0L,
+Elo 792.9) — the first promotion after 22 successful defences; UI renders the new champion
+faithfully across Home, About, and the ledger. Gate/sample panel verified on all 4 watch shots.
+
 
