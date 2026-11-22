@@ -55,13 +55,61 @@ monotonicity, restart-persistence probe). Zero console errors, zero HTTP ≥400.
       client's `GameArchiveEntry` (web/src/lib/api/http.ts) and the WS `lobby` payload use
       `game_id`. Benign today (UI only consumes arena entries via `run_id`) but a latent trap;
       align on one shape.
-- [ ] **Idea — undo after game over.** Server 409s undo on finished games (UI matches by
-      disabling Undo when over). Consider allowing take-backs after a loss for casual play.
+- [x] **Idea — undo after game over.** SERVER-SIDE LANDED (2026-11-21, `51edb43`): take-backs on
+      mate/stalemate/resigned games (finishing ply pair reverts, resignations un-resign; abandoned
+      stays 409). Client slice (button + re-render) in flight tonight.
 - Note (not a defect): POST rate limit (20-token burst, 2/s refill, per IP) answers 429 with
       CORS headers — browsers are unaffected; script/API integrations must pace ~2 POST/s.
 - Note: promotion verified via API (accepted; `=Q` in moves + PGN round-trip). The promo-picker
       UI path was browser-verified earlier by client-dev (WP-B) and isn't re-driven here only
       because reaching promotion through UI clicks needs a long manual game.
+
+## Live-run harvest (2026-11-21, `second-light` — findings from the first real overnight run)
+
+First real training run on the modernized pipeline. Findings from live observation,
+full-page screenshots, and the U9 audit — state at scoring time:
+
+- [x] **Promotion ladder works in production** — first promotion in project history
+      (13:55: `ckpt-000128-0064` dethroned `ckpt-000004-0004` 0.750 ≥ 0.55), then four
+      consecutive successful defenses (0.500 holds); 7/7 correct gate verdicts. Closes
+      the F-1 audit finding with a live demonstration, not just a test.
+- [x] **U9 Glicko-2 + SPRT** — LANDED (`d7d1bff`): rating error bars, honest
+      draw-saturated SPRT behavior (all-draw = zero information = undecided), RD-capped
+      promotion rule. Additive ledger format; activates on next launch; tonight's state
+      file verified loadable through the new code (crash-restart safe).
+- [ ] **Watch: false "Training runs offline" during title matches** — arena gates don't
+      stream per-ply, so the grid fell back to the pre-launch empty state during 20–45 min
+      gates (owner hit this live; screenshot on record). Fix in flight: three-state panel
+      (IDLE / TITLE MATCH / LIVE) derived client-side from received frames + arrival clock.
+- [ ] **Rating surfaces contradict each other** — headline 793.4 vs regime leaderboard 800
+      for the same regime, same moment. Root cause (pinned by U9 audit): `backfill_arena`
+      runs only at server boot (`server/main.py:27-28`) so every second-light ledger row is
+      missing from SQLite, and `server/db.py:306` coerces honest `elo: null` (no-claim rows,
+      F-5) into 800.0. backend-dev slice in flight: periodic idempotent backfill,
+      null-preserving semantics, regime map agreed by construction; canonical rating =
+      trainer-owned lineage series (headline), per-checkpoint maps demoted to dated
+      diagnostics.
+- [ ] **200-ply cap auto-adjudicates draws** — `training/selfplay.py:1301-1304`,
+      `:1555-1569`, `:514-516` force `1/2-1/2` on truncation. Games now hit the cap
+      routinely as nets sharpen: teaches shuffle=draw to the value head (self-play targets)
+      and zeroes SPRT information (arena draw rate). Morning fix (NOT mid-run): KataGo-style
+      eval adjudication — both sides' final root values |v| > θ≈0.9 agreeing in sign → ±1,
+      else draw; no extra NN calls.
+- [ ] **Gate economics degrade with strength** — gates 1–5 ≈ 8–10 min, gate 6 21.6 min,
+      gate 7 45+ min; game lengths doubled (35–173 → 127–200 plies) as blunders vanished.
+      Pre-registered response **P-U9-4** (next run): 32 games × 100 plies (same ply budget;
+      fresh-candidate RD 121.6→88.8) + `promote_rd_cap` 150→100. Sequential SPRT is
+      enabled and proven inert at N≤32 — it becomes decisive only in big anchored sessions.
+- [ ] **"BEST STREAK: —" dead stat on Watch** — no code path populates it; remove the
+      display (no dead numbers per the research standard) or wire a real metric later.
+- [ ] **Arena results panel: fossils oldest-first** — pre-F-1 self-vs-self rows (both sides
+      the same model, elo 800) dominate the panel while tonight's real rows sit below the
+      fold. Reorder newest-first; keep the fossils visible with an honest footnote.
+- [ ] **U6 multiprocess shards** — the remaining 3–4× throughput lever (66–77 games/h is
+      honest but modest vs the 15.5k bench that didn't extrapolate). Bench-gated: needs the
+      idle GPU after the run.
+- [ ] **Gumbel A/B at gate quality** — 6.14× bench throughput is real; strength evidence is
+      not (draw-saturated 0.50 h2h, see N2 in the ledger). Needs the GPU.
 
 ## Optimization bench log (standing review loop, converged → optimization phase)
 

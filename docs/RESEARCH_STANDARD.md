@@ -79,13 +79,28 @@ win-rate) will be judged.
 | # | Prediction | Status |
 |---|------------|--------|
 | N1 | (Rust gate) wired gambit_core yields ≥3× e2e sims/sec vs the first-light baseline at p16 | **✗ MISS — 1.1× measured** (interleaved paired arms, p16: 1.087×/1.110×/1.13× by game length). Attribution: wireable share (movegen/encoding) is ~4.5% of GIL demand; ~82% of per-sim cost lives in `_simulate`'s tree/PUCT ops, out of M3's no-search-change scope. Bit-exactness held everywhere (perft 4.87M, 5,990-position order fuzz, e2e identical visit counts/examples), so the slice lands as a 1.1× free win + the foundation for a search-in-Rust slice. N3's "combined <12 min" prediction now needs the search-policy lever (Gumbel) to carry it. |
-| N2 | (Gumbel gate) gumbel@64–100 sims ≥4× games/h vs puct@400 with head-to-head win-rate ≥0.35 vs baseline | pending |
-| N3 | (combined overnight) iteration time at the modern recipe < 12 min/iteration (vs ≥71 min baseline) | pending |
-| N4 | (streaming) per-move live events flow end-to-end: journal → WS → Watch grid, at ≥1 event/s sustained during self-play | pending |
+| N2 | (Gumbel gate) gumbel@64–100 sims ≥4× games/h vs puct@400 with head-to-head win-rate ≥0.35 vs baseline | **✓ hit in bench, caveat stated** — 6.14× games/h measured (U1 ablation, interleaved paired arms) and h2h 0.500 ≥ 0.35, but the h2h was draw-saturated (zero decisive games), so the strength conjunct carries near-zero information. Gumbel was therefore honestly **gated OFF** for second-light (launch decision: PUCT + playout-cap). The throughput claim is bench-grade, not gate-grade; the real A/B at gate quality remains queued. |
+| N3 | (combined overnight) iteration time at the modern recipe < 12 min/iteration (vs ≥71 min baseline) | **✗ MISS — 49 min/iteration measured** (gate 5→6: 49.0 min = 28.8 min selfplay+train + 21.6 min gate; gate 7 trending ~2× gate 6, cadence may stretch past 70 min). Attribution: (a) game lengths **doubled** as the nets stopped blundering (first games 35–173 plies → latest 127–200, most at the 200 cap) — a success of training the cost model didn't anticipate; (b) recipe deviation: the <12 min path ran through Gumbel (per N1's scoring) and second-light launched PUCT+cap instead (honest call, see N2); (c) 66–77 games/h vs the 3k–20k floor model retired at P3. Remaining levers, pre-registered: U6 multiprocess shards (3–4×), gate re-sizing P-U9-4 (32 games × 100 plies, same ply budget), cap-adjudication (200-ply auto-draw currently teaches shuffle=draw). |
+| N4 | (streaming) per-move live events flow end-to-end: journal → WS → Watch grid, at ≥1 event/s sustained during self-play | **✓ PASS — ~2.4 events/s sustained** (33,226 live journal lines over ≈230 min of self-play across iterations 0–6; WS→grid leg browser-verified live: LIVE·CONNECTED, boards updating, zero console errors, screenshot evidence). Known gap, fix dispatched: arena gates don't stream per-ply, so the grid showed a false "training runs offline" state during 20–45 min gates — three-state indicator (IDLE/TITLE MATCH/LIVE) in flight. |
 
 Scoring happens in this table, in place, with the actual numbers beside
 each verdict. Missing a prediction is *good* science — it means the model of
 the system was wrong and now it's less wrong.
+
+### second-light (night profile, scratch regime, PUCT + playout-cap, Rust fastpath — launched 12:41 local, still running at scoring time)
+
+**Run yield (first ~6 h):** the first promotion in project history —
+`ckpt-000128-0064` beat frozen `ckpt-000004-0004` 8W/8D/0L (0.750 ≥ 0.55) at
+13:55 and then defended the title in four consecutive gates (all 0.500 holds).
+Ladder record: hold / **promote** / hold ×4 — seven gates, seven correct
+verdicts. Loss fell monotonically 5.68 → 3.29 over six iterations; buffer
+~10k examples; 66–77 games/h. All six real gates replayed through U9's
+Glicko-2 + SPRT after the fact: every verdict unchanged (the promotion was a
+threshold+RD decision; SPRT correctly stays undecided on draw-saturated
+samples — all-draw means zero information); champion r=1557.4, RD=54.4 vs
+pre-registered 54±3 (**P-U9-1 hit**). Gate economics degrade as the nets
+improve (gates 1–5 ≈ 8–10 min, gate 6 21.6 min, gate 7 45+ min) — the
+pre-registered response is P-U9-4's gate re-sizing plus cap-adjudication.
 
 ## Review cadence
 
