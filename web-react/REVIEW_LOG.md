@@ -220,4 +220,14 @@ faithfully across Home, About, and the ledger. Gate/sample panel verified on all
 New champion (`ckpt-001536-0768`, Elo 793) renders correctly on Home/About/ledger. Seventh
 consecutive clean pass (5–11).
 
+## Pass 12 (tag `p12` + re-shoot `p12b`, 2026-11-23, same bundle — stability cycle)
+20/20 + 8 re-shots captured, 0 overflow, 0 errors. Read via 5 per-page sweeps + 1 targeted
+re-verification. **Clean — no regressions.**
+Flagged item investigated and resolved: pass-12 home/about dark-mobile shots showed "Elo 801 /
+1200 games" while the other six showed "793 / 1152". Root cause: **gate 23 concluded mid-capture**
+(`ckpt-001600-0800` lost its challenge; metrics file rewritten: elo 793→801.25, games 1152→1200).
+Re-shoot `p12b` confirms all 8 shots agree with `/api/metrics` (Elo 801, 1200 games, champion
+ckpt-001536-0768). App renders a live changing feed faithfully — no caching bug, no UI defect.
+Also: live eval bar verified mid-self-play ("white +0.97"), latest move single-rendered.
+
 
