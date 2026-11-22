@@ -152,9 +152,37 @@ full-page screenshots, and the U9 audit — state at scoring time:
       brass hairlines only. Three themes (Classical Light, Classical Dark, Refined Tarot)
       with per-theme board palettes, `<html data-theme>` hooks, localStorage persistence,
       and a footer radiogroup switcher (no floating pill). Verified by a 24-shot matrix
-      (2 views × 3 themes × mobile/desktop at 390/1440 px): 24/24, zero overflow, zero
+      (4 views × 3 themes × mobile/desktop at 390/1440 px): 24/24, zero overflow, zero
       console errors, switcher `static` and inside the footer everywhere; footer control
       measured at 390 px with no label clipping. `svelte-check` 0/0, build clean.
+- [x] **Classical themes left the About card empty** — FIXED (`503a6fb`, deployed). Hiding
+      the tarot scene under `classical-*` (correct: it is tarot artwork) left a 280 × 420 px
+      bordered box with only "0" and "THE FOOL". Classical now renders an engraved piece
+      medallion — brass outer ring, hairline inner ring, ♞ glyph, rule beneath — on the ivory
+      or ebony card field; Refined Tarot keeps the full scene (`display: none` for the
+      medallion). Verified 6/6 (2 sizes × 3 themes): medallion inside the card at 164 px
+      desktop / 119 px mobile, zero overflow, zero console errors.
+- [x] **Theme switcher keyboard semantics** — VERIFIED (Playwright, deployed bundle):
+      exactly one tab stop (roving tabindex), ArrowLeft/Right/Up/Down cycle with wrap, Home
+      and End jump to the ends, `aria-checked` and `<html data-theme>` move together, focus
+      follows the selection, 2 px `:focus-visible` ring present on every step, and the choice
+      persists after reload via `fsg:settings`.
+- [x] **`/watch` said "IDLE" during a running gate** — FIXED (`b4a7f6f`, deployed). The
+      gate hint required a journal write within 120 s, but a gate is *defined* by the journal
+      going silent (40–80 min), so `gate_in_progress` was structurally false in exactly the
+      window it existed for; a page opened mid-gate showed LIVE GAMES · IDLE while a title
+      match ran. Now: `trainer_alive` (cached 30 s psutil probe for `scripts/train.py`,
+      run-id scoped, never raises) + an existing arena row + >180 s journal silence, exposed
+      as an additive `trainer_alive` key. Verified against the real process table
+      (stale journal → true, streaming → false) and end-to-end on an isolated `:8001`
+      harness: TITLE MATCH at 1440/390 px, zero overflow, zero console errors; live `:8000`
+      during self-play still reads 11 IN PLAY. 11 new tests; full suite 490 passed.
+- [ ] **Journal header says "LIVE FEED" during a 40–80 min gate** (open, low priority). The
+      panel is connected and holds backlog, so the label is true about the socket but reads
+      as "new entries are arriving" while the diary is silent by design. Proposal: keep the
+      label, add the newest entry's relative age to the footer (`N LINES · LAST 15M AGO ·
+      FOLLOW ON`) or switch the label to a neutral quiet state. Do not change the state
+      machine without the same screenshot proof used above.
 
 ## Optimization bench log (standing review loop, converged → optimization phase)
 
