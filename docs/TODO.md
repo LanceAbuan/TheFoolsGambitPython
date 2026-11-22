@@ -126,28 +126,35 @@ full-page screenshots, and the U9 audit — state at scoring time:
       test): the game played on :8000 before the 18:49 restart (`5a01dfddf3a2`, 6 plies)
       rehydrated after boot with full state, `status: active`, and the new additive
       `reason` field. Closes the review-loop "restore active play sessions on boot" item.
-- [ ] **Fresh-load deaf window on production (open)** — 3/3 fresh `/watch` loads connected
-      WS ("LIVE · CONNECTED") yet received no train frames for 1–3 min while the journal
-      streamed at the same second; a raw node probe on the same server got 33–37 frames in
-      15 s. Not reproducible in harnesses (:8001 first metrics in 96–299 ms, 5/5) nor
-      server-side by the client probe. backend-dev slice in flight: falsification plan over
-      hub send serialization / event-loop blocking (ledger replay + journal scans on the
-      loop, Windows file contention with the trainer's open handles) / subscribe-path race.
-      Documented honestly as server-crash-loop-correlated but not yet root-caused.
+- [x] **Fresh-load deaf window on production** — FIXED in two halves (`2aedcc7` + `c0d7e97`).
+      Server: the hub had one shared send path, so a single ping-answering non-reading
+      consumer parked the whole fan-out (proven: 11→1.8→0 fps with one parked reader while
+      a fresh mid-wedge reader got zero live frames). `server/ws.py` now gives every
+      subscriber a bounded queue (512) with one pump per connection; overflow drops only the
+      slow consumer and closes its transport with code 1013 (bounded 5 s) so the client
+      reconnects instead of hanging. Ledger replay + journal scans moved to
+      `asyncio.to_thread`, off the event loop. 7 regression tests in `tests/test_ws_hub.py`.
+      Client: `web/src/lib/api/ws.ts` watchdog — 10 s tick, `train` topic, 25 s stale
+      threshold, 15 s refocus threshold, 2 s half-open grace, one reconnect owner; verified
+      in real Chrome (29.8 s recovery, one reconnect, clean teardown). Second, independent
+      cause of the false "IDLE" copy: `GATE_QUIET_MS` parsed as `0` because
+      `Number(null) === 0` when the query param was absent; now falls back to 90 000 ms.
+      Fresh Watch loads now show LIVE · CONNECTED · STREAMING with no false idle.
 - [x] **Owner-requested: smooth move animation** — LANDED (`0e38547`, deployed): pieces
       glide 210 ms on provable single-ply deltas (same piece id, origin matches lastUci,
       type unchanged); everything else snaps (coalesced frames, fake deltas, promotions,
       flips). Castling glides king+rook only on the exact castle pattern. Human's own
       Play-page moves snap (no artificial lag). `prefers-reduced-motion` respected.
       16/16 harness checks; mid-glide screenshot on record.
-- [ ] **Owner-requested: UI redesign (in flight)** — owner verdict: "ugly", wants
-      "supermodern, super clean … chess-like or classical … ultra modern" design language.
-      Direction locked: Apple-grade minimal system (frosted nav, soft elevation, pill
-      controls, generous whitespace, system sans) recolored to a classical chess identity —
-      warm ivory/ebony surfaces, walnut/oxblood single accent, brass hairlines only.
-      Delivery: three-theme switcher (Classical Light, Classical Dark, one identity theme)
-      with per-theme board palettes, `data-theme` structural hooks, localStorage
-      persistence. Worker slice in flight; deploy + screenshot review on report.
+- [x] **Owner-requested: UI redesign** — LANDED (`c0d7e97`, deployed). Apple-grade minimal
+      system (frosted nav, soft elevation, pill controls, generous whitespace) recolored to
+      a classical chess identity — warm ivory/ebony surfaces, walnut/oxblood single accent,
+      brass hairlines only. Three themes (Classical Light, Classical Dark, Refined Tarot)
+      with per-theme board palettes, `<html data-theme>` hooks, localStorage persistence,
+      and a footer radiogroup switcher (no floating pill). Verified by a 24-shot matrix
+      (2 views × 3 themes × mobile/desktop at 390/1440 px): 24/24, zero overflow, zero
+      console errors, switcher `static` and inside the footer everywhere; footer control
+      measured at 390 px with no label clipping. `svelte-check` 0/0, build clean.
 
 ## Optimization bench log (standing review loop, converged → optimization phase)
 
