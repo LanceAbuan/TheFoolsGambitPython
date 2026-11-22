@@ -135,12 +135,12 @@ text.coord {
 }
 
 text.coord.on-light {
-  fill: light-dark(#2e4536, #f2f7f4);
-  opacity: 0.9;
+  fill: light-dark(#1d2f24, #f2f7f4);
+  opacity: 0.95;
 }
 
 text.coord.on-dark {
-  fill: light-dark(#1d2f24, #dcebe2);
+  fill: light-dark(#14231b, #dcebe2);
   opacity: 0.95;
 }
 

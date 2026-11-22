@@ -245,11 +245,7 @@ function FeaturedGame({ slot, movesPerSec }: { slot: LiveSlot; movesPerSec: numb
           <Badge variant="light" color="emerald" radius="sm" size="sm" leftSection={<IconActivityHeartbeat size={12} />}>
             {movesPerSec > 0 ? `${movesPerSec.toFixed(1)} moves/s` : 'streaming'}
           </Badge>
-          {slot.lastSan ? (
-            <Badge variant="default" radius="sm" size="sm" className="mono">
-              {slot.lastSan}
-            </Badge>
-          ) : null}
+          {/* The latest move is already the last "Recent moves" chip — no duplicate badge. */}
         </Group>
 
         <div>

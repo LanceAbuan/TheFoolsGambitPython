@@ -15,9 +15,16 @@ body,
   flex: 1 0 auto;
 }
 
+/* Light scheme: secondary text one step up (gray-6 measured 3.3:1 on the
+   footer band and captions — below the 4.5:1 floor for small text).
+   :root bumps specificity above Mantine's runtime-injected vars sheet. */
+:root[data-mantine-color-scheme='light'] {
+  --mantine-color-dimmed: var(--mantine-color-gray-7);
+}
+
 /* Dark scheme: one step lighter secondary text — gray-on-gray was at the
    readability floor (status labels, footer right text, blurbs). */
-[data-mantine-color-scheme='dark'] {
+:root[data-mantine-color-scheme='dark'] {
   --mantine-color-dimmed: var(--mantine-color-gray-5);
 }
 
