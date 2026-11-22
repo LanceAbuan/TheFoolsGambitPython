@@ -144,4 +144,30 @@ dark labels readable. Home/Analysis: sentence-case badges, resolved toggle icon,
 
 **Pass-3 disposition:** P3-1…P3-8 fixed and deployed (rounds 3–4); verification in pass 4.
 
+## Pass 4 (tag `p04`, 2026-11-22, production build after fix rounds 3–4)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page subagent reads with pixel-sampled
+WCAG math. **The live Fool eval bar and the pinned featured game both verified working on the
+real feed** ("Fool eval · white −0.08" → 49% bar; pin advanced only after the game ended).
+
+### Verified landed
+Footer pinned in both themes on all pages; deep-green primary labels 5.86:1; disabled Undo chrome;
+nav pills 9.98–15.85:1; move rows flush both edges (5× crops); cased arrows; H1 balanced at 390px;
+About Elo 801; watch featured/info column centered; journal hugs; ledger mono-only.
+
+### Pass-4 defects found
+- **P4-1** Latest move rendered twice on Watch (meta-row badge + last "Recent moves" chip; absent
+  entirely on desktop-dark — inconsistent). [duplicate badge removed — subtraction]
+- **P4-2** Board coordinate ink ~2.1:1 on cream squares in LIGHT theme. [light fills darkened to
+  `#1d2f24`/`#14231b` at 0.95]
+- **P4-3 (systemic)** Muted secondary text below AA everywhere: `#868E96` light (3.2–3.3:1),
+  `#828282` dark (3.5–4.0:1). First fix attempt ([data-mantine-color-scheme] overrides) **lost the
+  cascade to Mantine's runtime-injected vars sheet** — root-caused via live computed-style probe.
+  [:root-scoped overrides win; verified live: dark dimmed now `#adb5bd` (~8:1), light `#495057` (~7:1)]
+- **P4-4 (accepted)** Dark-theme black pieces read via white outlines; squares now two-tone —
+  asset-level improvement possible later (custom piece set), logged to TODO if it recurs.
+- **P4-5 (watch, pass 5)** Mini-board caption possibly clipped ("e4t") at 390px — low-confidence
+  read; re-check in pass 5 zoom.
+
+**Pass-4 disposition:** P4-1…P4-3 fixed and deployed (round 5); P4-4 accepted; P4-5 re-checked next pass.
+
 
