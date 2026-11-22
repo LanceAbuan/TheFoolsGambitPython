@@ -35,6 +35,9 @@
         <div class="tarot-mountains"></div>
         <div class="tarot-traveler">♟</div>
         <div class="tarot-stars">✦　✧　✦</div>
+        <!-- Classical themes drop the tarot scene; this engraved piece
+             medallion keeps the card intentional instead of empty. -->
+        <div class="tarot-minimal" aria-hidden="true"><span>♞</span></div>
         <div class="tarot-title">THE FOOL</div>
       </div>
     </div>

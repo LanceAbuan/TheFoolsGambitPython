@@ -1299,6 +1299,9 @@ h1 {
   color: var(--gold-bright);
   font-size: 17px;
 }
+.tarot-minimal {
+  display: none;
+}
 .about-intro h2 {
   font-size: 40px;
   font-weight: 500;
@@ -1481,11 +1484,52 @@ h1 {
 :root[data-theme^='classical-'] .site-footer .footer-star {
   display: none;
 }
-/* the about card becomes a minimal card: number + title only */
+/* the about card becomes an engraved plate: brass card edge, ivory/ebony
+   field, and a piece medallion instead of the tarot scene */
 :root[data-theme^='classical-'] .tarot-card {
-  border-color: transparent;
-  outline: none;
+  border-color: var(--brass);
+  border-radius: 14px;
+  outline: 1px solid var(--line-soft);
+  outline-offset: 4px;
   box-shadow: var(--panel-shadow);
+}
+:root[data-theme^='classical-'] .tarot-inner {
+  border-color: var(--hairline);
+  background: var(--panel);
+}
+:root[data-theme^='classical-'] .tarot-inner::after {
+  content: '';
+  position: absolute;
+  left: 24%;
+  right: 24%;
+  bottom: 17%;
+  height: 1px;
+  background: var(--hairline);
+}
+:root[data-theme^='classical-'] .tarot-minimal {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  top: 17%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 64%;
+  aspect-ratio: 1;
+  border: 1px solid var(--brass);
+  border-radius: 50%;
+  color: var(--paper);
+}
+:root[data-theme^='classical-'] .tarot-minimal::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+}
+:root[data-theme^='classical-'] .tarot-minimal span {
+  font-size: 64px;
+  line-height: 1;
+  transform: translateY(-3px);
 }
 :root[data-theme^='classical-'] .hero-art {
   border-color: transparent;
