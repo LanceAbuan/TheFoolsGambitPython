@@ -113,4 +113,35 @@ footer both texts at 390px.
 
 **Pass-2 disposition:** P2-1…P2-15 fixed and deployed (round 2); P2-16…P2-19 accepted/deferred with rationale.
 
+## Pass 3 (tag `p03`, 2026-11-22, production build after fix round 2)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page subagent reads (the analysis one died on
+request size once — retried in a fresh session).
+
+### Verified landed
+Play: Undo chrome, coords legible, squares two-tone, grid flush both edges. Watch: journal hugs,
+ledger mono-only, chart legible at 390px, shared gutters, footer flush on watch. About: Elo 801,
+dark labels readable. Home/Analysis: sentence-case badges, resolved toggle icon, no gradient.
+
+### Pass-3 defects found
+- **P3-1** Footer pin CSS shipped **without its `routes-grow` class attached to the content
+  wrapper** — dead background still below the footer on short desktop pages (home/about).
+  [Box wrapper added in App.tsx; verified structurally in pass 4]
+- **P3-2** Analysis: move rows still centered — `width: 100%` on the inner span resolved against
+  Mantine's content-sized label wrapper. [`.mantine-Button-label` forced block/100%; verified live:
+  san left 446, meta right 943 within row 437–952]
+- **P3-3** Primary-button label contrast in dark (~2.5–3:1 white on `emerald-4`). [`primaryShade`
+  7/7 → white on `#1f7250` ≈ 5.3:1 both themes]
+- **P3-4** Watch: dead region right of the featured board (info column top-aligned vs tall board).
+  [`align-items: center` on `.live-feature`]
+- **P3-5** Home hero orphan ("public." alone on line 2 at 390px). [`text-wrap: balance`]
+- **P3-6** Watch: under-board coordinate strip near-invisible in dark. [opacity 0.62 → 0.8]
+- **P3-7 (user report)** Featured live game **jumped between parallel games and vanished** —
+  `slots[0]` re-sorts by last update, and ended games drop after a 4 s TTL. [featured game is now
+  pinned until it actually leaves the feed, then re-pins; thumbs exclude the featured game]
+- **P3-8 (user request)** No watchable "main game". [pinned game + live **Fool eval bar** under the
+  board: debounced `POST /api/analyze` (32 visits, abortable, paused when the game ends), shared
+  `ExpectedBar`/`evalScoreText` component now also used by Analysis]
+
+**Pass-3 disposition:** P3-1…P3-8 fixed and deployed (rounds 3–4); verification in pass 4.
+
 
