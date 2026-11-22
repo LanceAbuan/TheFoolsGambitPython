@@ -170,4 +170,21 @@ About Elo 801; watch featured/info column centered; journal hugs; ledger mono-on
 
 **Pass-4 disposition:** P4-1…P4-3 fixed and deployed (round 5); P4-4 accepted; P4-5 re-checked next pass.
 
+## Pass 5 (tag `p05`, 2026-11-22, production build after fix round 5)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page subagent reads (pixel-sampled where noted).
+
+### Result: clean sweep — zero defects across all 20 shots
+- Dimmed-token fix verified with sampled ratios: light `#495057` on white = **8.18:1**; dark `#ADB5BD`
+  on card `#2E2E2E` = **6.54:1** — AA cleared everywhere the token is used.
+- Play: light-theme cream-square coordinate ink fixed (near-black-green, legible at 1x); no regressions.
+- Watch: latest move renders once; **Fool eval bar live with numeric scores** ("white +0.16" mobile,
+  pending-state on one desktop capture — timing, not layout); featured game pinned (Game 532→539
+  advance only on game end); mini-board captions zoomed 5× — pass-4 "e4t" was valid UCI `h8f7`.
+- About: Elo 801 intact; hierarchy intact after token change.
+- Analysis: clean; engine-unavailable state text not exercised this pass (both engines responded) —
+  deferred to a later pass.
+
+**Pass-5 disposition:** no fixes required. Loop continues (passes 6–20) as verification cycles; any
+regression restarts the fix→re-capture cadence. PR evidence set: pass01 (before) vs pass05 (after).
+
 
