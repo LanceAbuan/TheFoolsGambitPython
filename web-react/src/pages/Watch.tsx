@@ -152,17 +152,6 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
-function WdlBar({ wins, draws, losses }: { wins: number; draws: number; losses: number }) {
-  const total = Math.max(wins + draws + losses, 1);
-  return (
-    <div className="wdl" aria-hidden>
-      {wins > 0 ? <span className="wdl-w" style={{ flex: wins / total }} /> : null}
-      {draws > 0 ? <span className="wdl-d" style={{ flex: draws / total }} /> : null}
-      {losses > 0 ? <span className="wdl-l" style={{ flex: losses / total }} /> : null}
-    </div>
-  );
-}
-
 function ArenaRow({ row }: { row: ArenaResult }) {
   const ckpt = typeof row.ckpt === 'string' ? row.ckpt : typeof row.checkpoint === 'string' ? row.checkpoint : '';
   const opponent = typeof row.opponent === 'string' ? row.opponent : '';
@@ -187,8 +176,9 @@ function ArenaRow({ row }: { row: ArenaResult }) {
           {promoted ? 'Promoted' : 'Held'}
         </Badge>
       </Group>
-      <Group gap={8} mt={7} wrap="nowrap">
-        <WdlBar wins={score.w} draws={score.d} losses={score.l} />
+      {/* The mono score text carries exact W/D/L — a bar adds nothing on
+          degenerate matches (e.g. all draws) and was removed. */}
+      <Group gap={10} mt={7} wrap="nowrap">
         <Text fz="xs" className="mono" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
           {score.w}W {score.d}D {score.l}L
         </Text>

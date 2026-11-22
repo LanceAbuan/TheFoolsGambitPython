@@ -102,13 +102,14 @@ function MoveButton({
       variant="default"
       size="compact-sm"
       className="top-move"
-      justify="space-between"
       fullWidth
       onClick={onClick}
       title={`Play ${san}`}
     >
-      <span className="mono top-move-san">{san}</span>
-      <span className="top-move-meta">{meta}</span>
+      <span className="top-move-inner">
+        <span className="mono top-move-san">{san}</span>
+        <span className="top-move-meta">{meta}</span>
+      </span>
     </Button>
   );
 }
