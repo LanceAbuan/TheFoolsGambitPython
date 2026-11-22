@@ -22,6 +22,7 @@ import {
 import { Chess } from 'chess.js';
 import { Board } from '../components/Board';
 import { EloChart } from '../components/EloChart';
+import { ExpectedBar, evalScoreText, useFoolEval } from '../components/ExpectedBar';
 import { useWatchFeed, type JournalEntry, type LiveSlot } from '../lib/hooks/useWatchFeed';
 import { games as fetchGames, type ArenaResult } from '../lib/api/http';
 import {
@@ -206,6 +207,15 @@ function JournalRow({ entry }: { entry: JournalEntry }) {
 
 function FeaturedGame({ slot, movesPerSec }: { slot: LiveSlot; movesPerSec: number }) {
   const recent = slot.moves.slice(-10);
+  const evalState = useFoolEval(slot.ended ? null : slot.fen);
+  const evalLabel =
+    evalState.state === 'thinking'
+      ? 'Fool is scoring…'
+      : evalState.state === 'ready'
+        ? `Fool eval · white ${evalScoreText(evalState.cp, evalState.mate)}`
+        : evalState.state === 'unavailable'
+          ? 'Fool eval unavailable'
+          : 'Fool eval';
   return (
     <div className="live-feature">
       <div className="live-board">
@@ -215,6 +225,12 @@ function FeaturedGame({ slot, movesPerSec }: { slot: LiveSlot; movesPerSec: numb
           orientation="white"
           interactive={false}
         />
+        <div className="featured-eval" aria-live="off">
+          <ExpectedBar value={evalState.expectedWhite} />
+          <Text fz="xs" c="dimmed" className="mono" mt={4}>
+            {evalLabel}
+          </Text>
+        </div>
       </div>
       <Stack gap="sm" className="live-context">
         <Stack gap={2}>
@@ -308,8 +324,23 @@ export function Watch() {
   const gate = metrics?.gate_in_progress === true;
   const elo = typeof metrics?.elo === 'number' ? Math.round(metrics.elo) : null;
   const chart = useMemo(() => chartPoints(metrics?.checkpoints, champion), [metrics?.checkpoints, champion]);
-  const featured = slots[0] ?? null;
-  const thumbs = slots.slice(1, 5);
+
+  // Stable featured game: the slot list is sorted by last update, so taking
+  // slots[0] directly makes the big board jump to whichever parallel game moved
+  // last. Pin a game until it actually leaves the feed (ended / TTL), then
+  // re-pin to the newest one.
+  const [pinnedGame, setPinnedGame] = useState<number | null>(null);
+  const featured = useMemo(() => {
+    if (pinnedGame !== null) {
+      const pinned = slots.find((s) => s.game === pinnedGame);
+      if (pinned) return pinned;
+    }
+    return slots[0] ?? null;
+  }, [pinnedGame, slots]);
+  useEffect(() => {
+    if (featured && featured.game !== pinnedGame) setPinnedGame(featured.game);
+  }, [featured, pinnedGame]);
+  const thumbs = slots.filter((s) => s.game !== featured?.game).slice(0, 4);
 
   useEffect(() => {
     if (follow && feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight;

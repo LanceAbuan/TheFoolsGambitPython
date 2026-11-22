@@ -33,6 +33,7 @@ import {
   IconSpeakerphone,
 } from '@tabler/icons-react';
 import { Board, type BoardHint } from '../components/Board';
+import { ExpectedBar, evalScoreText } from '../components/ExpectedBar';
 import {
   analyze,
   type AnalyzeResponse,
@@ -56,15 +57,6 @@ const TERMINAL_TEXT: Record<TerminalKind, (turn: 'white' | 'black') => string> =
   fivefold: () => 'Draw — fivefold repetition',
 };
 
-/** White-POV score label: `+0.36`, `−M4`, `—`. Mate 0 (position is mate) shows via the banner. */
-function scoreText(cp: number | null, mate: number | null): string {
-  if (mate !== null && mate !== 0) return mate > 0 ? `+M${mate}` : `−M${Math.abs(mate)}`;
-  if (cp === null || !Number.isFinite(cp)) return '—';
-  const v = cp / 100;
-  const s = Math.abs(v).toFixed(2);
-  return v > 0 ? `+${s}` : v < 0 ? `−${s}` : s;
-}
-
 function qText(q: number): string {
   const v = Math.abs(q) < 0.005 ? 0 : q;
   return v > 0 ? `+${v.toFixed(2)}` : v < 0 ? `−${Math.abs(v).toFixed(2)}` : '0.00';
@@ -76,16 +68,6 @@ function samePosition(a: string | null | undefined, b: string | null | undefined
   const fa = a.trim().split(/\s+/);
   const fb = b.trim().split(/\s+/);
   return fa[0] === fb[0] && fa[1] === fb[1] && fa[2] === fb[2];
-}
-
-function ExpectedBar({ value }: { value: number | null }) {
-  const w = value === null ? 50 : Math.max(0, Math.min(1, value)) * 100;
-  return (
-    <div className="expected" role="img" aria-label={`White expected score ${Math.round(w)} percent`}>
-      <div className="expected-fill" style={{ width: `${w}%` }} />
-      <div className="expected-mid" aria-hidden />
-    </div>
-  );
 }
 
 function MoveButton({
@@ -174,7 +156,7 @@ function FoolCard({
         </Text>
       ) : (
         <>
-          <Text className="eval-score">{scoreText(engine.score_cp, engine.mate)}</Text>
+          <Text className="eval-score">{evalScoreText(engine.score_cp, engine.mate)}</Text>
           <ExpectedBar value={engine.expected_white} />
           <Stack gap={4} mt="sm">
             {engine.top.slice(0, 3).map((m) => (
@@ -260,14 +242,14 @@ function StockfishCard({
         </Text>
       ) : (
         <>
-          <Text className="eval-score">{scoreText(engine.score_cp, engine.mate)}</Text>
+          <Text className="eval-score">{evalScoreText(engine.score_cp, engine.mate)}</Text>
           <ExpectedBar value={engine.expected_white} />
           <Stack gap={4} mt="sm">
             {engine.top.slice(0, 3).map((m) => (
               <MoveButton
                 key={m.uci}
                 san={m.san ?? m.uci}
-                meta={scoreText(m.score_cp, m.mate)}
+                meta={evalScoreText(m.score_cp, m.mate)}
                 onClick={() => onPlayMove(m.uci)}
               />
             ))}
