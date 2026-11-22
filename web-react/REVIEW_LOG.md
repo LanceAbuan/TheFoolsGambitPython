@@ -203,4 +203,9 @@ Gate/sample panel verified this round (title match state, replay controls, discl
 the usual checklist. Functional prod probe re-run after this pass: `rect.light` fill correct,
 1.e4 → engine replied, analysis evals (+0.00/+0.36) + 2 arrows, 0 console errors.
 
+## Pass 9 (tag `p09`, 2026-11-23, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Gate/sample panel verified again (caption, badges, centered board); journal wrap at 390px clean;
+all tokens, rows, pins stable. Fifth consecutive clean pass (5–9).
+
 
