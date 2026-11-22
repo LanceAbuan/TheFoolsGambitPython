@@ -4,18 +4,11 @@
  */
 import { Link } from 'react-router-dom';
 import { Anchor, Card, Container, List, SimpleGrid, Stack, Text, Title } from '@mantine/core';
-import { bestKnownElo, type MetricsSnapshot } from '../lib/api/http';
 import { useMetrics } from '../lib/hooks/useMetrics';
-import { useEffect, useState } from 'react';
 
 export function About() {
   const { metrics } = useMetrics();
-  const [elo, setElo] = useState<number | null>(null);
-
-  useEffect(() => {
-    setElo(bestKnownElo(metrics as MetricsSnapshot | null));
-  }, [metrics]);
-
+  const elo = typeof metrics?.elo === 'number' ? metrics.elo : null;
   const alive = metrics?.trainer_alive === true;
 
   return (

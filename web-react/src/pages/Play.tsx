@@ -28,7 +28,7 @@ import { Board } from '../components/Board';
 import { MoveList } from '../components/MoveList';
 import { useGame } from '../lib/hooks/useGame';
 import { useMetrics } from '../lib/hooks/useMetrics';
-import { bestKnownElo, type Color, type Opponent } from '../lib/api/http';
+import { type Color, type Opponent } from '../lib/api/http';
 import { game } from '../lib/state/game';
 
 const OPPONENT_META: Record<Opponent, { name: string; blurb: string }> = {
@@ -80,7 +80,8 @@ export function Play() {
   const [starting, setStarting] = useState(false);
   const [glyphs, setGlyphs] = useState(readGlyphs);
 
-  const nnElo = bestKnownElo(metrics);
+  // Champion's CURRENT arena Elo — the same number Home and Watch show.
+  const nnElo = typeof metrics?.elo === 'number' ? metrics.elo : null;
   const nnReady = nnElo !== null;
   const card = OPPONENT_META[opponent];
 
