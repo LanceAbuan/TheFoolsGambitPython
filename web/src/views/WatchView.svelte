@@ -21,13 +21,22 @@
   let primerOpen = $state(false);
 
   // A real miniature game, replayed frame by frame through the playback controls.
+  // Each frame carries the played move's from/to so the board can glide it
+  // (stepping BACKWARDS still snaps: the reverse delta never matches the
+  // forward lastMove, and the honesty guard prefers a snap over a fake glide).
   const line = ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'Nf6', 'O-O', 'Be7', 'd3', 'd6', 'c3', 'a6'];
-  const frames: { fen: string; label: string }[] = (() => {
+  const frames: { fen: string; label: string; lm: { from: string; to: string } | null }[] = (() => {
     const c = new Chess();
-    const out = [{ fen: c.fen(), label: 'START' }];
+    const out: { fen: string; label: string; lm: { from: string; to: string } | null }[] = [
+      { fen: c.fen(), label: 'START', lm: null },
+    ];
     line.forEach((san, i) => {
-      c.move(san);
-      out.push({ fen: c.fen(), label: `${Math.floor(i / 2) + 1}. ${i % 2 === 0 ? san : out.at(-1)!.label.split(' ').slice(1).join(' ') + ' ' + san}` });
+      const mv = c.move(san);
+      out.push({
+        fen: c.fen(),
+        label: `${Math.floor(i / 2) + 1}. ${i % 2 === 0 ? san : out.at(-1)!.label.split(' ').slice(1).join(' ') + ' ' + san}`,
+        lm: { from: mv.from, to: mv.to },
+      });
     });
     return out;
   })();
@@ -959,7 +968,7 @@
           </div>
           <div class="board-shell small-board">
             <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
-            <Board mini fen={current.fen} />
+            <Board mini fen={current.fen} lastMove={current.lm} />
             <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
           </div>
           <div class="playback">

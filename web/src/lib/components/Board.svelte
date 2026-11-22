@@ -44,6 +44,39 @@
   let kcursor: string | null = $state(null);
   let promoEl: HTMLDivElement | undefined = $state();
 
+  // ---- move glide (2026-11-21: "the games are jumpy") ------------------------
+  // The server coalesces live frames (newest fen wins), so a board can jump
+  // several plies at once. Only a CLEAN single-ply delta that matches lastMove
+  // may animate; everything else snaps. A wrong animation is worse than a snap.
+  //
+  // Mechanism (why two pieces of state): a CSS transition added in the SAME
+  // style recalc as the value change does not run (verified in Chrome — the
+  // element just jumps). So the gliding piece is first PINNED to its old
+  // square with an inline style override (inline style beats the transform
+  // attribute; `transition: none` keeps the pin un-animated), then the pin is
+  // released two animation frames later — by then the .glide transition is
+  // active in the before-state, and the fallback to the attribute position
+  // animates as a real glide. No layout reads: SVG transforms never trigger
+  // layout, and the release is a style-only change on ≤2 pieces per board.
+  /** Piece ids allowed to glide for the CURRENT position update (drives .glide). */
+  let glideIds = $state<Set<number>>(new Set());
+  /** Glide start override per piece id (display xy) — cleared after pin release. */
+  let glideFrom = $state<Map<number, { fx: number; fy: number }>>(new Map());
+  /** The human's just-made move (drag drop, click-click, keyboard): snap it. */
+  let localAttempt: { from: string; to: string; at: number } | null = null;
+  /** Last orientation seen by the reconcile effect (null until the first run). */
+  let lastOrientation: 'white' | 'black' | null = null;
+  let glideRelease = 0;
+
+  function scheduleGlideRelease(): void {
+    cancelAnimationFrame(glideRelease);
+    glideRelease = requestAnimationFrame(() => {
+      glideRelease = requestAnimationFrame(() => {
+        glideFrom = new Map(); // unpins: the .glide transition now animates to the new square
+      });
+    });
+  }
+
   const active = $derived(!mini && interactive);
 
   /** Promotion generates up to four moves per destination square; dots are identical, render one. */
@@ -107,12 +140,85 @@
     return out;
   }
 
+  /**
+   * Decide which pieces may glide for this position update, and where each
+   * glide starts. The bar is HIGH on purpose: only a clean single-ply
+   * relocation that exactly matches the lastMove highlight animates —
+   *  - the piece now on lastMove.to must be the SAME piece that was painted
+   *    on lastMove.from (id continuity through the diff);
+   *  - its type must be unchanged (a promotion swaps type on arrival: snap);
+   *  - a coalesced multi-ply jump fails the from-square test for every piece
+   *    whose rendered delta doesn't match the last ply → snap;
+   *  - the human's own just-made move snaps (the piece already traveled
+   *    under their pointer — animating it would feel laggy);
+   *  - a board flip mid-update snaps everything;
+   *  - castling is the one multi-piece exception, and only when BOTH the
+   *    king's and the rook's deltas prove the exact castle pattern.
+   */
+  function computeGlide(prev: Pc[], curr: Pc[], flipped: boolean): { ids: Set<number>; from: Map<number, { fx: number; fy: number }> } {
+    const ids = new Set<number>();
+    const from = new Map<number, { fx: number; fy: number }>();
+    const lm = lastMove;
+    if (flipped || !lm || lm.from === lm.to) return { ids, from };
+    if (dragId !== null) return { ids, from }; // a drag is in flight — keep the board still
+    const la = localAttempt;
+    if (la && Date.now() - la.at < 1500 && la.from === lm.from && la.to === lm.to) {
+      localAttempt = null; // consume: this fen change IS the human's move
+      return { ids, from };
+    }
+    const prevById = new Map(prev.map((p) => [p.id, p]));
+    const mover = curr.find((p) => p.square === lm.to);
+    if (!mover) return { ids, from };
+    const was = prevById.get(mover.id);
+    if (!was || was.square !== lm.from || was.type !== mover.type) return { ids, from };
+    ids.add(mover.id);
+    const m0 = xy(was.square);
+    from.set(mover.id, { fx: m0.x, fy: m0.y });
+    // Castling: king moved exactly two files on its own rank. Glide the rook
+    // too ONLY if its own delta is the matching corner→landing relocation.
+    const fFrom = FILES.indexOf(lm.from[0]);
+    const fTo = FILES.indexOf(lm.to[0]);
+    if (mover.type === 'k' && lm.from[1] === lm.to[1] && Math.abs(fTo - fFrom) === 2) {
+      const kingside = fTo > fFrom;
+      const corner = (kingside ? 'h' : 'a') + lm.from[1];
+      const landing = (kingside ? 'f' : 'd') + lm.from[1];
+      const rook = curr.find((p) => p.square === landing && p.type === 'r' && p.color === mover.color);
+      const rookWas = rook ? prevById.get(rook.id) : undefined;
+      if (rook && rookWas && rookWas.square === corner) {
+        ids.add(rook.id);
+        const r0 = xy(rookWas.square);
+        from.set(rook.id, { fx: r0.x, fy: r0.y });
+      }
+    }
+    return { ids, from };
+  }
+
   $effect.pre(() => {
     const next = parse(fen);
+    // orientation is a tracked dependency ON PURPOSE: it can change without
+    // the fen changing (e.g. the landing board re-oriented into a fresh game
+    // whose start position is byte-identical). Without this, lastOrientation
+    // goes stale and the flip guard wrongly snaps the next real move.
+    const orient = orientation;
     untrack(() => {
-      pieces = reconcile(pieces, next);
+      const prev = pieces;
+      // A board flip mid-update (orientation changed between renders) snaps
+      // everything — gliding the flip would sweep every piece across the board.
+      const flipped = lastOrientation !== null && orient !== lastOrientation;
+      lastOrientation = orient;
+      pieces = reconcile(prev, next);
+      const g = computeGlide(prev, pieces, flipped);
+      glideIds = g.ids;
+      glideFrom = g.from;
+      if (g.from.size > 0) scheduleGlideRelease();
     });
   });
+
+  /** Inline pin for a gliding piece: paint it on the from-square until release. */
+  function glideOverride(id: number): string | undefined {
+    const g = glideFrom.get(id);
+    return g ? `transform: translate(${g.fx}px, ${g.fy}px); transition: none;` : undefined;
+  }
 
   // Any position change invalidates in-progress selection / promotion state.
   $effect(() => {
@@ -207,6 +313,10 @@
       awaiting = { from, to };
       return;
     }
+    // The human's own move must SNAP when the position updates: drag drops
+    // already traveled under the pointer, and click-click/kbd moves land
+    // instantly by intent. Engine/remote/stream moves glide instead.
+    localAttempt = { from, to, at: Date.now() };
     onmove(from, to);
     clearSel();
   }
@@ -285,6 +395,7 @@
 
   function pick(ptype: string): void {
     if (!awaiting) return;
+    if (awaiting.from && awaiting.to) localAttempt = { from: awaiting.from, to: awaiting.to, at: Date.now() };
     onmove(awaiting.from, awaiting.to, ptype);
     awaiting = null;
     clearSel();
@@ -439,6 +550,8 @@
       <g
         class="piece"
         class:lifted={p.id === dragId}
+        class:glide={glideIds.has(p.id)}
+        style={glideOverride(p.id)}
         transform={`translate(${pos.x} ${pos.y})`}
         role={active ? 'button' : undefined}
         aria-label={`${p.color === 'w' ? 'white' : 'black'} ${pieceName(p.type)} on ${p.square}`}
@@ -530,8 +643,20 @@
     stroke-width: 9;
   }
   .piece {
-    transition: transform 170ms cubic-bezier(0.2, 0.7, 0.3, 1);
+    /* Deliberately NO ambient transition: position changes snap by default.
+       Only pieces that pass the honest-move guard get .glide (below) — the
+       old blanket transition animated coalesced multi-ply teleports and even
+       orientation flips (every piece gliding across the board at once). */
     cursor: grab;
+  }
+  .piece.glide {
+    transition: transform 210ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+  /* Accessibility: the glide is decorative motion — reduce → snap. */
+  @media (prefers-reduced-motion: reduce) {
+    .piece.glide {
+      transition: none;
+    }
   }
   svg.inert .piece {
     cursor: default;
