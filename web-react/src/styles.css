@@ -14,16 +14,6 @@ body {
   background: var(--mantine-primary-color-light);
 }
 
-/* One soft light source behind the hero; theme-aware via light-dark(). */
-.app-glow {
-  background:
-    radial-gradient(
-      60rem 30rem at 50% -8rem,
-      light-dark(rgba(42, 140, 97, 0.14), rgba(78, 163, 125, 0.18)),
-      transparent 70%
-    );
-}
-
 .mono {
   font-family: var(--mantine-font-family-monospace);
   font-variant-numeric: tabular-nums;
@@ -101,14 +91,6 @@ body {
 
 /* ---- shared view primitives -------------------------------------------- */
 
-.eyebrow {
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--mantine-color-dimmed);
-}
-
 .live-dot {
   width: 7px;
   height: 7px;
@@ -116,7 +98,6 @@ body {
   background: var(--mantine-color-emerald-6);
   display: inline-block;
   flex: 0 0 auto;
-  box-shadow: 0 0 0 3px var(--mantine-primary-color-light);
 }
 
 .live-dot.pulse {
@@ -152,13 +133,22 @@ body {
   font-family: var(--mantine-font-family-monospace);
   font-size: 10px;
   letter-spacing: 0.08em;
-  color: var(--mantine-color-dimmed);
+  color: var(--mantine-color-text);
+  opacity: 0.62;
 }
 
 .hint-icon {
   color: var(--mantine-color-dimmed);
   cursor: help;
   vertical-align: middle;
+}
+
+/* Disabled "default" buttons keep the filled default look (dimmed), so rows of
+   mixed enabled/disabled actions read as one consistent button system. */
+button[data-variant='default']:disabled,
+button[data-variant='default'][data-disabled] {
+  background: var(--mantine-color-default);
+  color: var(--mantine-color-dimmed);
 }
 
 .legend-dot {
@@ -189,12 +179,12 @@ body {
 }
 
 .move-row b {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .move-row .move-cur {
   color: var(--mantine-primary-color-filled);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* ---- Board-page layout (Play + Analyze) --------------------------------
@@ -232,16 +222,11 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: stretch;
-}
-
-.watch-row.feed-row {
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  align-items: start;
 }
 
 @media (max-width: 61.99em) {
-  .watch-row,
-  .watch-row.feed-row {
+  .watch-row {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -260,7 +245,7 @@ body {
 
 .live-context {
   min-width: 0;
-  min-height: 260px;
+  min-height: 160px;
 }
 
 .live-movelist {
@@ -331,7 +316,7 @@ body {
 
 /* journal */
 .journal-feed {
-  height: 300px;
+  height: 240px;
   overflow-y: auto;
   overscroll-behavior: contain;
   border-top: 1px solid var(--mantine-color-default-border);
@@ -353,9 +338,8 @@ body {
 
 .journal-level {
   font-family: var(--mantine-font-family-monospace);
-  font-size: 9.5px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 600;
   text-align: center;
   padding: 1px 0;
   border: 1px solid var(--mantine-color-default-border);
@@ -432,7 +416,7 @@ body {
 .chart-line {
   fill: none;
   stroke: var(--mantine-primary-color-filled);
-  stroke-width: 2.5;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 1;
@@ -453,7 +437,7 @@ body {
 .chart-dot.champion {
   fill: var(--mantine-color-body);
   stroke: var(--mantine-primary-color-filled);
-  stroke-width: 2.5;
+  stroke-width: 2;
 }
 
 .chart-champion-ring {
@@ -466,7 +450,7 @@ body {
 .chart-last {
   fill: var(--mantine-primary-color-filled);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   font-family: var(--mantine-font-family-monospace);
 }
 
@@ -544,18 +528,18 @@ body {
 }
 
 .eval-score {
-  font-size: 30px;
-  font-weight: 650;
+  font-size: 28px;
+  font-weight: 600;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 
-/* expected-white bar: white fill on a dark track, 50% notch */
+/* expected-white bar: white fill on a neutral track, 50% notch */
 .expected {
   position: relative;
   height: 10px;
   border-radius: 99px;
-  background: #5d5d5d;
+  background: light-dark(#c9cfc9, #494f4b);
   border: 1px solid var(--mantine-color-default-border);
   overflow: hidden;
   margin-top: 8px;
@@ -563,7 +547,7 @@ body {
 
 .expected-fill {
   height: 100%;
-  background: #f6f8f6;
+  background: light-dark(#f3f6f4, #e7ece9);
   transition: width 300ms ease;
 }
 
@@ -577,14 +561,16 @@ body {
 }
 
 .top-move .top-move-san {
-  font-weight: 650;
-  font-size: 12.5px;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .top-move .top-move-meta {
   color: var(--mantine-color-dimmed);
-  font-size: 10.5px;
+  font-size: 11px;
   font-family: var(--mantine-font-family-monospace);
+  min-width: 44px;
+  text-align: right;
 }
 
 /* setup palette */
@@ -638,192 +624,3 @@ body {
   margin-bottom: 12px;
 }
 
-/* ---- About ---------------------------------------------------------------- */
-
-.chapter-mark {
-  letter-spacing: 0.22em;
-  white-space: nowrap;
-}
-
-.about-hero {
-  --gold: light-dark(#8a6a2f, #c9a227);
-  --gold-dim: light-dark(#b3a273, #7a6427);
-  --gold-bright: light-dark(#755927, #e3b93e);
-  --card-field: light-dark(#f7f4ea, #262218);
-  --card-ink: light-dark(#37311f, #14110b);
-  --card-paper: light-dark(#efe8d6, #d9d0b8);
-  --card-glow: light-dark(rgba(138, 106, 47, 0.28), rgba(227, 185, 62, 0.3));
-
-  display: grid;
-  grid-template-columns: 0.8fr 1.2fr;
-  align-items: center;
-  gap: clamp(24px, 6vw, 80px);
-  padding: clamp(28px, 5vw, 48px) !important;
-}
-
-/* the medallion: a CSS-drawn tarot card */
-.tarot-card {
-  width: min(100%, 280px);
-  aspect-ratio: 2 / 3;
-  margin: auto;
-  padding: 10px;
-  border: 1px solid var(--gold);
-  outline: 1px solid var(--gold-dim);
-  outline-offset: 4px;
-  border-radius: 10px;
-  background: var(--card-field);
-  box-shadow: 0 18px 40px -18px light-dark(rgba(35, 30, 15, 0.4), rgba(0, 0, 0, 0.65));
-}
-
-.tarot-inner {
-  height: 100%;
-  border: 1px solid var(--gold-dim);
-  position: relative;
-  overflow: hidden;
-  border-radius: 4px;
-  background: radial-gradient(
-      circle at 50% 34%,
-      var(--card-glow) 0 20%,
-      var(--gold-dim) 20.5% 21%,
-      transparent 21.5%
-    ),
-    var(--card-field);
-}
-
-.tarot-number,
-.tarot-title {
-  position: absolute;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font: 11px var(--mantine-font-family-monospace);
-  letter-spacing: 0.2em;
-  color: var(--gold-bright);
-}
-
-.tarot-number {
-  top: 9px;
-}
-
-.tarot-title {
-  bottom: 9px;
-}
-
-.tarot-sun {
-  position: absolute;
-  top: 20%;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 88px;
-  line-height: 1;
-  color: var(--gold-bright);
-  text-shadow: 0 0 20px var(--card-glow);
-}
-
-.tarot-moon {
-  position: absolute;
-  top: 28%;
-  right: 17%;
-  font-size: 30px;
-  color: var(--card-paper);
-}
-
-.tarot-mountains {
-  position: absolute;
-  bottom: 14%;
-  left: -15%;
-  width: 130%;
-  height: 42%;
-  background: var(--card-ink);
-  clip-path: polygon(0 100%, 20% 25%, 37% 65%, 58% 0, 76% 63%, 100% 15%, 100% 100%);
-  border-top: 1px solid var(--gold);
-}
-
-.tarot-traveler {
-  position: absolute;
-  bottom: 24%;
-  left: 48%;
-  font-size: 55px;
-  line-height: 1;
-  color: var(--card-paper);
-  transform: rotate(-10deg);
-  text-shadow: 2px 2px var(--card-ink);
-}
-
-.tarot-stars {
-  position: absolute;
-  top: 49%;
-  left: 0;
-  right: 0;
-  text-align: center;
-  color: var(--gold-bright);
-  font-size: 17px;
-}
-
-.about-title {
-  font-size: clamp(30px, 4.5vw, 40px);
-  font-weight: 500;
-  line-height: 0.95;
-}
-
-.about-copy {
-  font-size: 17px;
-  line-height: 1.5;
-  color: var(--mantine-color-dimmed);
-  max-width: 570px;
-}
-
-.text-link {
-  display: inline-block;
-  margin-top: 14px;
-  border-bottom: 1px solid var(--mantine-primary-color-filled);
-  padding-bottom: 6px;
-  color: var(--mantine-primary-color-filled);
-  font-size: 17px;
-  cursor: pointer;
-}
-
-.text-link span {
-  margin-left: 16px;
-}
-
-.story-card {
-  min-height: 210px;
-}
-
-.story-icon {
-  font-size: 26px;
-  color: var(--mantine-primary-color-filled);
-  line-height: 1;
-}
-
-.learn-panel .learn-close {
-  color: var(--mantine-color-text);
-}
-
-.status-cell {
-  border-left: 3px solid var(--mantine-primary-color-filled);
-}
-
-@media (max-width: 61.99em) {
-  .about-hero {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
-  }
-
-  .tarot-card {
-    width: 210px;
-  }
-
-  .about-intro {
-    text-align: center;
-  }
-
-  .about-copy {
-    margin-inline: auto;
-  }
-
-  .about-title {
-    font-size: 30px;
-  }
-}

@@ -13,7 +13,6 @@
   --cap: light-dark(rgba(24, 52, 38, 0.4), rgba(226, 242, 233, 0.46));
   --check-glow: light-dark(#c0392b, #ff6b5e);
   --hl-kcursor: light-dark(rgba(42, 140, 97, 0.12), rgba(140, 215, 180, 0.14));
-  --gold-bright: light-dark(#b07c1f, #e2b55a);
   --upiece-w: #f7f7f2;
   --upiece-w-edge: #2b2b2b;
   --upiece-b: #262626;
@@ -26,10 +25,8 @@
   -webkit-user-select: none;
   border: 1px solid var(--mantine-color-default-border);
   background: var(--board-bg);
-  border-radius: var(--mantine-radius-lg);
-  box-shadow:
-    0 1px 2px light-dark(rgba(16, 32, 24, 0.12), rgba(0, 0, 0, 0.4)),
-    0 12px 32px light-dark(rgba(16, 32, 24, 0.1), rgba(0, 0, 0, 0.32));
+  border-radius: var(--mantine-radius-md);
+  box-shadow: 0 1px 2px light-dark(rgba(16, 32, 24, 0.14), rgba(0, 0, 0, 0.4));
   overflow: hidden;
 }
 
@@ -122,7 +119,7 @@ svg.inert .piece {
 
 rect.kcursor {
   fill: var(--hl-kcursor);
-  stroke: var(--gold-bright);
+  stroke: var(--mantine-primary-color-filled);
   stroke-width: 3.5;
   stroke-dasharray: 10 7;
 }
@@ -131,8 +128,8 @@ rect.kcursor {
    with the board and cost no layout height. */
 text.coord {
   font-family: var(--mantine-font-family);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: 0.02em;
   user-select: none;
 }
