@@ -215,4 +215,9 @@ UI defect** — gate 22 concluded and `ckpt-001536-0768` dethroned `ckpt-000128-
 Elo 792.9) — the first promotion after 22 successful defences; UI renders the new champion
 faithfully across Home, About, and the ledger. Gate/sample panel verified on all 4 watch shots.
 
+## Pass 11 (tag `p11`, 2026-11-23, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+New champion (`ckpt-001536-0768`, Elo 793) renders correctly on Home/About/ledger. Seventh
+consecutive clean pass (5–11).
+
 
