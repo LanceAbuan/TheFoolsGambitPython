@@ -57,6 +57,31 @@ def test_train_feed_pushes_metrics_within_interval(client: TestClient):
         assert push["seq"] > first["seq"]  # snapshots + feed share one monotonic stream
 
 
+def test_backlog_frames_marked_replayed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, client: TestClient
+):
+    """Addendum: subscribe-replayed backlog log frames carry the additive
+    ``replayed: true`` marker; the live tail never does (client drops its
+    ts-sniff heuristic)."""
+    monkeypatch.setattr(config, "TRAIN_LOG_PATH", tmp_path / "train_log.jsonl")
+    monkeypatch.setattr(config, "ARENA_LEDGER_PATH", tmp_path / "arena.jsonl")
+    (tmp_path / "train_log.jsonl").write_text(
+        '{"kind": "iteration", "iteration": 3, "ts": 1795304473.1}\n', encoding="utf-8"
+    )
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"seq": 1, "type": "subscribe", "topic": "train"})
+        first = ws.receive_json()
+        assert first["type"] == "metrics"  # snapshot precedes the backlog
+        for _ in range(10):  # a periodic push may interleave; the backlog is imminent
+            frame = ws.receive_json()
+            if frame["type"] == "log":
+                assert frame["payload"]["replayed"] is True
+                assert frame["payload"]["level"] == "info"
+                assert "iteration" in frame["payload"]["message"]
+                return
+        pytest.fail("no replayed backlog log frame arrived")
+
+
 def test_train_feed_idles_without_subscribers(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     calls: list[tuple[str, str]] = []
     original = telemetry.hub.send

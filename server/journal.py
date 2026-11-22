@@ -280,6 +280,39 @@ def size(path: Path | None = None) -> int:
         return 0
 
 
+def latest_event_ts(path: Path | None = None) -> float | None:
+    """Newest event ``ts`` in the journal's tail window, or None.
+
+    O(TAIL_CHUNK): reads only the last 64KB (hundreds of lines — the live
+    stream alone guarantees the newest line sits there whenever the trainer
+    is writing), walks backward over unparseable/ts-less lines, and gives up
+    honestly after the window. Feeds the metrics feed's ``last_journal_ts``
+    / ``gate_in_progress`` hint; a vanished file is None, never an error.
+    """
+    target = path or config.TRAIN_LOG_PATH
+    try:
+        current = target.stat().st_size
+        if current == 0:
+            return None
+        start = max(0, current - TAIL_CHUNK)
+        with target.open("rb") as handle:
+            handle.seek(start)
+            chunk = handle.read(current - start)
+    except OSError:
+        return None
+    for raw in reversed(chunk.splitlines()):
+        data = parse_event(raw)
+        if data is None:
+            continue
+        value = _first(data, _TS_KEYS)
+        if value is None:
+            continue
+        ts = _as_float(value, 0.0)
+        if ts > 0.0:
+            return ts
+    return None
+
+
 def _file_id(st: os.stat_result) -> tuple[int, int] | None:
     """(volume, file-index) identity; None where the OS reports no index (FAT, some mounts)."""
     return (st.st_dev, st.st_ino) if st.st_ino else None

@@ -16,10 +16,14 @@ workers code against THIS docstring; every frame also carries the standard
 ``seq``/``topic``/``ts`` envelope):
 
 - ``metrics``: payload mirrors ``GET /api/metrics`` (elo, loss, win_rate,
-  games_played, elo_by_regime, ...). Unchanged.
+  games_played, elo_by_regime, plus the additive gate-visibility keys
+  last_arena_ts / last_journal_ts / gate_in_progress — see
+  :mod:`server.api.train`). Unchanged shape otherwise.
 - ``log``: ``{"level": <str>, "message": <str>}`` — journal lines that are
   not live/game_end events (iteration/arena/aggregates), plus any
-  unparseable/unknown line. Unchanged.
+  unparseable/unknown line. Unchanged on the live tail; backlog-replayed
+  lines (subscribe time only, see :mod:`server.ws`) additionally carry
+  ``replayed: true``.
 - ``live``: ``{"game": <int>, "ply": <int>, "move": <uci str>, "fen": <str>,
   "run_id": <str>, "ts": <num>}`` — one frame per flushed training-game
   position event. NOT replayed on subscribe.

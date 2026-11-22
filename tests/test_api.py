@@ -64,8 +64,20 @@ def test_resign_then_move_conflicts(client):
     snap = r.json()
     assert snap["status"] == "finished"
     assert snap["winner"] == "black"
+    # F-11 follow-up (additive): the reason rides every snapshot — response,
+    # reload GET, and WS state frames all share Session.snapshot().
+    assert snap["reason"] == "resign"
+    assert client.get(f"/api/play/{gid}").json()["reason"] == "resign"
     r2 = client.post(f"/api/play/{gid}/move", json={"from": "e2", "to": "e4"})
     assert r2.status_code == 409
+
+
+def test_active_game_snapshot_reason_is_null(client):
+    """Honest null: an active game claims no reason yet (never coerced)."""
+    gid = _new_game(client).json()["game_id"]
+    snap = client.get(f"/api/play/{gid}").json()
+    assert snap["status"] == "active"
+    assert snap["reason"] is None
 
 
 def test_unknown_game_404(client):

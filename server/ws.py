@@ -117,7 +117,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     the hub feeds live events. The train topic additionally receives a metrics
     push every 10s from :mod:`server.telemetry` while subscribed, plus the
     FS-6 journal: an aggregate-log backlog (last ≤50 lines; ``live``/
-    ``game_end`` lines excluded) at subscribe, then tail-pushed ``live``/
+    ``game_end`` lines excluded) at subscribe — each log payload carries the
+    additive ``replayed: true`` marker — then tail-pushed ``live``/
     ``game_end``/``log`` frames every 2s (schemas in ``server.telemetry``'s
     docstring; live frames are never replayed pre-subscribe). Heartbeats are
     protocol-level pings (uvicorn default 20s interval).
@@ -154,7 +155,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             elif topic == "train":
                 await _snapshot(ws, topic, "metrics", metrics_snapshot())
                 for payload in journal.backlog():
-                    await _snapshot(ws, topic, "log", payload)
+                    # Additive marker: these are replayed backlog lines, not
+                    # the live tail — the client can drop its ts-sniffing
+                    # heuristic and render them as history (or skip them).
+                    await _snapshot(ws, topic, "log", {**payload, "replayed": True})
             else:  # lobby
                 await _snapshot(ws, topic, "lobby", {"active_games": lobby_state()})
     except WebSocketDisconnect:

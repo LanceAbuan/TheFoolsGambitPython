@@ -92,6 +92,11 @@ class Session:
             "moves": list(self.sans),
             "status": self.status,
             "winner": self.winner,
+            # F-11 follow-up (additive): why the game ended — "resign",
+            # "abandoned" (idle auto-resign), or a chess termination name
+            # (e.g. "checkmate"). None while active. Lets the client render
+            # "Claimed by time" on reload instead of probing undo's 409.
+            "reason": self.reason,
             "in_check": self.board.is_check(),
             "last_move": last.uci() if last is not None else None,
         }

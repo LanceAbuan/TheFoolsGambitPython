@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config, db, engine, model_server, reaper, telemetry
+from . import backfill, config, db, engine, model_server, reaper, telemetry
 from .api import games, play, train
 from .config import ALLOWED_ORIGINS
 from .ratelimit import TokenBucketRateLimit
@@ -23,11 +23,16 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Migrate + backfill the DB, rehydrate active game sessions, run the
-    background feeds + TTL reaper; clean up on shutdown."""
+    background feeds + periodic ledger backfill + TTL reaper; clean up on
+    shutdown."""
     await asyncio.to_thread(db.migrate)
     backfilled = await asyncio.to_thread(db.backfill_arena)
     if backfilled:
         log.info("backfilled %d arena ledger row(s) at startup", backfilled)
+    # Keep the mirror current while up: the trainer appends ledger rows
+    # continuously and a startup-only import left SQLite (and anything reading
+    # it) stale until the next restart. Idempotent tick (see server.backfill).
+    backfill.start()
     # Restart resilience: rebuild in-progress games from SQLite before serving,
     # so GET/WS/moves on a pre-restart game and the lobby's active list survive
     # deploys. Runs before the reaper starts so restored sessions are visible
@@ -42,6 +47,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         warmup.cancel()
         with suppress(asyncio.CancelledError):
             await warmup
+        await backfill.stop()
         await telemetry.stop()
         await reaper.stop()
         stopped = await engine.shutdown_engines()

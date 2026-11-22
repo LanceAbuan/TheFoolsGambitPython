@@ -104,7 +104,10 @@ def test_subscribe_sends_backlog_after_metrics(client: TestClient, tmp_path: Pat
             "iter 2 slow",
         ]
         assert frames[2]["payload"]["level"] == "info"
-        assert frames[3]["payload"] == {"level": "warn", "message": "iter 2 slow"}
+        # Additive `replayed: true` marks subscribe-replayed backlog lines.
+        assert frames[3]["payload"] == {
+            "level": "warn", "message": "iter 2 slow", "replayed": True,
+        }
         seqs = [first["seq"], *(f["seq"] for f in frames)]
         assert seqs == sorted(seqs)  # one monotonic stream: snapshot + backlog share it
 

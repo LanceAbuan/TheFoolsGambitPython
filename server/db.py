@@ -49,7 +49,14 @@ CREATE TABLE IF NOT EXISTS arena_games (
   games INTEGER NOT NULL DEFAULT 0,
   wins INTEGER NOT NULL DEFAULT 0,
   draws INTEGER NOT NULL DEFAULT 0,
-  elo REAL NOT NULL DEFAULT 800.0,
+  -- Nullable since the v3 migration (audit F-5): NULL = the trainer never
+  -- claimed a rating for this row (non-promoted U9 candidate). The pre-U9
+  -- schema coerced those to the 800.0 base, asserting unclaimed ratings.
+  elo REAL,
+  -- U9 additive fields: the candidate's own Glicko-2 record after the gate
+  -- (NULL on pre-U9 rows, which carry no glicko keys at all).
+  glicko_r REAL,
+  glicko_rd REAL,
   ts REAL NOT NULL
 );
 -- FS-2 dedupe key: one ledger row per (checkpoint, ts), making backfill idempotent.
@@ -172,17 +179,52 @@ def moves_for(gid: str) -> tuple[list[str], str] | None:
 
 
 # ---------------------------------------------------------------------------
-# Schema migration (additive only, run from the app lifespan — never from
-# connect(), so merely importing this package, e.g. during test collection
-# against the live DB, cannot mutate anything).
+# Schema migration (run from the app lifespan — never from connect(), so
+# merely importing this package, e.g. during test collection against the
+# live DB, cannot mutate anything).
+#
+# v1 → v2 is a pure ADD COLUMN; v2 → v3 rebuilds ``arena_games`` in place.
+# The rebuild is still startup-only, transactional (DDL rolls back with the
+# tx), row- and id-preserving, and idempotent (the PRAGMA check makes a
+# second run a no-op).
 # ---------------------------------------------------------------------------
 
+# v3 shape of arena_games (mirrors _SCHEMA; kept as a template so the rebuild
+# and the fresh-database path cannot drift apart).
+_ARENA_V3_DDL = """
+CREATE TABLE {name} (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL DEFAULT '',
+  regime TEXT NOT NULL DEFAULT '',
+  ckpt TEXT NOT NULL,
+  opponent TEXT NOT NULL DEFAULT '',
+  games INTEGER NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  draws INTEGER NOT NULL DEFAULT 0,
+  elo REAL,
+  glicko_r REAL,
+  glicko_rd REAL,
+  ts REAL NOT NULL
+)
+"""
+
+_ARENA_RATING_COLUMNS = ("elo", "glicko_r", "glicko_rd")
+
+
 def migrate() -> None:
-    """Apply additive schema migrations to a pre-existing database (idempotent).
+    """Apply schema migrations to a pre-existing database (idempotent).
 
     v1 → v2: ``games.strength`` records the opponent's skill preset so sessions
     rehydrate faithfully after a restart. Existing rows backfill with the
     default ``'curious'``; fresh databases already create the column.
+
+    v2 → v3 (audit F-5 + U9): ``arena_games.elo`` becomes nullable — NULL
+    means the trainer never claimed a rating for that row (non-promoted
+    candidate) — and additive ``glicko_r``/``glicko_rd`` columns store the
+    candidate's Glicko-2 record. SQLite cannot drop a NOT NULL constraint in
+    place, so the table is rebuilt (copy with ids → drop → rename → reindex);
+    values are preserved verbatim, including previously coerced 800.0s, which
+    the next :func:`backfill_arena` reconcile re-stamps from the ledger file.
     """
 
     def _op(conn: sqlite3.Connection) -> None:
@@ -190,6 +232,78 @@ def migrate() -> None:
         if "strength" not in columns:
             conn.execute("ALTER TABLE games ADD COLUMN strength TEXT NOT NULL DEFAULT 'curious'")
             log.info("db migration: games.strength column added (existing rows -> 'curious')")
+        _migrate_arena_nullability(conn)
+
+    tx(_op)
+
+
+def _migrate_arena_nullability(conn: sqlite3.Connection) -> None:
+    """v2 → v3 rebuild of ``arena_games`` when its schema predates U9/F-5.
+
+    No-op when the table already has the v3 shape (nullable ``elo`` + glicko
+    columns), which covers fresh databases and every run after the first.
+    """
+    info = {str(row["name"]): row for row in conn.execute("PRAGMA table_info(arena_games)")}
+    if not info:
+        return  # no table (connect() always creates it first; defensive only)
+    elo_nullable = "elo" in info and not info["elo"]["notnull"]
+    has_glicko = "glicko_r" in info and "glicko_rd" in info
+    if elo_nullable and has_glicko:
+        return
+    conn.execute(_ARENA_V3_DDL.format(name="arena_games_v3"))
+    carried = "id, run_id, regime, ckpt, opponent, games, wins, draws, elo, ts"
+    if has_glicko:  # legacy rebuild never hits this; keeps the copy total anyway
+        carried = "id, run_id, regime, ckpt, opponent, games, wins, draws, elo, glicko_r, glicko_rd, ts"
+    conn.execute(f"INSERT INTO arena_games_v3 ({carried}) SELECT {carried} FROM arena_games")
+    conn.execute("DROP TABLE arena_games")
+    conn.execute("ALTER TABLE arena_games_v3 RENAME TO arena_games")
+    # DROP TABLE took the old dedupe index with it; restore it under its
+    # canonical name (connect()'s IF NOT EXISTS then stays a no-op).
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_arena_games_dedupe ON arena_games(ckpt, ts)")
+    log.info(
+        "db migration: arena_games rebuilt with nullable elo + glicko_r/glicko_rd"
+        " (%d row(s) preserved)", conn.execute("SELECT COUNT(*) FROM arena_games").fetchone()[0],
+    )
+
+
+def downgrade_arena() -> None:
+    """Rollback path for the v2 → v3 arena migration (ops runbook / tests).
+
+    Rebuilds the pre-U9 schema (``elo REAL NOT NULL DEFAULT 800.0``, no glicko
+    columns), coercing NULL ratings back to the 800.0 base — the old, dishonest
+    behavior this migration removed. Rows, ids and the dedupe index survive.
+    """
+    old_ddl = (
+        "CREATE TABLE {name} ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " run_id TEXT NOT NULL DEFAULT '',"
+        " regime TEXT NOT NULL DEFAULT '',"
+        " ckpt TEXT NOT NULL,"
+        " opponent TEXT NOT NULL DEFAULT '',"
+        " games INTEGER NOT NULL DEFAULT 0,"
+        " wins INTEGER NOT NULL DEFAULT 0,"
+        " draws INTEGER NOT NULL DEFAULT 0,"
+        " elo REAL NOT NULL DEFAULT 800.0,"
+        " ts REAL NOT NULL)"
+    )
+
+    def _op(conn: sqlite3.Connection) -> None:
+        info = {str(row["name"]) for row in conn.execute("PRAGMA table_info(arena_games)")}
+        if not info:
+            return
+        conn.execute(old_ddl.format(name="arena_games_v2down"))
+        conn.execute(
+            "INSERT INTO arena_games_v2down (id, run_id, regime, ckpt, opponent,"
+            " games, wins, draws, elo, ts)"
+            " SELECT id, run_id, regime, ckpt, opponent, games, wins, draws,"
+            " COALESCE(elo, 800.0), ts FROM arena_games"
+        )
+        conn.execute("DROP TABLE arena_games")
+        conn.execute("ALTER TABLE arena_games_v2down RENAME TO arena_games")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_arena_games_dedupe ON arena_games(ckpt, ts)"
+        )
+        log.info("db downgrade: arena_games restored to NOT NULL elo (NULLs -> 800.0 base)")
 
     tx(_op)
 
@@ -272,16 +386,33 @@ def reset_for_tests() -> None:
 # ---------------------------------------------------------------------------
 
 def backfill_arena(path: Path | None = None) -> int:
-    """Idempotent startup import of the training JSONL ledger into ``arena_games``.
+    """Idempotent import of the training JSONL ledger into ``arena_games``.
 
-    Every readable line is inserted with ``INSERT OR IGNORE`` against the
-    UNIQUE ``(ckpt, ts)`` index, so re-running after a restart (double boot)
-    inserts nothing. Returns the number of rows actually added.
+    Safe to run at every startup AND on the periodic backfill tick while the
+    server is up (the trainer appends ledger rows continuously; a
+    startup-only import was the stale-leaderboard defect). Two halves:
+
+    1. **Insert** every readable line with ``INSERT OR IGNORE`` against the
+       UNIQUE ``(ckpt, ts)`` index — a natural row key, so re-running after a
+       restart (double boot) or on the periodic tick inserts nothing twice.
+    2. **Reconcile ratings**: the ledger file is the source of truth, so
+       drifted rating fields (``elo``, ``glicko_r``, ``glicko_rd``) are
+       re-stamped from the file. This repairs rows mirrored by the pre-U9
+       importer, which coerced honest ``elo: null`` rows to the 800.0 base
+       (audit F-5). All other columns are append-only provenance the trainer
+       never rewrites and cannot drift. The null-safe ``IS NOT`` guard makes
+       the update a no-op on already-honest rows.
+
+    Row-shape tolerance (the live file mixes formats): pre-U9 rows (numeric
+    ``elo``, no glicko keys — what the RUNNING trainer still writes), U9 rows
+    (``elo: null`` for non-promoted candidates + additive ``glicko_r`` /
+    ``glicko_rd``), corrupt/malformed lines (skipped, never fatal). Returns
+    the number of rows actually added.
     """
     source = path or config.ARENA_LEDGER_PATH
     if not source.is_file():
         return 0
-    rows: list[tuple[str, str, str, str, int, int, int, float, float]] = []
+    rows: list[tuple[str, str, str, str, int, int, int, float | None, float | None, float | None, float]] = []
     for line in source.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
@@ -294,28 +425,52 @@ def backfill_arena(path: Path | None = None) -> int:
         if not isinstance(entry, dict) or "checkpoint" not in entry or "ts" not in entry:
             log.warning("arena backfill: skipping malformed entry in %s", source)
             continue
-        rows.append(
-            (
-                str(entry.get("run_id", "")),
-                str(entry.get("regime", "")),
-                str(entry.get("checkpoint", "")),
-                str(entry.get("opponent", "")),
-                int(entry.get("games", 0) or 0),
-                int(entry.get("wins", 0) or 0),
-                int(entry.get("draws", 0) or 0),
-                float(entry.get("elo", 800.0) or 800.0),
-                float(entry.get("ts", 0.0) or 0.0),
+        try:
+            # Honest parse (audit F-5): missing or null `elo` stays None — the
+            # trainer claims no rating for non-promoted candidates. The old
+            # `float(entry.get("elo", 800.0) or 800.0)` coerced both to base.
+            raw_elo = entry.get("elo")
+            raw_r = entry.get("glicko_r")
+            raw_rd = entry.get("glicko_rd")
+            rows.append(
+                (
+                    str(entry.get("run_id", "")),
+                    str(entry.get("regime", "")),
+                    str(entry.get("checkpoint", "")),
+                    str(entry.get("opponent", "")),
+                    int(entry.get("games", 0) or 0),
+                    int(entry.get("wins", 0) or 0),
+                    int(entry.get("draws", 0) or 0),
+                    None if raw_elo is None else float(raw_elo),
+                    None if raw_r is None else float(raw_r),
+                    None if raw_rd is None else float(raw_rd),
+                    float(entry.get("ts", 0.0) or 0.0),
+                )
             )
-        )
+        except (TypeError, ValueError):
+            log.warning("arena backfill: skipping non-numeric field in %s", source)
+            continue
 
     def _op(conn: sqlite3.Connection) -> int:
-        cursor = conn.executemany(
+        inserted = conn.executemany(
             "INSERT OR IGNORE INTO arena_games"
-            " (run_id, regime, ckpt, opponent, games, wins, draws, elo, ts)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
+            " (run_id, regime, ckpt, opponent, games, wins, draws, elo, glicko_r, glicko_rd, ts)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             rows,
         )
-        return max(cursor.rowcount, 0)
+        added = max(inserted.rowcount, 0)
+        # Rating reconcile: re-stamp drifted rating fields from the file
+        # (tuple indices: ckpt=2, elo=7, glicko_r=8, glicko_rd=9, ts=10).
+        reconciled = conn.executemany(
+            "UPDATE arena_games SET elo = ?, glicko_r = ?, glicko_rd = ?"
+            " WHERE ckpt = ? AND ts = ?"
+            " AND (elo IS NOT ? OR glicko_r IS NOT ? OR glicko_rd IS NOT ?)",
+            [(row[7], row[8], row[9], row[2], row[10], row[7], row[8], row[9]) for row in rows],
+        )
+        drifted = max(reconciled.rowcount, 0)
+        if drifted:
+            log.info("arena backfill: reconciled %d drifted rating row(s) from %s", drifted, source)
+        return added
 
     added = tx(_op)
     if added:
@@ -324,12 +479,18 @@ def backfill_arena(path: Path | None = None) -> int:
 
 
 def list_arena_games(limit: int) -> list[dict[str, Any]]:
-    """Arena ledger rows (newest first) served by ``GET /api/games?kind=arena``."""
+    """Arena ledger rows (newest first) served by ``GET /api/games?kind=arena``.
+
+    ``elo`` is the trainer's own rating claim (None when it claimed none);
+    ``glicko_r``/``glicko_rd`` are the U9 additive Glicko fields (None on
+    pre-U9 rows).
+    """
     rows: list[dict[str, Any]] = []
 
     def _op(conn: sqlite3.Connection) -> None:
         cursor = conn.execute(
-            "SELECT run_id, regime, ckpt, opponent, games, wins, draws, elo, ts"
+            "SELECT run_id, regime, ckpt, opponent, games, wins, draws, elo,"
+            " glicko_r, glicko_rd, ts"
             " FROM arena_games ORDER BY ts DESC, id DESC LIMIT ?",
             (limit,),
         )
@@ -339,15 +500,24 @@ def list_arena_games(limit: int) -> list[dict[str, Any]]:
     return rows
 
 
-def elo_by_regime() -> dict[str, dict[str, float]]:
-    """Per-regime checkpoint Elo map (latest recorded elo per checkpoint)."""
+def elo_by_regime() -> dict[str, dict[str, float | None]]:
+    """Per-regime checkpoint rating map from the mirrored ledger rows.
 
-    def _op(conn: sqlite3.Connection) -> dict[str, dict[str, float]]:
-        out: dict[str, dict[str, float]] = {}
+    Latest recorded rating claim per checkpoint (rows replayed oldest →
+    newest, last write wins). ``None`` = the trainer never claimed a rating
+    for that checkpoint's latest row (U9 non-promoted candidate) — served
+    as null, never coerced to base. Note: this is the *recorded-claims*
+    view of the mirror; ``/api/metrics`` derives ``elo_by_regime`` from the
+    ledger replay instead (see :mod:`server.arena` for that choice).
+    """
+
+    def _op(conn: sqlite3.Connection) -> dict[str, dict[str, float | None]]:
+        out: dict[str, dict[str, float | None]] = {}
         for row in conn.execute(
             "SELECT regime, ckpt, elo, ts, id FROM arena_games ORDER BY ts, id"
         ):
-            out.setdefault(row["regime"], {})[row["ckpt"]] = float(row["elo"])
+            rating: float | None = None if row["elo"] is None else float(row["elo"])
+            out.setdefault(row["regime"], {})[row["ckpt"]] = rating
         return out
 
     return tx(_op)
