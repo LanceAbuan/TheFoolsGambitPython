@@ -19,14 +19,9 @@ export function MoveList({ sans, height = 220 }: MoveListProps) {
 
   if (rows.length === 0) {
     return (
-      <Stack gap={2}>
-        <Text fz="sm" c="dimmed" className="mono">
-          01. — —
-        </Text>
-        <Text fz="xs" c="dimmed">
-          Your story has yet to unfold.
-        </Text>
-      </Stack>
+      <Text fz="sm" c="dimmed">
+        No moves yet.
+      </Text>
     );
   }
 

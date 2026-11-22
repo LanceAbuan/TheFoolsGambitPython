@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react';
+import { useMemo } from 'react';
 import type { ChartPoint } from '../lib/watch/format';
 
 interface EloChartProps {
@@ -11,8 +11,6 @@ interface EloChartProps {
  * checkpoint map; a one-point series says so instead of drawing a fake curve.
  */
 export function EloChart({ points, height = 210 }: EloChartProps) {
-  const gradientId = `elo-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
-
   const view = useMemo(() => {
     if (points.length === 0) return null;
     const W = 560;
@@ -30,36 +28,28 @@ export function EloChart({ points, height = 210 }: EloChartProps) {
     const y = (elo: number) => PAD.t + plotH - ((elo - min) / (max - min)) * plotH;
     const pts = points.map((p, i) => ({ ...p, x: x(i), y: y(p.elo) }));
     const line = pts.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L');
-    const area = `M${PAD.l} ${PAD.t + plotH} L${line} L${pts[pts.length - 1].x.toFixed(1)} ${PAD.t + plotH} Z`;
     const ticks = [max, (max + min) / 2, min].map((v) => Math.round(v));
     const last = pts[pts.length - 1];
     const first = pts[0];
     const best = pts.reduce((a, b) => (b.elo > a.elo ? b : a), pts[0]);
-    return { W, H, PAD, pts, line, area, ticks, last, first, best, sparse: new Set(points.map((p) => Math.round(p.elo))).size < 3 };
+    return { W, H, PAD, pts, line, ticks, last, first, best, sparse: new Set(points.map((p) => Math.round(p.elo))).size < 3 };
   }, [points]);
 
   if (!view) {
     return (
       <div className="chart-empty">
-        <span className="mono">NO RATED CHECKPOINTS YET</span>
+        <span>No rated checkpoints yet</span>
         <p>The curve appears after the first gauntlet records an Elo.</p>
       </div>
     );
   }
 
-  const { W, H, PAD, pts, line, area, ticks, last, first, best, sparse } = view;
+  const { W, H, PAD, pts, line, ticks, last, first, best, sparse } = view;
   const lastAnchor = last.x > W * 0.72 ? 'end' : last.x < W * 0.28 ? 'start' : 'middle';
 
   return (
     <div className="elo-chart" style={{ minHeight: height }}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Estimated Elo after each checkpoint gauntlet">
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--mantine-primary-color-filled)" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="var(--mantine-primary-color-filled)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
         {ticks.map((tick, i) => {
           const gy = PAD.t + (i / 2) * (H - PAD.t - PAD.b);
           return (
@@ -72,7 +62,6 @@ export function EloChart({ points, height = 210 }: EloChartProps) {
           );
         })}
 
-        <path d={area} fill={`url(#${gradientId})`} />
         <path d={`M${line}`} className="chart-line" pathLength={1} />
 
         {pts.map((p, i) => (
