@@ -44,13 +44,10 @@ list/PGN/metrics/checkpoints, move/undo/resign incl. promotion-to-queen, illegal
 WS subscribe snapshots, invalid/unsupported rejects, live position fan-out, per-topic seq
 monotonicity, restart-persistence probe). Zero console errors, zero HTTP ≥400. Findings:
 
-- [ ] **Next — restore active play sessions on boot.** Defect: games+moves persist to SQLite
-      (row + plies verified in `data/gambit.db`) but `get_session` is memory-only and the app
-      lifespan never rehydrates → any server restart/deploy 404s an in-progress game
-      (GET `/api/play/{gid}`, WS `game:{gid}`, further moves) and drops it from the lobby.
-      Implement: on `get_session` miss (or startup) rebuild `Session` from the DB by replaying
-      stored UCIs; requires a `strength` column on `games` (small migration) for faithful
-      Fool/NN strength; keep TTL reaper semantics unchanged.
+- [x] **Restore active play sessions on boot** — VERIFIED FIXED (2026-11-21 18:49 deploy):
+      the pre-deploy game `5a01dfddf3a2` rehydrated after restart with full 6-ply state.
+      (Original defect: games+moves persisted to SQLite but `get_session` was memory-only —
+      any restart 404'd in-progress games.)
 - [ ] **Polish — unify archive game id field.** REST `/api/games` items use `id`, while the
       client's `GameArchiveEntry` (web/src/lib/api/http.ts) and the WS `lobby` payload use
       `game_id`. Benign today (UI only consumes arena entries via `run_id`) but a latent trap;
@@ -70,25 +67,29 @@ First real training run on the modernized pipeline. Findings from live observati
 full-page screenshots, and the U9 audit — state at scoring time:
 
 - [x] **Promotion ladder works in production** — first promotion in project history
-      (13:55: `ckpt-000128-0064` dethroned `ckpt-000004-0004` 0.750 ≥ 0.55), then four
-      consecutive successful defenses (0.500 holds); 7/7 correct gate verdicts. Closes
-      the F-1 audit finding with a live demonstration, not just a test.
+      (13:55: `ckpt-000128-0064` dethroned `ckpt-000004-0004` 0.750 ≥ 0.55), then six
+      consecutive successful defenses; 8/8 correct gate verdicts. Closes the F-1 audit
+      finding with a live demonstration, not just a test. **Gate 8 (19:45) was the first
+      *decisive* gate**: candidate `ckpt-000512-0256` scored 0.250 (+0 -8 =8) — the
+      champion is now measurably stronger than fresh weights, not merely draw-equivalent.
+      Lineage Elo rose 793.68 → 801.97 on the decisive result.
 - [x] **U9 Glicko-2 + SPRT** — LANDED (`d7d1bff`): rating error bars, honest
       draw-saturated SPRT behavior (all-draw = zero information = undecided), RD-capped
       promotion rule. Additive ledger format; activates on next launch; tonight's state
       file verified loadable through the new code (crash-restart safe).
-- [ ] **Watch: false "Training runs offline" during title matches** — arena gates don't
-      stream per-ply, so the grid fell back to the pre-launch empty state during 20–45 min
-      gates (owner hit this live; screenshot on record). Fix in flight: three-state panel
-      (IDLE / TITLE MATCH / LIVE) derived client-side from received frames + arrival clock.
-- [ ] **Rating surfaces contradict each other** — headline 793.4 vs regime leaderboard 800
-      for the same regime, same moment. Root cause (pinned by U9 audit): `backfill_arena`
-      runs only at server boot (`server/main.py:27-28`) so every second-light ledger row is
-      missing from SQLite, and `server/db.py:306` coerces honest `elo: null` (no-claim rows,
-      F-5) into 800.0. backend-dev slice in flight: periodic idempotent backfill,
-      null-preserving semantics, regime map agreed by construction; canonical rating =
-      trainer-owned lineage series (headline), per-checkpoint maps demoted to dated
-      diagnostics.
+- [x] **Watch: false "Training runs offline" during title matches** — FIXED (`01ac676`,
+      server key `b39c722`): three-state panel (IDLE / TITLE MATCH / LIVE) now driven
+      primarily by server-truth `gate_in_progress` with the quiet-window inference kept as
+      a pre-deploy fallback; gate line quotes `last_journal_ts` age for zero-frame joins.
+      Client slice `01ac676`, verified on production.
+- [x] **Rating surfaces contradict each other** — FIXED (`b39c722`, deployed 18:49 and
+      verified live): `elo_by_regime` now derives from ledger JSONL replay (agreement with
+      the trainer by construction); periodic 60s idempotent backfill replaces boot-only;
+      honest `elo: null` preserved through the v2→v3 arena migration (6 rows repaired
+      800.0 → NULL). Verified on production: all 9 second-light checkpoints with recomputed
+      values (champion 806.32, dethroned 792.0), smoke-regime fossils gone from the map.
+      Canonical rating = trainer-owned lineage series (headline); per-checkpoint maps are
+      dated secondary diagnostics.
 - [ ] **200-ply cap auto-adjudicates draws** — `training/selfplay.py:1301-1304`,
       `:1555-1569`, `:514-516` force `1/2-1/2` on truncation. Games now hit the cap
       routinely as nets sharpen: teaches shuffle=draw to the value head (self-play targets)
@@ -96,20 +97,57 @@ full-page screenshots, and the U9 audit — state at scoring time:
       eval adjudication — both sides' final root values |v| > θ≈0.9 agreeing in sign → ±1,
       else draw; no extra NN calls.
 - [ ] **Gate economics degrade with strength** — gates 1–5 ≈ 8–10 min, gate 6 21.6 min,
-      gate 7 45+ min; game lengths doubled (35–173 → 127–200 plies) as blunders vanished.
-      Pre-registered response **P-U9-4** (next run): 32 games × 100 plies (same ply budget;
-      fresh-candidate RD 121.6→88.8) + `promote_rd_cap` 150→100. Sequential SPRT is
-      enabled and proven inert at N≤32 — it becomes decisive only in big anchored sessions.
-- [ ] **"BEST STREAK: —" dead stat on Watch** — no code path populates it; remove the
-      display (no dead numbers per the research standard) or wire a real metric later.
-- [ ] **Arena results panel: fossils oldest-first** — pre-F-1 self-vs-self rows (both sides
-      the same model, elo 800) dominate the panel while tonight's real rows sit below the
-      fold. Reorder newest-first; keep the fossils visible with an honest footnote.
+      gate 7 45.8 min, gate 8 41.3 min; game lengths doubled (35–173 → 127–200 plies) as
+      blunders vanished. Pre-registered response **P-U9-4** (next run): 32 games × 100 plies
+      (same ply budget; fresh-candidate RD 121.6→88.8) + `promote_rd_cap` 150→100.
+      Sequential SPRT is enabled and proven inert at N≤32 — it becomes decisive only in big
+      anchored sessions. Confirmed again at gate 8: 41 min of GPU for 16 games is the
+      dominant per-hour cost of the whole run loop.
+- [x] **"BEST STREAK: —" dead stat on Watch** — REMOVED (`01ac676`), verified gone on
+      production (no dead numbers per the research standard).
+- [x] **Arena results panel: fossils oldest-first** — FIXED (`01ac676`): newest-first with
+      the pre-F-1 self-vs-self fossils kept visible under an honest SHOW ALL footnote;
+      verified on production (22 matches, legend, AS OF stamp).
+- [x] **Journal panel read as broken during self-play** — FIXED (`01ac676`): `log` frames
+      only exist for iteration/arena lines (~1/45 min), so the empty diary now shows a live
+      heartbeat (PRACTICE MOVES · ~2/S · LAST MOVE just now) and reverts to the written
+      journal when diary lines arrive; backlog `replayed: true` frames are ignored honestly.
 - [ ] **U6 multiprocess shards** — the remaining 3–4× throughput lever (66–77 games/h is
       honest but modest vs the 15.5k bench that didn't extrapolate). Bench-gated: needs the
       idle GPU after the run.
 - [ ] **Gumbel A/B at gate quality** — 6.14× bench throughput is real; strength evidence is
       not (draw-saturated 0.50 h2h, see N2 in the ledger). Needs the GPU.
+- [x] **Production crash loop (discovered live 18:0x)** — the running pre-v3 server threw
+      `TypeError: float() argument ... not 'NoneType'` inside `elo_by_regime` on every
+      metrics tick (caught per-key, so headline metrics served; the regime map degraded to
+      `{}`). Root cause: honest `elo: null` rows (F-5) flowing into a float coercion.
+      FIXED by the v3 work (`b39c722`); deployed 18:49, zero tracebacks since.
+- [x] **Deploy lost in-progress games** — VERIFIED FIXED by a real deploy (not just a
+      test): the game played on :8000 before the 18:49 restart (`5a01dfddf3a2`, 6 plies)
+      rehydrated after boot with full state, `status: active`, and the new additive
+      `reason` field. Closes the review-loop "restore active play sessions on boot" item.
+- [ ] **Fresh-load deaf window on production (open)** — 3/3 fresh `/watch` loads connected
+      WS ("LIVE · CONNECTED") yet received no train frames for 1–3 min while the journal
+      streamed at the same second; a raw node probe on the same server got 33–37 frames in
+      15 s. Not reproducible in harnesses (:8001 first metrics in 96–299 ms, 5/5) nor
+      server-side by the client probe. backend-dev slice in flight: falsification plan over
+      hub send serialization / event-loop blocking (ledger replay + journal scans on the
+      loop, Windows file contention with the trainer's open handles) / subscribe-path race.
+      Documented honestly as server-crash-loop-correlated but not yet root-caused.
+- [x] **Owner-requested: smooth move animation** — LANDED (`0e38547`, deployed): pieces
+      glide 210 ms on provable single-ply deltas (same piece id, origin matches lastUci,
+      type unchanged); everything else snaps (coalesced frames, fake deltas, promotions,
+      flips). Castling glides king+rook only on the exact castle pattern. Human's own
+      Play-page moves snap (no artificial lag). `prefers-reduced-motion` respected.
+      16/16 harness checks; mid-glide screenshot on record.
+- [ ] **Owner-requested: UI redesign (in flight)** — owner verdict: "ugly", wants
+      "supermodern, super clean … chess-like or classical … ultra modern" design language.
+      Direction locked: Apple-grade minimal system (frosted nav, soft elevation, pill
+      controls, generous whitespace, system sans) recolored to a classical chess identity —
+      warm ivory/ebony surfaces, walnut/oxblood single accent, brass hairlines only.
+      Delivery: three-theme switcher (Classical Light, Classical Dark, one identity theme)
+      with per-theme board palettes, `data-theme` structural hooks, localStorage
+      persistence. Worker slice in flight; deploy + screenshot review on report.
 
 ## Optimization bench log (standing review loop, converged → optimization phase)
 
