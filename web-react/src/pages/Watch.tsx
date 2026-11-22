@@ -15,7 +15,6 @@ import {
   IconActivityHeartbeat,
   IconChevronLeft,
   IconChevronRight,
-  IconClock,
   IconPlayerPause,
   IconPlayerPlay,
   IconTrophy,
@@ -53,6 +52,17 @@ const SAMPLE_FRAMES: Frame[] = (() => {
   return out;
 })();
 
+/** Score with losses derived: arena rows may omit `losses` (games − wins − draws). */
+function gateScoreOf(row: ArenaResult): { w: number; d: number; l: number } {
+  const w = Number(row.wins ?? 0);
+  const d = Number(row.draws ?? 0);
+  const l =
+    row.losses !== undefined && row.losses !== null
+      ? Number(row.losses)
+      : Math.max(0, Number(row.games ?? 0) - w - d);
+  return { w, d, l };
+}
+
 function SampleReplay({ compact = false }: { compact?: boolean }) {
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -69,11 +79,11 @@ function SampleReplay({ compact = false }: { compact?: boolean }) {
     <div className={compact ? 'sample compact' : 'sample'}>
       <Group justify="space-between" gap="xs">
         <Group gap={8}>
-          <Text fz="xs" fw={700} lts="0.12em" tt="uppercase">
+          <Text fz="sm" fw={600}>
             Sample game
           </Text>
           <Badge variant="light" color="gray" radius="sm" size="xs">
-            REPLAY · ILLUSTRATIVE
+            Replay · illustrative
           </Badge>
         </Group>
         <Text fz="xs" c="dimmed" className="mono">
@@ -127,14 +137,14 @@ function SampleReplay({ compact = false }: { compact?: boolean }) {
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <Stack gap={2}>
-      <Text fz={10} fw={650} lts="0.14em" tt="uppercase" c="dimmed">
+      <Text fz="sm" c="dimmed">
         {label}
       </Text>
-      <Text fz={26} fw={650} lh={1.05} className="tabular">
+      <Text fz={20} fw={600} lh={1.15} className="tabular">
         {value}
       </Text>
       {hint ? (
-        <Text fz={11} c="dimmed" lineClamp={1}>
+        <Text fz="xs" c="dimmed" lineClamp={1}>
           {hint}
         </Text>
       ) : null}
@@ -156,36 +166,34 @@ function WdlBar({ wins, draws, losses }: { wins: number; draws: number; losses: 
 function ArenaRow({ row }: { row: ArenaResult }) {
   const ckpt = typeof row.ckpt === 'string' ? row.ckpt : typeof row.checkpoint === 'string' ? row.checkpoint : '';
   const opponent = typeof row.opponent === 'string' ? row.opponent : '';
-  const wins = row.wins ?? 0;
-  const draws = row.draws ?? 0;
-  const losses = row.losses ?? 0;
+  const score = gateScoreOf(row);
   const promoted = row.promoted === true;
   return (
     <div className="arena-row">
       <Group justify="space-between" gap="xs" wrap="nowrap" align="flex-start">
         <div className="arena-tags">
-          <Text fz={12.5} fw={600}>
+          <Text fz="sm" fw={600}>
             {shortCkpt(ckpt)}
-            <Text span fz={11.5} fw={400} c="dimmed">
+            <Text span fz="xs" fw={400} c="dimmed">
               {' '}
               vs {shortCkpt(opponent)}
             </Text>
           </Text>
-          <Text fz={10.5} c="dimmed" className="mono">
-            {fmtWhen(row.ts)} · {wins + draws + losses} games
+          <Text fz="xs" c="dimmed" className="mono">
+            {fmtWhen(row.ts)} · {score.w + score.d + score.l} games
           </Text>
         </div>
         <Badge variant={promoted ? 'filled' : 'light'} color={promoted ? 'emerald' : 'gray'} radius="sm" size="xs">
-          {promoted ? 'PROMOTED' : 'HELD'}
+          {promoted ? 'Promoted' : 'Held'}
         </Badge>
       </Group>
       <Group gap={8} mt={7} wrap="nowrap">
-        <WdlBar wins={wins} draws={draws} losses={losses} />
-        <Text fz={11} className="mono" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-          {wins}W {draws}D {losses}L
+        <WdlBar wins={score.w} draws={score.d} losses={score.l} />
+        <Text fz="xs" className="mono" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+          {score.w}W {score.d}D {score.l}L
         </Text>
-        <Text fz={12} fw={650} className="mono">
-          {scoreText(wins, draws, losses)}
+        <Text fz="xs" fw={600} className="mono">
+          {scoreText(score.w, score.d, score.l)}
         </Text>
       </Group>
     </div>
@@ -195,11 +203,11 @@ function ArenaRow({ row }: { row: ArenaResult }) {
 function JournalRow({ entry }: { entry: JournalEntry }) {
   return (
     <div className="journal-row">
-      <Text fz={10.5} className="mono journal-time">
+      <Text fz={11} className="mono journal-time">
         {clock(entry.at)}
       </Text>
       <span className={`journal-level ${entry.level.toLowerCase()}`}>{entry.level}</span>
-      <Text fz={12.5} className="journal-text">
+      <Text fz="xs" className="journal-text">
         {entry.text}
       </Text>
     </div>
@@ -220,9 +228,6 @@ function FeaturedGame({ slot, movesPerSec }: { slot: LiveSlot; movesPerSec: numb
       </div>
       <Stack gap="sm" className="live-context">
         <Stack gap={2}>
-          <Text fz={10} fw={650} lts="0.14em" tt="uppercase" c="dimmed">
-            Featured game
-          </Text>
           <Title order={3}>Game {slot.game}</Title>
           <Text fz="xs" c="dimmed">
             {slot.runId ? `run ${slot.runId}` : 'self-play'} · ply {slot.ply}
@@ -242,12 +247,12 @@ function FeaturedGame({ slot, movesPerSec }: { slot: LiveSlot; movesPerSec: numb
         </Group>
 
         <div>
-          <Text fz={10} fw={650} lts="0.14em" tt="uppercase" c="dimmed" mb={6}>
+          <Text fz="sm" fw={600} mb={6}>
             Recent moves
           </Text>
           <div className="live-movelist">
             {recent.length === 0 ? (
-              <Text fz={12} c="dimmed">
+              <Text fz="xs" c="dimmed">
                 Waiting for the first move…
               </Text>
             ) : (
@@ -260,7 +265,7 @@ function FeaturedGame({ slot, movesPerSec }: { slot: LiveSlot; movesPerSec: numb
           </div>
         </div>
 
-        <Text fz={11} c="dimmed" mt="auto">
+        <Text fz="xs" c="dimmed" mt="auto">
           Boards update live; a jump can mean several plies arrived at once.
         </Text>
       </Stack>
@@ -321,66 +326,30 @@ export function Watch() {
   }, [journal.length, follow]);
 
   const liveBadge = status === 'open' && trainerAlive;
-  const gateScore =
-    latestGate && latestGate.wins !== undefined && latestGate.draws !== undefined && latestGate.losses !== undefined
-      ? scoreText(Number(latestGate.wins), Number(latestGate.draws), Number(latestGate.losses))
-      : null;
+  const latestScore = latestGate ? gateScoreOf(latestGate) : null;
+  const gateScore = latestScore ? scoreText(latestScore.w, latestScore.d, latestScore.l) : null;
 
   return (
     <Container size={1180} py={{ base: 24, sm: 32 }}>
       <Stack gap="lg">
         <Group justify="space-between" align="flex-end" gap="md" wrap="nowrap">
-          <Stack gap={2}>
-            <Text className="eyebrow">An observation of growth</Text>
-            <Title order={2}>Watch</Title>
-          </Stack>
-          <Group gap={8} wrap="nowrap">
-            <Badge
-              variant="light"
-              color={liveBadge ? 'emerald' : 'gray'}
-              radius="sm"
-              size="md"
-              leftSection={<span className={liveBadge ? 'live-dot pulse' : 'live-dot offline'} aria-hidden />}
-            >
-              {liveBadge ? 'TRAINING LIVE' : status === 'open' ? 'TRAINING IDLE' : 'CONNECTING'}
-            </Badge>
-          </Group>
+          <Title order={2}>Watch</Title>
+          <Badge
+            variant="light"
+            color={liveBadge ? 'emerald' : 'gray'}
+            radius="sm"
+            size="md"
+            leftSection={<span className={liveBadge ? 'live-dot pulse' : 'live-dot offline'} aria-hidden />}
+          >
+            {liveBadge ? 'Live' : status === 'open' ? 'Idle' : 'Connecting'}
+          </Badge>
         </Group>
-
-        {/* ---- status strip ---- */}
-        <Card padding="md">
-          <SimpleGrid cols={{ base: 2, md: 4 }} spacing="lg" verticalSpacing="md">
-            <Stat
-              label="Run"
-              value={metrics?.regime ?? '—'}
-              hint={trainerAlive ? 'trainer process alive' : 'trainer not detected'}
-            />
-            <Stat
-              label="Estimated Elo"
-              value={elo !== null ? String(elo) : '—'}
-              hint={champion ? `champion ${shortCkpt(champion)}` : 'no champion yet'}
-            />
-            <Stat
-              label="Gate"
-              value={gate ? 'Title match' : 'Idle'}
-              hint={gateScore ? `last result ${gateScore}` : 'no gate recorded'}
-            />
-            <Stat
-              label="Arena games"
-              value={typeof metrics?.arena_games === 'number' ? String(metrics.arena_games) : '—'}
-              hint={typeof metrics?.games_played === 'number' ? `${metrics.games_played} self-play games` : undefined}
-            />
-          </SimpleGrid>
-        </Card>
 
         {/* ---- live games ---- */}
         <Card padding="md">
           <Group justify="space-between" gap="xs" mb="sm">
             <Group gap={8}>
-              <span className={featured ? 'live-dot pulse' : 'live-dot offline'} aria-hidden />
-              <Text fz="xs" fw={700} lts="0.14em" tt="uppercase">
-                Live games
-              </Text>
+              <Text fw={600}>Live games</Text>
               <Text fz="xs" c="dimmed">
                 {featured
                   ? 'self-play, streaming move by move'
@@ -393,10 +362,10 @@ export function Watch() {
             </Group>
             {gate ? (
               <Badge variant="light" color="emerald" radius="sm" size="sm" leftSection={<IconTrophy size={12} />}>
-                TITLE MATCH
+                Title match
               </Badge>
             ) : featured ? (
-              <Text fz={11} c="dimmed" className="mono">
+              <Text fz="xs" c="dimmed" className="mono">
                 {slots.length} board{slots.length === 1 ? '' : 's'} streaming
               </Text>
             ) : null}
@@ -419,10 +388,10 @@ export function Watch() {
                         interactive={false}
                       />
                       <Group justify="space-between" gap={4} mt={5} wrap="nowrap">
-                        <Text fz={10.5} className="mono" c="dimmed">
+                        <Text fz={11} className="mono" c="dimmed">
                           G{slot.game} · {slot.ply}
                         </Text>
-                        <Text fz={10.5} className="mono" c="dimmed">
+                        <Text fz={11} className="mono" c="dimmed">
                           {slot.lastSan ?? slot.lastUci ?? ''}
                         </Text>
                       </Group>
@@ -449,10 +418,10 @@ export function Watch() {
                       {champion ? ` · Elo ${Math.round(metrics?.elo ?? 0)}` : ''}
                     </Text>
                   ) : null}
-                  {latestGate ? (
-                    <Text fz={12} c="dimmed">
+                  {latestGate && latestScore ? (
+                    <Text fz="xs" c="dimmed">
                       Last result: {shortCkpt(latestGate.ckpt)} vs {shortCkpt(latestGate.opponent)} ·{' '}
-                      {scoreText(latestGate.wins ?? 0, latestGate.draws ?? 0, latestGate.losses ?? 0)} ·{' '}
+                      {scoreText(latestScore.w, latestScore.d, latestScore.l)} ·{' '}
                       {latestGate.promoted ? 'promoted' : 'champion held'}
                     </Text>
                   ) : null}
@@ -475,16 +444,16 @@ export function Watch() {
         </Card>
 
         {/* ---- progress + numbers ---- */}
-        <div className="watch-row chart-row">
+        <div className="watch-row">
           <Card padding="md">
             <Group justify="space-between" gap="xs" mb={6}>
               <Text fw={600}>Training progress</Text>
-              <Text fz={10.5} c="dimmed" className="mono">
-                {metrics?.updated_at ? `UPDATED ${clock(metrics.updated_at)}` : 'AWAITING TELEMETRY'}
+              <Text fz="xs" c="dimmed" className="mono">
+                {metrics?.updated_at ? `updated ${clock(metrics.updated_at)}` : 'awaiting telemetry'}
               </Text>
             </Group>
             <EloChart points={chart} />
-            <Text fz={11} c="dimmed" mt={4}>
+            <Text fz="xs" c="dimmed" mt={4}>
               Elo after each checkpoint&apos;s gauntlet. The ring marks the current champion
               {champion ? ` (${shortCkpt(champion)})` : ''}. Source: arena ladder.
             </Text>
@@ -494,11 +463,32 @@ export function Watch() {
             <Text fw={600} mb="md">
               By the numbers
             </Text>
-            <SimpleGrid cols={2} spacing="lg" verticalSpacing="lg">
+            <SimpleGrid cols={2} spacing="lg" verticalSpacing="md">
+              <Stat
+                label="Run"
+                value={metrics?.regime ?? '—'}
+                hint={trainerAlive ? 'trainer process alive' : 'trainer not detected'}
+              />
+              <Stat
+                label="Champion"
+                value={champion ? shortCkpt(champion) : '—'}
+                hint="current title holder"
+              />
+              <Stat label="Estimated Elo" value={elo !== null ? String(elo) : '—'} hint="arena ladder" />
+              <Stat
+                label="Gate"
+                value={gate ? 'Title match' : 'Idle'}
+                hint={gateScore ? `last result ${gateScore}` : 'no gates yet'}
+              />
               <Stat
                 label="Self-play games"
                 value={typeof metrics?.games_played === 'number' ? String(metrics.games_played) : '—'}
                 hint="against itself"
+              />
+              <Stat
+                label="Arena games"
+                value={typeof metrics?.arena_games === 'number' ? String(metrics.arena_games) : '—'}
+                hint="gated matches"
               />
               <Stat label="Win rate" value={pct(metrics?.win_rate)} hint="latest match" />
               <Stat
@@ -506,14 +496,9 @@ export function Watch() {
                 value={typeof metrics?.loss === 'number' ? metrics.loss.toFixed(2) : '—'}
                 hint="lower is better"
               />
-              <Stat
-                label="Gate record"
-                value={latestGate ? (latestGate.promoted ? 'Promoted' : 'Held') : '—'}
-                hint={latestGate ? fmtWhen(latestGate.ts) : 'no gates yet'}
-              />
             </SimpleGrid>
             {metricsError ? (
-              <Text fz={11} c="orange" mt="md">
+              <Text fz="xs" c="orange" mt="md">
                 Metrics REST fallback failed — showing the last socket snapshot.
               </Text>
             ) : null}
@@ -521,21 +506,13 @@ export function Watch() {
         </div>
 
         {/* ---- journal + arena ---- */}
-        <div className="watch-row feed-row">
+        <div className="watch-row">
           <Card padding="md" className="journal-card">
             <Group justify="space-between" gap="xs" mb={8}>
-              <Group gap={8}>
-                <Text fw={600}>Training journal</Text>
-                <Badge variant="light" color="gray" radius="sm" size="xs">
-                  LIVE FEED
-                </Badge>
-              </Group>
-              <Group gap={6} wrap="nowrap">
-                <IconActivityHeartbeat size={13} className="hint-icon" aria-hidden />
-                <Text fz={10.5} c="dimmed" className="mono">
-                  {movesPerSec > 0 ? `${movesPerSec.toFixed(1)} moves/s` : 'quiet'}
-                </Text>
-              </Group>
+              <Text fw={600}>Training journal</Text>
+              <Text fz="xs" c="dimmed" className="mono">
+                {movesPerSec > 0 ? `${movesPerSec.toFixed(1)} moves/s` : 'quiet'}
+              </Text>
             </Group>
             <div
               className="journal-feed"
@@ -548,14 +525,14 @@ export function Watch() {
               aria-live="polite"
             >
               {journal.length === 0 ? (
-                <Text fz={12.5} c="dimmed" p="sm">
+                <Text fz="xs" c="dimmed" p="sm">
                   No journal lines yet. Iterations are logged roughly once an hour; live moves stream above.
                 </Text>
               ) : (
                 journal.map((entry) => <JournalRow key={entry.id} entry={entry} />)
               )}
             </div>
-            <Text fz={10.5} c="dimmed" mt={6}>
+            <Text fz="xs" c="dimmed" mt={6}>
               Structured training events, translated to plain language. Newest at the bottom.
             </Text>
           </Card>
@@ -563,17 +540,17 @@ export function Watch() {
           <Card padding="md" className="arena-card">
             <Group justify="space-between" gap="xs" mb={8}>
               <Text fw={600}>Arena ledger</Text>
-              <Text fz={10.5} c="dimmed" className="mono">
-                {arena ? `${arena.length} MATCHES` : arenaError ? 'UNAVAILABLE' : 'LOADING'}
+              <Text fz="xs" c="dimmed" className="mono">
+                {arena ? `${arena.length} matches` : arenaError ? 'unavailable' : 'loading'}
               </Text>
             </Group>
 
             {arenaError ? (
-              <Text fz={12.5} c="dimmed">
+              <Text fz="xs" c="dimmed">
                 The arena ledger is unreachable right now. Gate history will appear here when the API is back.
               </Text>
             ) : arenaSorted.length === 0 ? (
-              <Text fz={12.5} c="dimmed">
+              <Text fz="xs" c="dimmed">
                 No gate matches recorded yet.
               </Text>
             ) : (
@@ -600,21 +577,7 @@ export function Watch() {
             ) : null}
           </Card>
         </div>
-
-        <Group gap={6} justify="center" c="dimmed">
-          <IconClock size={12} />
-          <Text fz={10.5} className="mono">
-            {lastUpdated(metrics?.updated_at)}
-          </Text>
-        </Group>
       </Stack>
     </Container>
   );
-}
-
-function lastUpdated(ts: number | undefined): string {
-  if (typeof ts !== 'number' || !Number.isFinite(ts)) return 'AWAITING TELEMETRY';
-  const age = Math.max(0, Math.round(Date.now() / 1000 - ts));
-  if (age < 90) return `UPDATED ${age}s AGO`;
-  return `UPDATED ${Math.round(age / 60)} MIN AGO`;
 }
