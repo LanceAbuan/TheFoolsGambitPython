@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from server import arena, backfill, config, db, engine
+from server import arena, backfill, config, db, engine, trainer
 from server.main import create_app
 
 # --- fixtures ---------------------------------------------------------------
@@ -108,10 +108,16 @@ def _seed_legacy_db(path: Path, entries: list[dict[str, Any]]) -> None:
 def _boot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, legacy_rows: list[dict[str, Any]] | None = None
 ) -> TestClient:
-    """Fresh tmp stack (DB + ledger + metrics), optionally pre-seeded legacy DB."""
+    """Fresh tmp stack (DB + ledger + metrics), optionally pre-seeded legacy DB.
+
+    The trainer-liveness probe is stubbed dead so no test ever depends on
+    whatever real trainer happens to run on this machine.
+    """
     monkeypatch.setattr(config, "DB_PATH", tmp_path / "arena.db")
     monkeypatch.setattr(config, "ARENA_LEDGER_PATH", tmp_path / "arena.jsonl")
     monkeypatch.setattr(config, "METRICS_PATH", tmp_path / "metrics.json")
+    monkeypatch.setattr(trainer, "_scan_processes", lambda run_id: False)
+    trainer.reset_cache()
     if legacy_rows is not None:
         _seed_legacy_db(tmp_path / "arena.db", legacy_rows)
     arena.reset_cache()
@@ -356,21 +362,25 @@ def test_metrics_with_glicko_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 def test_gate_hint_truth_table():
-    """Unit: hint fires only for an actively-journaling trainer with a quiet
-    ledger — never for an idle/gone trainer, never with no ledger."""
-    from server.api.train import _gate_hint
+    """Unit: the hint needs a LIVE trainer PROCESS with a ledger row and a
+    journal silent past LIVE_QUIET_SECONDS — journal freshness alone is not
+    liveness (the trainer writes nothing for the whole gate)."""
+    from server.api.train import LIVE_QUIET_SECONDS, _gate_hint
 
     now = 1_000_000.0
-    # Trainer gone (journal stale): never a gate, however quiet the ledger.
-    assert _gate_hint(now, now - 3600.0, now - 300.0) is False
-    # No journal at all: same.
-    assert _gate_hint(now, now - 3600.0, None) is False
+    # Trainer process gone: never a gate, however quiet the journal/ledger.
+    assert _gate_hint(now, now - 3600.0, now - 86_400.0, alive=False) is False
+    # Trainer alive but journal never written: no quiet stretch to measure.
+    assert _gate_hint(now, now - 3600.0, None, alive=True) is False
     # Trainer alive but no ledger yet: no claim (nothing to be quiet about).
-    assert _gate_hint(now, None, now - 5.0) is False
-    # Trainer alive + fresh arena result: training phase, not a gate.
-    assert _gate_hint(now, now - 60.0, now - 5.0) is False
-    # Trainer alive + quiet ledger: the mid-gate case.
-    assert _gate_hint(now, now - 3600.0, now - 5.0) is True
+    assert _gate_hint(now, None, now - 3600.0, alive=True) is False
+    # Trainer alive + journal streaming (self-play): not a gate.
+    assert _gate_hint(now, now - 3600.0, now - 10.0, alive=True) is False
+    # Trainer alive + journal quiet well past the measured cadence: mid-gate.
+    assert _gate_hint(now, now - 3600.0, now - 200.0, alive=True) is True
+    assert _gate_hint(now, now - 3600.0, now - LIVE_QUIET_SECONDS - 1.0, alive=True) is True
+    # Right at the boundary the hint stays off (strictly greater).
+    assert _gate_hint(now, now - 3600.0, now - LIVE_QUIET_SECONDS, alive=True) is False
 
 
 def test_metrics_gate_visibility_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

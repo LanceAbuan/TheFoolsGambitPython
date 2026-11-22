@@ -17,7 +17,7 @@ workers code against THIS docstring; every frame also carries the standard
 
 - ``metrics``: payload mirrors ``GET /api/metrics`` (elo, loss, win_rate,
   games_played, elo_by_regime, plus the additive gate-visibility keys
-  last_arena_ts / last_journal_ts / gate_in_progress — see
+  last_arena_ts / last_journal_ts / trainer_alive / gate_in_progress — see
   :mod:`server.api.train`). Unchanged shape otherwise.
 - ``log``: ``{"level": <str>, "message": <str>}`` — journal lines that are
   not live/game_end events (iteration/arena/aggregates), plus any

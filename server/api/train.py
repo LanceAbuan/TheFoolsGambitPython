@@ -16,38 +16,54 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from .. import arena, config, journal
+from .. import arena, config, journal, trainer
 
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-# gate_in_progress hint tuning (see _gate_hint): the trainer must have
-# journaled something recently to count as alive, and no arena row may have
-# landed in ARENA_QUIET_SECONDS — on the observed cycle (short training
-# phase, 20-45 min gates) a longer quiet stretch while alive is a gate.
-TRAINER_ALIVE_WINDOW_SECONDS = 120.0
-ARENA_QUIET_SECONDS = 600.0
+# gate_in_progress hint tuning (see _gate_hint). LIVE_QUIET_SECONDS is measured
+# from the trainer's real journal cadence (~2.4 lines/s while self-play runs,
+# ~2 s training phase): a live trainer that has written nothing for 3 minutes
+# is not in a training phase. Arena gates write nothing at all for 40-80 min.
+LIVE_QUIET_SECONDS = 180.0
 
 
-def _gate_hint(now: float, last_arena_ts: float | None, last_journal_ts: float | None) -> bool:
+def _gate_hint(
+    now: float,
+    last_arena_ts: float | None,
+    last_journal_ts: float | None,
+    *,
+    alive: bool,
+) -> bool:
     """Approximate "a gate is probably running" — a hint, not a state.
 
-    The trainer journals ``live`` frames through BOTH its training phase and
-    its gate, and only marks the gate's END (the arena event/ledger row), so
-    the server cannot see a gate start. The honest approximation: a trainer
-    that is actively writing (journal fresh within
-    TRAINER_ALIVE_WINDOW_SECONDS) with no arena result in
-    ARENA_QUIET_SECONDS is most likely mid-gate — on the observed cycle the
-    gate dominates wall-clock time. Known false positive: the tail of a long
-    training phase reads the same. Label accordingly in the UI; the clean
-    fix is a trainer-owned flag in metrics.json, which overrides this key
-    the moment it exists (see :func:`metrics_snapshot`).
+    Measured trainer behavior (production run ``second-light``, 2026-11-21):
+    the journal streams ``live`` frames at ~2.4 lines/s through self-play and
+    the short training phase, then writes NOTHING for the entire arena gate
+    (gates are not broadcast move by move), and resumes with the iteration line
+    when the gate result lands — a 40-80 min silence. The server therefore
+    cannot see a gate start, and journal freshness cannot prove liveness during
+    the one window this hint exists for; before this rule it made
+    ``gate_in_progress`` structurally false during every gate.
+
+    The honest rule: a trainer PROCESS is alive (:func:`server.trainer.trainer_alive`),
+    the ledger already has a row (so past results are meaningful), and the
+    journal has been silent longer than LIVE_QUIET_SECONDS. No arena-quiet
+    requirement: a gate lasts 40-80 min, and demanding a 10 min arena silence
+    on top of a 3 min journal silence only delays the hint by 10 min exactly
+    when the page is opened right behind a fresh result.
+
+    Known false positive: a trainer alive but hung/stalled past 3 min reads as
+    mid-gate. The clean fix remains a trainer-owned flag in metrics.json, which
+    overrides this key the moment it exists (see :func:`metrics_snapshot`).
     """
-    if last_journal_ts is None or now - last_journal_ts > TRAINER_ALIVE_WINDOW_SECONDS:
-        return False  # trainer idle/gone: never claim a gate
+    if not alive:
+        return False  # no trainer process: never claim a gate
     if last_arena_ts is None:
         return False  # no ledger yet: nothing to be quiet about
-    return (now - last_arena_ts) > ARENA_QUIET_SECONDS
+    if last_journal_ts is None:
+        return False  # journal never written: no quiet stretch to measure
+    return (now - last_journal_ts) > LIVE_QUIET_SECONDS
 
 
 def metrics_snapshot() -> dict[str, Any]:
@@ -62,10 +78,12 @@ def metrics_snapshot() -> dict[str, Any]:
     Gate-visibility keys (additive, derived server-side when the trainer
     doesn't provide them — a trainer-owned key always wins via setdefault):
     ``last_arena_ts`` (newest ledger row: when the last gate result landed),
-    ``last_journal_ts`` (newest train_log event: trainer last seen), and
-    ``gate_in_progress`` (the :func:`_gate_hint` approximation). A page
-    opened mid-gate can show "gate running — last result X min ago" instead
-    of an honest-looking-but-wrong empty state.
+    ``last_journal_ts`` (newest train_log event: trainer last seen),
+    ``trainer_alive`` (a trainer process is running — see
+    :mod:`server.trainer`), and ``gate_in_progress`` (the
+    :func:`_gate_hint` approximation). A page opened mid-gate can show
+    "gate running — last result X min ago" instead of an
+    honest-looking-but-wrong empty state.
     """
     defaults: dict[str, Any] = {
         "elo": None,
@@ -83,9 +101,18 @@ def metrics_snapshot() -> dict[str, Any]:
     snapshot["elo_by_regime"] = arena.elo_by_regime()
     last_arena = arena.last_arena_ts()
     last_journal = journal.latest_event_ts()
+    # Run id preference: a trainer-owned metrics key, else the journal's newest
+    # event (the run actually writing). Used to scope the process match.
+    run_id = snapshot.get("run_id")
+    if not isinstance(run_id, str) or not run_id:
+        run_id = journal.latest_run_id()
+    alive = trainer.trainer_alive(run_id)
     snapshot.setdefault("last_arena_ts", last_arena)
     snapshot.setdefault("last_journal_ts", last_journal)
-    snapshot.setdefault("gate_in_progress", _gate_hint(time.time(), last_arena, last_journal))
+    snapshot.setdefault("trainer_alive", alive)
+    snapshot.setdefault("gate_in_progress", _gate_hint(
+        time.time(), last_arena, last_journal, alive=alive,
+    ))
     return snapshot
 
 
