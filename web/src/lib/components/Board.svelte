@@ -229,6 +229,13 @@
       attempt(selected, p.square);
       return;
     }
+    // F-10: a piece only responds — select or drag-lift — when the human may
+    // actually move it. The engine's side, pinned pieces, and the enemy's turn
+    // stay inert (legalTargets already encodes all of that).
+    if (legalTargets(p.square).length === 0) {
+      clearSel();
+      return;
+    }
     select(p.square);
     dragId = p.id;
     const { x, y } = xy(p.square);

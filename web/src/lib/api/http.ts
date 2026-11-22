@@ -56,6 +56,13 @@ export interface MetricsSnapshot {
   regime_elo?: Record<string, number>;
   /** Checkpoint → Elo ladder (WP-C slice 1 already emits this). */
   checkpoints?: Record<string, number>;
+  /** Epoch seconds the pipeline last rewrote its metrics file (F-C dating). */
+  updated_at?: number;
+  /** Gate visibility (additive, post-deploy): server-declared title-match state. */
+  gate_in_progress?: boolean;
+  /** Gate visibility (additive): epoch seconds of the last arena row / journal line. */
+  last_arena_ts?: number;
+  last_journal_ts?: number;
   [key: string]: unknown;
 }
 
@@ -80,8 +87,19 @@ export function bestKnownElo(m: MetricsSnapshot | null | undefined): number | nu
   return typeof m.elo === 'number' && Number.isFinite(m.elo) ? m.elo : null;
 }
 
+/**
+ * One archive-row shape, ALIGNED ON `game_id` (docs/TODO.md "Polish — unify
+ * archive game id field"): the WS `lobby` payload and this client speak
+ * `game_id`; the pinned §14.0 REST `/api/games` row field is `id`. The backend
+ * now carries BOTH (additive aliases, equal); `games()` additionally adopts a
+ * legacy `id`-only row's value as the `game_id` fallback, so consumers can
+ * rely on `game_id` alone.
+ */
 export interface GameArchiveEntry {
+  /** Canonical game id (the WS-lobby name; REST rows alias it additively as `id`). */
   game_id: string;
+  /** Pinned §14.0 REST field — additive alias of `game_id` (equal when present). */
+  id?: string;
   kind: string;
   white_name?: string;
   black_name?: string;
@@ -91,6 +109,14 @@ export interface GameArchiveEntry {
   started_at?: number;
   ended_at?: number | null;
   [key: string]: unknown;
+}
+
+/** Align on one shape (docs/TODO.md "Polish — unify archive game id field"). */
+function normalizeArchiveRow(row: GameArchiveEntry): GameArchiveEntry {
+  if (typeof row.game_id === 'string' && row.game_id.length > 0) return row;
+  const legacy = row.id;
+  if (typeof legacy === 'string' && legacy.length > 0) return { ...row, game_id: legacy };
+  return row; // neither field usable — render-side consumers treat it as opaque
 }
 
 export class ApiError extends Error {
@@ -178,7 +204,8 @@ export async function games(
 ): Promise<{ games: GameArchiveEntry[] }> {
   const qs = new URLSearchParams({ limit: String(limit) });
   if (kind) qs.set('kind', kind);
-  return request<{ games: GameArchiveEntry[] }>(`/games?${qs.toString()}`);
+  const data = await request<{ games: GameArchiveEntry[] }>(`/games?${qs.toString()}`);
+  return { games: Array.isArray(data.games) ? data.games.map(normalizeArchiveRow) : [] };
 }
 
 /** Arena ledger row (FS-2): a ledger entry, NOT a play game — no id/status/moves. */

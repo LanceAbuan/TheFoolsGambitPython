@@ -96,6 +96,8 @@
   let journalSeq = 0;
   let feedEl: HTMLDivElement | undefined = $state();
   let follow = $state(true);
+  /** Arrival times of recent `live` frames (capped) — the journal panel's pulse. */
+  let liveArrivals = $state<number[]>([]);
 
   function logLineFrom(msg: ServerMessage): { text: string; level: string } | null {
     const p: unknown = msg.payload;
@@ -172,6 +174,65 @@
   let gridSize = $state(16); // desktop 4×4; shrinks on narrow viewports
   const endTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
+  // ---- gate-aware panel states (three-state LIVE GAMES) ----------------------
+  // Arena gates (title matches) stream NO per-ply frames, so while a gate runs
+  // the grid legitimately goes quiet — which must not read as "training runs
+  // offline". Everything here is client-side from RECEIVED frames plus an
+  // ARRIVAL clock (Date.now() at receive time; frame ts is never trusted for
+  // this clock): any live/game_end/iteration frame proves a run exists this
+  // session, and >90s without a `live` frame while connected is gate quiet.
+  const GATE_QUIET_MS = (() => {
+    // Dev/test override: ?gateQuietMs=<0..600000>. Production pages never pass it.
+    const v = Number(new URLSearchParams(location.search).get('gateQuietMs'));
+    return Number.isFinite(v) && v >= 0 && v <= 600_000 ? v : 90_000;
+  })();
+  let sawRunFrame = $state(false); // a run announced itself this session
+  let lastLiveAt = $state(0); // arrival of the last `live` frame
+  let lastRunAt = $state(0); // arrival of the last run frame of any kind
+  let lastRunKind = $state<'live' | 'game_end' | 'iteration' | null>(null);
+  let lastIter = $state<{ n: number; elo: number | null } | null>(null);
+
+  function markRunFrame(kind: 'live' | 'game_end' | 'iteration'): void {
+    sawRunFrame = true;
+    lastRunKind = kind;
+    lastRunAt = Date.now();
+    if (kind === 'live') lastLiveAt = lastRunAt;
+  }
+
+  /**
+   * `log` frames carry the raw journal JSON as `message` — the backend routes
+   * only live/game_end to dedicated frames (server/journal.py classify_line),
+   * so kind:"iteration" lines arrive here. They are the gate state's
+   * breadcrumb: the iteration number + elo the panel may quote while quiet.
+   *
+   * History guard: the subscribe backlog replays the last ≤50 journal lines
+   * (server/telemetry.py docstring) — including lines from a run that is
+   * already over. A line older than STALE_RUN_S at ARRIVAL is backlog replay,
+   * not a heartbeat, and must not arm the title-match state. (The 90s quiet
+   * clock itself still runs on arrival times only; this check merely dates
+   * the line's own content, which is exactly what the backlog falsifies.)
+   */
+  const STALE_RUN_S = 300;
+  function noteLogFrame(p: Record<string, unknown>): void {
+    const text = typeof p.message === 'string' ? p.message : '';
+    if (!text.startsWith('{')) return;
+    try {
+      const o = JSON.parse(text) as Record<string, unknown>;
+      if (o.kind !== 'iteration') return;
+      // Post-deploy servers mark backlog replay authoritatively; the ts check
+      // below remains only for pre-deploy servers that do not send the flag.
+      if (o.replayed === true) return;
+      if (typeof o.ts === 'number' && Date.now() / 1000 - o.ts > STALE_RUN_S) return;
+      const n =
+        typeof o.iteration === 'number' && Number.isFinite(o.iteration) ? Math.round(o.iteration) : null;
+      if (n === null) return;
+      lastIter = { n, elo: typeof o.elo === 'number' && Number.isFinite(o.elo) ? o.elo : null };
+      markRunFrame('iteration');
+    } catch {
+      /* not JSON — an ordinary journal line */
+    }
+  }
+
   $effect(() => {
     const onResize = (): void => {
       gridSize = window.innerWidth >= 900 ? 16 : window.innerWidth >= 560 ? 9 : 6;
@@ -220,6 +281,12 @@
       moves: [...(prev?.moves ?? []), { ply, uci, san }].slice(-MOVE_LIST_CAP),
     };
     sawLive = true;
+    markRunFrame('live');
+    // Journal heartbeat (production reality): `log` frames only carry
+    // iteration/arena/aggregate lines — roughly one per ~45 min of self-play —
+    // so the written diary is quiet for long stretches while practice moves
+    // stream. The journal panel treats these arrivals as its pulse.
+    liveArrivals = [...liveArrivals, Date.now()].slice(-240);
     // Memory safety net: drop the stalest game when the store grows past MAX_STORE.
     const ids = Object.keys(liveSlots).map(Number);
     if (ids.length > MAX_STORE) {
@@ -233,6 +300,10 @@
   }
 
   function onGameEnd(p: Record<string, unknown>): void {
+    // FS-6d: every terminal frame feeds the finishes ticker — even for a game
+    // whose live frames we never saw (the end event itself is authoritative).
+    pushFinish(p);
+    markRunFrame('game_end'); // a game_end proves the run exists even when the slot is unknown
     const game = p.game;
     if (typeof game !== 'number' || !Number.isInteger(game)) return;
     const slot = liveSlots[game];
@@ -260,9 +331,92 @@
     liveSlots = {};
     sawLive = false;
     featured = null;
+    liveArrivals = []; // fresh join: the pulse re-anchors (no replay exists)
     for (const t of endTimers.values()) clearTimeout(t);
     endTimers.clear();
+    // A fresh join re-anchors the quiet clocks: the stream has GATE_QUIET_MS to
+    // prove itself again before the title-match state may speak (frames are
+    // never replayed, so pre-disconnect arrivals must not count for this join).
+    lastLiveAt = Date.now();
+    lastRunAt = Date.now();
+    // NOTE: the finishes ticker is deliberately NOT reset here. Its entries are
+    // real received game_end frames with their own arrival time; they age out
+    // on their own TTL, and a reconnect does not make them unhappened.
   }
+
+  // ---- recent-finishes ticker (FS-6d) ----------------------------------------
+  // CRITICAL HONESTY: `game_end` frames are TRAINING SELF-PLAY — practice reps
+  // The Fool plays against itself while it learns. They are NOT arena ledger
+  // rows: the ledger (separate section below) records only champion title
+  // matches, the gauntlet a new version must win to take over. The label and
+  // tip keep that separation explicit; nothing here may borrow ledger wording.
+  const FINISHES_CAP = 5; // newest five, newest first
+  const FINISHES_TTL_MS = 180_000; // pruned three minutes after arrival
+  const FINISHES_FADE_MS = 40_000; // fade begins for the final 40s
+
+  interface FinishEntry {
+    game: number;
+    result: string;
+    plies: number;
+    at: number; // Date.now() when the frame arrived (drives relative time)
+  }
+
+  let recentEnds = $state<FinishEntry[]>([]);
+  let nowTick = $state(Date.now());
+
+  function pushFinish(p: Record<string, unknown>): void {
+    const game = p.game;
+    if (typeof game !== 'number' || !Number.isInteger(game)) return;
+    const entry: FinishEntry = {
+      game,
+      result: typeof p.result === 'string' && p.result.length > 0 ? p.result : '—',
+      plies: typeof p.plies === 'number' && Number.isFinite(p.plies) ? Math.max(0, Math.round(p.plies)) : 0,
+      at: Date.now(),
+    };
+    // Duplicate-frame guard: the same game ending twice within seconds renders once.
+    if (recentEnds.some((e) => e.game === game && entry.at - e.at < 5000)) return;
+    recentEnds = [entry, ...recentEnds].slice(0, FINISHES_CAP);
+  }
+
+  /** Relative arrival time, refreshed by the one-second ticker heartbeat. */
+  function relAge(at: number): string {
+    const s = Math.max(0, Math.floor((nowTick - at) / 1000));
+    if (s < 10) return 'just now';
+    if (s < 60) return `${s}s ago`;
+    return `${Math.floor(s / 60)}m ago`;
+  }
+  // Server-declared journal age (additive metrics key, post-deploy): used in the
+  // gate line when the gate was armed by the metrics flag and no frame timing
+  // exists to quote. Hours-scale ages read better in h than 300m.
+  const journalAgeS = $derived.by(() => {
+    const ts = liveMetrics?.last_journal_ts;
+    return typeof ts === 'number' ? Math.max(0, nowTick / 1000 - ts) : null;
+  });
+  const journalAgeTxt = $derived.by(() => {
+    const s = journalAgeS;
+    if (s === null) return '';
+    if (s < 10) return 'just now';
+    if (s < 60) return `${Math.floor(s)}s ago`;
+    if (s < 5400) return `${Math.floor(s / 60)}m ago`;
+    return `${Math.floor(s / 3600)}h ago`;
+  });
+
+  // Heartbeat while anything time-based is on screen: refreshes the finishes'
+  // relative times, flags the fade window, prunes expired entries, and drives
+  // the gate-quiet clock. Stops itself only when none of that can matter.
+  $effect(() => {
+    if (recentEnds.length === 0 && !sawRunFrame) return;
+    const t = setInterval(() => {
+      nowTick = Date.now();
+      if (recentEnds.some((e) => nowTick - e.at >= FINISHES_TTL_MS)) {
+        recentEnds = recentEnds.filter((e) => nowTick - e.at < FINISHES_TTL_MS);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  });
+
+  const TIP_FINISHES =
+    'These are practice games — The Fool playing reps against itself while it trains, thousands of which are thrown away after the lesson. They are not the arena ledger: a title match is the gauntlet a newly trained version must win to take over, and only those matches are recorded there.';
 
   function toggleFeatured(game: number): void {
     featured = featured === game ? null : game;
@@ -300,7 +454,35 @@
   // Honest chip: real count of games in progress (may exceed visible cells
   // during a rare iteration overlap — the tooltip explains the count).
   const liveInPlay = $derived(Object.values(liveSlots).filter((s) => s.ended === null).length);
-  const liveChip = $derived(sawLive ? `${liveInPlay} IN PLAY` : 'IDLE');
+  /**
+   * Three-state LIVE GAMES panel (gate-aware):
+   * - 'live'  — boards on the wall, or live frames flowed within the quiet window;
+   * - 'gate'  — a run announced itself this session, the socket is healthy, and
+   *             no `live` frame has arrived for GATE_QUIET_MS: a title match
+   *             (arena gate) is the only thing that silences a live run;
+   * - 'empty' — no run has announced itself on this visit.
+   */
+  const panelMode = $derived.by(() => {
+    if (liveList.length > 0 || (sawLive && nowTick - lastLiveAt < GATE_QUIET_MS)) return 'live';
+    // PRIMARY (post-deploy servers): the metrics payload's own gate flag —
+    // ground truth that also covers a page opened MID-GATE, where metrics
+    // arrive within 10s but no journal/log frame ever will.
+    if (liveMetrics?.gate_in_progress === true) return 'gate';
+    // FALLBACK (pre-deploy servers): quiet-window inference from received frames.
+    if (conn === 'open' && sawRunFrame && nowTick - lastRunAt >= GATE_QUIET_MS) return 'gate';
+    return 'empty';
+  });
+  const liveChip = $derived(
+    panelMode === 'live' ? `${liveInPlay} IN PLAY` : panelMode === 'gate' ? 'TITLE MATCH' : 'IDLE',
+  );
+  const liveChipTip = $derived.by(() => {
+    if (panelMode !== 'gate') {
+      return 'How many of the training games are still in progress at this moment. A finished game shows its result for a few seconds, then clears its board.';
+    }
+    return liveMetrics?.gate_in_progress === true
+      ? 'The server reports a title match in progress — the current version is playing the champion for the crown, and that match is not broadcast move by move. The boards return when it ends.'
+      : 'No practice games are streaming at the moment — the machine is likely playing a title match, which is not broadcast move by move. The boards return when it ends.';
+  });
   const featuredSlot = $derived(featured !== null ? (liveSlots[featured] ?? null) : null);
 
   let movesEl: HTMLDivElement | undefined = $state();
@@ -313,8 +495,6 @@
   // Tooltip copy (FS-8b voice: plain clarity).
   const TIP_LIVE_GAMES =
     'The Fool is playing itself right now — every board is one real game running on the training machine, updating the moment a move is made. Boards advance every few seconds, not every second: between moves the bot is thinking, weighing hundreds of candidate positions before it commits.';
-  const TIP_LIVE_CHIP =
-    'How many of the training games are still in progress at this moment. A finished game shows its result for a few seconds, then clears its board.';
   const TIP_MOVES =
     'Each line is one move, newest at the bottom. A few lines show coordinates (like e2e4) instead of standard notation — that happens when we join a game mid-way and never saw the position the move was played from.';
 
@@ -360,6 +540,13 @@
       elo_by_regime: mapOfRegimeElo(o.elo_by_regime),
       regime_elo: mapOfNumbers(o.regime_elo),
       checkpoints: mapOfNumbers(o.checkpoints),
+      updated_at: num(o.updated_at) ?? undefined,
+      // Gate visibility (additive, post-deploy servers): the server's own
+      // title-match flag is the PRIMARY panel signal; absent → false and the
+      // quiet-window fallback decides.
+      gate_in_progress: o.gate_in_progress === true,
+      last_arena_ts: num(o.last_arena_ts) ?? undefined,
+      last_journal_ts: num(o.last_journal_ts) ?? undefined,
     };
   }
 
@@ -412,6 +599,39 @@
       arena = null; // endpoint absent/unreachable — the fallback copy stays honest
     }
   }
+
+  // F-A: newest-first ledger, rendered newest on top (defensive — the pinned
+  // contract does not pin row order). The full history stays reachable via the
+  // SHOW ALL toggle: fossil rows are honest history and are never filtered out.
+  const ARENA_VISIBLE = 8;
+  let arenaOpen = $state(false);
+
+  /** Ledger `ts` (epoch seconds, epoch ms, or ISO) → epoch ms; NaN when unusable. */
+  function tsMs(v: number | string | undefined): number {
+    if (v === undefined) return Number.NaN;
+    const d = typeof v === 'number' ? new Date(v < 1e12 ? v * 1000 : v) : new Date(v);
+    const t = d.getTime();
+    return Number.isNaN(t) ? Number.NaN : t;
+  }
+
+  const arenaSorted = $derived.by(() => {
+    const rows = arena ?? [];
+    return [...rows].sort((a, b) => {
+      const ta = tsMs(a.ts);
+      const tb = tsMs(b.ts);
+      if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
+      if (Number.isNaN(ta)) return 1; // undated rows keep their order at the end
+      if (Number.isNaN(tb)) return -1;
+      return tb - ta;
+    });
+  });
+  const arenaVisible = $derived(arenaOpen ? arenaSorted : arenaSorted.slice(0, ARENA_VISIBLE));
+  /** Early rows where both sides were the same model (pre-fix recordings). */
+  const arenaSelfMatch = $derived(
+    arenaVisible.some((r) => typeof r.ckpt === 'string' && r.ckpt.length > 0 && r.opponent === r.ckpt),
+  );
+  /** Rows carrying no rating claim (non-promoted challengers) — explained when present. */
+  const arenaEloNone = $derived(arenaSorted.some((r) => typeof r.elo !== 'number'));
 
   // ---- FS-8b: honest rating chart -------------------------------------------
   // The points are REAL when the arena ledger has rows: each approved checkpoint
@@ -475,15 +695,25 @@
     "How often the newest version beats the previous version in a head-to-head match. A version only becomes 'champion' — and takes over — if it wins.";
   const TIP_LOSS =
     "A score for how wrong The Fool's guesses were during its latest study session. High = still confused; falling over time = it's learning. Some noise is normal.";
-  const TIP_STREAK = 'Its longest run of consecutive wins against earlier versions of itself.';
   const TIP_BOARD =
     "This board replays a sample game so you can see what The Fool's practice looks like: it plays both sides, one move at a time. It is an illustration — the real training games run on the machine doing the training. The score and depth figures below come from the sample, too.";
   const TIP_JOURNAL =
     "The bot's training diary, newest at the bottom. Each entry is one round of practice: how many games it played, how wrong its guesses were, and its current rating. Some lines show raw JSON — that is the diary in its rawest form; you never need to read it.";
   const TIP_ARENA =
-    'Every time The Fool learns something new, the new version must beat the old one in a short match before it takes over. This is the record of those matches — one row per challenge.';
+    'Every time The Fool learns something new, the new version must beat the old one in a short match before it takes over. This is the record of those matches — one row per challenge, newest first. A row shows the rating that match recorded: challengers that were not promoted claim no rating ("elo none"), while the chart above shows the recomputed values.';
   const TIP_LEADERBOARD =
     "The Fool can train in different 'schools' — different practice methods with their own schedules. This compares how each school's champion is rated.";
+  // F-C: the per-regime table is only as fresh as the newest match that fed it.
+  // Stamping that date on the panel keeps a stale feed visibly dated instead of
+  // silently authoritative; the metrics file's own updated_at is the fallback.
+  const TIP_LB_ASOF =
+    'The date of the newest recorded match feeding this table. Per-regime ratings only change when a match is scored — if this date looks old, the numbers are exactly that old too.';
+  const lbAsOf = $derived.by(() => {
+    const row = arenaSorted.find((r) => !Number.isNaN(tsMs(r.ts)));
+    if (row) return fmtWhen(row.ts);
+    const u = liveMetrics?.updated_at;
+    return typeof u === 'number' ? fmtWhen(u) : null;
+  });
   const chipTip = $derived(
     conn === 'open'
       ? "You're watching the training in real time — this page refreshes itself every couple of seconds while the bot learns."
@@ -514,6 +744,7 @@
       }
     } else if (msg.type === 'log') {
       pushJournal(msg);
+      noteLogFrame(msg.payload); // sniff kind:"iteration" lines for the gate state
     } else if (msg.type === 'live') {
       onLiveFrame(msg.payload);
     } else if (msg.type === 'game_end') {
@@ -555,16 +786,37 @@
   const gamesText = $derived(
     liveMetrics?.games_played != null ? liveMetrics.games_played.toLocaleString('en-US') : '12,482',
   );
-  // Honesty: the streak only displays when the run reports it; the illustrative
-  // sample keeps its number under the ILLUSTRATIVE DATA chip.
-  const streakText = $derived.by(() => {
-    if (liveMetrics === null) return '08 W';
-    const s = liveMetrics.best_streak;
-    return typeof s === 'number' ? `${Math.round(s)} W` : '—';
-  });
+  // Honesty (F-B): the BEST STREAK stat was removed — no server code path ever
+  // writes `best_streak` (verified: absent from data/metrics.json and unwritten
+  // in training/), so the tile could only ever show a dead "—". The field stays
+  // in the typed metrics contract below so a backend that adds it later lights
+  // the stat back up without a client change.
   const telemetryLabel = $derived(liveMetrics !== null ? 'LIVE TELEMETRY' : 'ILLUSTRATIVE DATA');
   const regimeText = $derived(liveMetrics?.regime ?? null);
-  const journalLabel = $derived(journal.length > 0 ? (conn === 'open' ? 'LIVE FEED' : 'BUFFERED') : 'IDLE');
+  // ---- journal heartbeat (production-reality fix) ---------------------------
+  // During self-play the wire is ~all live/game_end frames; `log` frames
+  // (iteration/arena/aggregates) arrive only every ~45 min, and the subscribe
+  // backlog excludes live/game_end — so a mid-run page legitimately has an
+  // empty diary. The practice-move stream IS the journal's pulse until the
+  // diary fills; showing "0 LINES" then reads as broken.
+  const liveRate10s = $derived.by(() => {
+    const cutoff = nowTick - 10_000;
+    return liveArrivals.filter((t) => t >= cutoff).length / 10;
+  });
+  /** Practice moves are flowing right now (frames this join, last within the quiet window). */
+  const journalStreaming = $derived(liveArrivals.length > 0 && nowTick - lastLiveAt < GATE_QUIET_MS);
+  const rateLabel = $derived(
+    liveRate10s >= 0.95 ? String(Math.round(liveRate10s)) : liveRate10s.toFixed(1),
+  );
+  const journalLabel = $derived(
+    journal.length > 0
+      ? conn === 'open'
+        ? 'LIVE FEED'
+        : 'BUFFERED'
+      : journalStreaming
+        ? 'STREAMING'
+        : 'IDLE',
+  );
   const chip = $derived(
     conn === 'open' ? 'LIVE · CONNECTED' : conn === 'connecting' ? 'LIVE · CONNECTING' : 'DEMO · OFFLINE',
   );
@@ -625,42 +877,10 @@
     <section class="panel training-board live-panel">
       <div class="section-title">
         <span><i class="live-dot"></i> LIVE GAMES <Tip text={TIP_LIVE_GAMES} label="What is this wall of boards?" /></span>
-        <span class="tiny-label">{liveChip} <Tip text={TIP_LIVE_CHIP} label="What does the count mean?" /></span>
+        <span class="tiny-label">{liveChip} <Tip text={liveChipTip} label="What does the count mean?" /></span>
       </div>
 
-      {#if !sawLive}
-        <p class="live-empty">
-          No live games right now. Training runs offline; when a run is active, its games appear here move by move.
-        </p>
-        <div class="sample-block">
-          <div class="sample-head">
-            <span class="tiny-label">SAMPLE GAME · REPLAY</span>
-            <Tip text={TIP_BOARD} label="About the sample game" />
-          </div>
-          <div class="board-shell small-board">
-            <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
-            <Board mini fen={current.fen} />
-            <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
-          </div>
-          <div class="playback">
-            <button class="round-button" onclick={() => step(-1)} aria-label="previous position">←</button>
-            <button class="round-button play-toggle" onclick={toggle} aria-label={playing ? 'pause' : 'play'}>
-              {playing ? '❙❙' : '▶'}
-            </button>
-            <button class="round-button" onclick={() => step(1)} aria-label="next position">→</button>
-            <span>POSITION {String(frame + 1).padStart(2, '0')} / {String(frames.length).padStart(2, '0')}</span>
-            <input type="range" min="0" max={frames.length - 1} bind:value={frame} oninput={stop} aria-label="timeline" />
-          </div>
-          <div class="analysis-row">
-            <div><small>CURRENT MOVE</small><strong>{current.label}</strong></div>
-            <div><small>POSITION SCORE</small><strong>{score}</strong></div>
-            <div><small>SEARCH DEPTH</small><strong>{depth}</strong></div>
-          </div>
-          {#if regimeText}
-            <p class="regime-line">REGIME <b>{regimeText}</b>{#if liveMetrics?.champion} · CHAMPION <b>{liveMetrics.champion}</b>{/if}</p>
-          {/if}
-        </div>
-      {:else}
+      {#if panelMode === 'live'}
         {#if featuredSlot}
           <div class="featured" role="region" aria-label="featured game {featuredSlot.game}">
             <div class="featured-head">
@@ -709,6 +929,77 @@
               <span class="live-meta">MOVE {s.ply}{s.lastSan ? ` · ${s.lastSan}` : ''}</span>
             </button>
           {/each}
+        </div>
+      {:else}
+        {#if panelMode === 'gate'}
+          <!-- Gate quiet: a run exists (it announced itself with live/game_end/
+               iteration frames this session) but no practice game has streamed
+               for a while — that is what an arena gate (title match) looks like
+               from the outside. Grounded in what was actually received. -->
+          <p class="live-empty" role="status">
+            <b>Title match in progress.</b> The current version is playing the champion for the crown —
+            {#if lastRunKind === 'iteration' && lastIter}
+              the run's last word was iteration {lastIter.n}{lastIter.elo !== null ? ` · elo ${Math.round(lastIter.elo)}` : ''}, {relAge(lastRunAt)};
+            {:else if sawRunFrame}
+              the last practice frame arrived {relAge(lastRunAt)};
+            {:else if journalAgeTxt}
+              the run's last written journal entry was {journalAgeTxt};
+            {/if}
+            these matches are not streamed move by move, and the practice boards resume when it ends.
+          </p>
+        {:else}
+          <p class="live-empty">
+            No games yet. When a training run starts, its practice games appear here move by move.
+          </p>
+        {/if}
+        <div class="sample-block">
+          <div class="sample-head">
+            <span class="tiny-label">SAMPLE GAME · REPLAY</span>
+            <Tip text={TIP_BOARD} label="About the sample game" />
+          </div>
+          <div class="board-shell small-board">
+            <div class="coordinates top-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
+            <Board mini fen={current.fen} />
+            <div class="coordinates bottom-coords">a　 b　 c　 d　 e　 f　 g　 h</div>
+          </div>
+          <div class="playback">
+            <button class="round-button" onclick={() => step(-1)} aria-label="previous position">←</button>
+            <button class="round-button play-toggle" onclick={toggle} aria-label={playing ? 'pause' : 'play'}>
+              {playing ? '❙❙' : '▶'}
+            </button>
+            <button class="round-button" onclick={() => step(1)} aria-label="next position">→</button>
+            <span>POSITION {String(frame + 1).padStart(2, '0')} / {String(frames.length).padStart(2, '0')}</span>
+            <input type="range" min="0" max={frames.length - 1} bind:value={frame} oninput={stop} aria-label="timeline" />
+          </div>
+          <div class="analysis-row">
+            <div><small>CURRENT MOVE</small><strong>{current.label}</strong></div>
+            <div><small>POSITION SCORE</small><strong>{score}</strong></div>
+            <div><small>SEARCH DEPTH</small><strong>{depth}</strong></div>
+          </div>
+          {#if regimeText}
+            <p class="regime-line">REGIME <b>{regimeText}</b>{#if liveMetrics?.champion} · CHAMPION <b>{liveMetrics.champion}</b>{/if}</p>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- FS-6d: recent-finishes ticker. PRACTICE self-play results, newest
+           first — explicitly not the arena ledger (title matches only).
+           role="group", not a live region: the relative times mutate every
+           second and must not chatter at screen-reader users. -->
+      {#if recentEnds.length > 0}
+        <div class="finishes" role="group" aria-label="Recently finished practice games">
+          <span class="finishes-label">
+            PRACTICE GAMES · FINISHED
+            <Tip text={TIP_FINISHES} label="Practice games vs title matches — what is the difference?" />
+          </span>
+          <ul class="finishes-row">
+            {#each recentEnds as e (e.game + '-' + e.at)}
+              <li class="finishes-item" class:expiring={nowTick - e.at >= FINISHES_TTL_MS - FINISHES_FADE_MS}>
+                <b>#{String(e.game).padStart(2, '0')}</b> finished {e.result} · {e.plies} plies
+                <time>{relAge(e.at)}</time>
+              </li>
+            {/each}
+          </ul>
         </div>
       {/if}
     </section>
@@ -777,10 +1068,6 @@
           <small>TRAINING LOSS <Tip text={TIP_LOSS} label="What is training loss?" /></small>
           <strong>{lossText}</strong>
         </div>
-        <div>
-          <small>BEST STREAK <Tip text={TIP_STREAK} label="What is the best streak?" /></small>
-          <strong>{streakText}</strong>
-        </div>
       </div>
     </section>
 
@@ -791,7 +1078,20 @@
       </div>
       <div class="journal" bind:this={feedEl} onscroll={onFeedScroll}>
         {#if journal.length === 0}
-          <p class="journal-empty">Awaiting training telemetry — the journal fills as the pipeline runs.</p>
+          {#if journalStreaming}
+            <!-- Production reality: during self-play the diary is quiet for
+                 ~45 min stretches (log frames carry only iteration/arena lines
+                 and the backlog excludes live/game_end). The practice-move
+                 stream is the journal's pulse until the diary fills. -->
+            <p class="journal-empty journal-heartbeat" role="status">
+              <b>Practice moves are streaming</b> — {liveRate10s >= 0.3
+                ? `about ${rateLabel} a second`
+                : 'a move every few seconds'}, the last was {relAge(lastLiveAt)}. The written journal
+              (training iterations, arena gates) is appended only occasionally and appears here when it is.
+            </p>
+          {:else}
+            <p class="journal-empty">Awaiting training telemetry — the journal fills as the pipeline runs.</p>
+          {/if}
         {:else}
           {#each journal as j (j.id)}
             <p class="journal-line">
@@ -802,13 +1102,24 @@
           {/each}
         {/if}
       </div>
-      <p class="journal-foot">{journal.length} LINE{journal.length === 1 ? '' : 'S'} · FOLLOW {follow ? 'ON' : 'PAUSED'}</p>
+      <p class="journal-foot">
+        {#if journal.length > 0}
+          {journal.length} LINE{journal.length === 1 ? '' : 'S'} · FOLLOW {follow ? 'ON' : 'PAUSED'}
+        {:else if journalStreaming}
+          PRACTICE MOVES · ~{rateLabel}/S · LAST MOVE {relAge(lastLiveAt)}
+        {:else}
+          0 LINES · FOLLOW {follow ? 'ON' : 'PAUSED'}
+        {/if}
+      </p>
     </section>
 
     <section class="panel lb-panel">
       <div class="section-title">
         <span>Regime leaderboard <Tip text={TIP_LEADERBOARD} label="What is the regime leaderboard?" /></span>
-        <span class="tiny-label">PER-REGIME ELO</span>
+        <span class="tiny-label">
+          PER-REGIME ELO{lbAsOf ? ` · AS OF ${lbAsOf}` : ''}
+          <Tip text={TIP_LB_ASOF} label="How fresh is this table?" />
+        </span>
       </div>
       {#if regimeElo.length === 0}
         <p class="panel-empty">No per-regime Elo reported yet — the ledger appears once arenas are scored.</p>
@@ -836,7 +1147,7 @@
         <p class="panel-empty">No arena games recorded yet — checkpoints are gauntleted as training runs.</p>
       {:else}
         <div class="arena-rows">
-          {#each arena as a, i (`${a.run_id ?? 'run'}-${a.ckpt ?? i}`)}
+          {#each arenaVisible as a, i (`${i}-${a.ckpt ?? a.run_id ?? 'run'}`)}
             <div class="arena-row">
               <span class="arena-title">
                 {[a.regime, a.ckpt].filter((v) => typeof v === 'string' && v.length > 0).join(' / ')
@@ -850,7 +1161,7 @@
                   typeof a.wins === 'number' && typeof a.draws === 'number'
                     ? `${a.wins}W ${a.draws}D${typeof a.losses === 'number' ? ` ${a.losses}L` : ''}`
                     : (a.result ?? null),
-                  typeof a.elo === 'number' ? `elo ${Math.round(a.elo)}` : null,
+                  typeof a.elo === 'number' ? `elo ${Math.round(a.elo)}` : 'elo none',
                   fmtWhen(a.ts),
                 ]
                   .filter((v) => typeof v === 'string' && v.length > 0)
@@ -859,6 +1170,25 @@
             </div>
           {/each}
         </div>
+        {#if arenaSorted.length > ARENA_VISIBLE}
+          <button class="text-link arena-toggle" onclick={() => (arenaOpen = !arenaOpen)}>
+            {arenaOpen ? 'SHOW LATEST ONLY' : `SHOW ALL ${arenaSorted.length} MATCHES`}
+          </button>
+        {/if}
+        {#if arenaSelfMatch}
+          <!-- F-A: the aliased-champion era recorded model-vs-itself matches.
+               Honest history — explained, never hidden. -->
+          <p class="arena-note">
+            The self-vs-self rows are early history: they were recorded before a scoring bug was fixed, when
+            both sides were the same model. They stay in the ledger.
+          </p>
+        {/if}
+        {#if arenaEloNone}
+          <p class="arena-note">
+            "ELO NONE" marks a challenger that was not promoted — that match carries no rating claim. The chart
+            above shows the recomputed values.
+          </p>
+        {/if}
       {/if}
     </section>
 
@@ -1075,6 +1405,16 @@
     font: 10px var(--mono);
     color: #9c896d;
   }
+  /* F-A: history toggle + honesty footnotes (mono, quiet, on-token) */
+  .arena-toggle {
+    margin-top: 10px;
+  }
+  .arena-note {
+    font: 10px/1.7 var(--mono);
+    letter-spacing: 0.02em;
+    color: #927e63;
+    margin: 10px 0 0;
+  }
 
   /* ---- FS-6c: live games grid + featured view ---- */
   .live-panel {
@@ -1084,6 +1424,14 @@
     font: 14px/1.6 var(--serif);
     color: var(--paper-dim);
     margin: 4px 0 14px;
+  }
+  .live-empty b {
+    color: var(--gold);
+    font-weight: 600;
+  }
+  .journal-heartbeat b {
+    color: var(--gold);
+    font-weight: 600;
   }
   /* honest empty state keeps the sample replay, clearly labelled */
   .sample-block {
@@ -1251,5 +1599,53 @@
     .live-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+  }
+
+  /* ---- FS-6d: recent-finishes ticker ----
+     Deliberately quiet mono styling under the wall of boards: practice results,
+     not ledger rows — no gold-row arena language, no shared borders with the
+     arena panel. */
+  .finishes {
+    display: flex;
+    align-items: baseline;
+    gap: 6px 14px;
+    flex-wrap: wrap;
+    border-top: 1px solid #44382f;
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+  .finishes-label {
+    font: 9px var(--mono);
+    letter-spacing: 0.12em;
+    color: #927e63;
+    white-space: nowrap;
+  }
+  .finishes-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+  .finishes-item {
+    font: 10px var(--mono);
+    letter-spacing: 0.06em;
+    color: var(--paper-dim);
+    white-space: nowrap;
+    /* fade matches FINISHES_FADE_MS: the expiring class flips 40s before the prune */
+    transition: opacity 40s linear;
+  }
+  .finishes-item.expiring {
+    opacity: 0.25;
+  }
+  .finishes-item b {
+    font-weight: 500;
+    color: var(--gold);
+  }
+  .finishes-item time {
+    color: #7d6b53;
+    margin-left: 6px;
   }
 </style>

@@ -71,6 +71,13 @@
     }
     if (game.status === 'stalemate') return 'Stalemate — the fates are balanced.';
     if (game.status === 'draw') return 'A draw — the fates are balanced.';
+    // F-11: server-decided endings the board cannot express (reaper, server
+    // draws). The reaper's own copy is matched earlier via endReason.
+    if (game.status === 'finished') {
+      if (game.winner === null) return 'A draw — the fates are balanced.';
+      const iWon = game.winner === (game.playColor === 'white' ? 'w' : 'b');
+      return iWon ? 'The game is decided — you prevail. ✦' : 'The game is decided — The Fool prevails.';
+    }
     if (game.thinking) return opponent === 'nn' ? 'The Fool (NN) is thinking…' : 'The Fool is thinking…';
     if (game.turn !== (game.playColor === 'white' ? 'w' : 'b')) return 'The opponent is on the move…';
     if (game.inCheck) return 'You are in check.';
@@ -146,7 +153,13 @@
         <span><i class="fool-dot"></i> {cardName.toUpperCase()} ♟</span>
       </div>
       <div class="board-controls">
-        <button class="button" disabled={game.over || !game.canUndo} onclick={() => game.undo()}>↶ Undo</button>
+        <!-- Undo after game over is LIVE (2026-11-21): the backend 200s the
+             take-back on mate/stalemate/resigned games and re-opens the board
+             from the response snapshot; abandoned (reaped) games still 409,
+             and canUndo hides the button for exactly those. The store still
+             coordinates by contract: 200 = re-render from the response, 409 =
+             keep the rendered state. -->
+        <button class="button" disabled={!game.canUndo} onclick={() => game.undo()}>↶ Undo</button>
         <button class="button" disabled={game.over} onclick={() => game.resign()}>⚑ Resign</button>
         <button class="button" onclick={() => game.flip()}>⇅ Flip board</button>
         <button class="button" disabled={starting} onclick={() => game.newGame()}>↻ New game</button>
