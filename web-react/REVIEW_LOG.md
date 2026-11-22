@@ -255,4 +255,9 @@ consecutive clean pass (5–16).
 Eval bar mounted in all 4 watch views (scored on desktop, pending on mobile); live data uniform.
 Thirteenth consecutive clean pass (5–17).
 
+## Pass 18 (tag `p18`, 2026-11-23, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Live and gate/sample states both verified on watch; data uniform. Fourteenth consecutive clean
+pass (5–18).
+
 
