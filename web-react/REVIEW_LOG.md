@@ -187,4 +187,9 @@ About Elo 801; watch featured/info column centered; journal hugs; ledger mono-on
 **Pass-5 disposition:** no fixes required. Loop continues (passes 6–20) as verification cycles; any
 regression restarts the fix→re-capture cadence. PR evidence set: pass01 (before) vs pass05 (after).
 
+## Pass 6 (tag `p06`, 2026-11-22, same bundle as pass 5 — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Eval bar confirmed with numeric scores on two more live games (+0.20, −0.57, +0.05); duplicate-move
+fix holds; pin, footer, tokens, coords, rows all stable.
+
 
