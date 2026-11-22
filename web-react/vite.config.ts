@@ -12,5 +12,14 @@ export default defineConfig({
   plugins: [react()],
   server: { port: 5174, strictPort: true, proxy },
   preview: { port: 5175, strictPort: true, proxy },
-  build: { outDir: 'dist', sourcemap: false },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    // rolldown-vite minifies CSS with Lightning CSS, which downlevels
+    // `light-dark()` into a var(--lightningcss-light/dark) toggle pattern that
+    // nothing defines — that turned every board square black in production.
+    // esbuild's CSS minifier keeps `light-dark()` (Chrome 123+, Firefox 120+,
+    // Safari 17.5+ all support it natively) untouched.
+    cssMinify: 'esbuild',
+  },
 });

@@ -322,8 +322,8 @@ export function Watch() {
 
   const liveBadge = status === 'open' && trainerAlive;
   const gateScore =
-    latestGate && typeof latestGate.wins === 'number' && typeof latestGate.draws === 'number' && typeof latestGate.losses === 'number'
-      ? scoreText(latestGate.wins, latestGate.draws, latestGate.losses)
+    latestGate && latestGate.wins !== undefined && latestGate.draws !== undefined && latestGate.losses !== undefined
+      ? scoreText(Number(latestGate.wins), Number(latestGate.draws), Number(latestGate.losses))
       : null;
 
   return (

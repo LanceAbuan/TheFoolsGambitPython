@@ -289,7 +289,7 @@ function StockfishCard({
           size="xs"
           w={110}
           aria-label="Stockfish depth"
-          data={['10', '14', '18', '22'].map((d) => ({ value: d, label: `depth ${d}` }))}
+          data={['10', '14', '16', '18', '22'].map((d) => ({ value: d, label: `depth ${d}` }))}
           value={String(depth)}
           onChange={(v) => v && onDepth(Number(v))}
           allowDeselect={false}
