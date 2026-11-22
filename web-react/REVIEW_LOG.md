@@ -197,4 +197,10 @@ fix holds; pin, footer, tokens, coords, rows all stable.
 Eval bar present in all states across 4 watch shots (pending + scored); latest-move single-render
 holds (spot-checked 5 featured boards); Elo 801, footer pin, tokens, rows stable.
 
+## Pass 8 (tag `p08`, 2026-11-22, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Gate/sample panel verified this round (title match state, replay controls, disclaimers) alongside
+the usual checklist. Functional prod probe re-run after this pass: `rect.light` fill correct,
+1.e4 → engine replied, analysis evals (+0.00/+0.36) + 2 arrows, 0 console errors.
+
 
