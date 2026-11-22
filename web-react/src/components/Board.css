@@ -2,9 +2,9 @@
    via light-dark(), with the emerald accent carrying selection and last-move. */
 
 .board-wrap {
-  --board-bg: light-dark(#dbe4d8, #3a473f);
-  --sq-light: light-dark(#eef2ea, #556459);
-  --sq-dark: light-dark(#7fa58f, #2f4a3d);
+  --board-bg: light-dark(#dbe4d8, #46584c);
+  --sq-light: light-dark(#eef2ea, #5b6a5e);
+  --sq-dark: light-dark(#7fa58f, #40584b);
   --hl-last: light-dark(rgba(42, 140, 97, 0.32), rgba(120, 200, 165, 0.28));
   --hl-last-stroke: light-dark(rgba(42, 140, 97, 0.65), rgba(140, 215, 180, 0.6));
   --hl-hover: light-dark(rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.16));
@@ -135,13 +135,13 @@ text.coord {
 }
 
 text.coord.on-light {
-  fill: light-dark(#3d5a49, #e8f1ec);
-  opacity: 0.72;
+  fill: light-dark(#2e4536, #f2f7f4);
+  opacity: 0.9;
 }
 
 text.coord.on-dark {
-  fill: light-dark(#23392c, #cfe2d6);
-  opacity: 0.8;
+  fill: light-dark(#1d2f24, #dcebe2);
+  opacity: 0.95;
 }
 
 /* unicode-glyph piece mode (settings toggle, default off) */

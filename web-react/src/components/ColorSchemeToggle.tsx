@@ -1,11 +1,14 @@
-import { ActionIcon, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { ActionIcon, Tooltip, useComputedColorScheme, useMantineColorScheme } from '@mantine/core';
 import { IconMoon, IconSun } from '@tabler/icons-react';
 
 export function ColorSchemeToggle() {
-  const { colorScheme, setColorScheme } = useMantineColorScheme();
-  const dark = colorScheme === 'dark';
+  const { setColorScheme } = useMantineColorScheme();
+  // useComputedColorScheme resolves 'auto' against the OS preference, so the icon
+  // matches what is actually rendered even when the scheme was never set explicitly.
+  const computed = useComputedColorScheme('light', { getInitialValueInEffect: true });
+  const dark = computed === 'dark';
   return (
-    <Tooltip label={dark ? 'Switch to light' : 'Switch to dark'} withArrow>
+    <Tooltip label={dark ? 'Switch to light mode' : 'Switch to dark mode'} withArrow>
       <ActionIcon
         variant="default"
         size="lg"

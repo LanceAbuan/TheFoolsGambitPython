@@ -4,6 +4,23 @@ body,
   min-height: 100%;
 }
 
+/* Push the static footer to the viewport bottom on short pages (About, Home). */
+.mantine-AppShell-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.routes-grow {
+  flex: 1 0 auto;
+}
+
+/* Dark scheme: one step lighter secondary text — gray-on-gray was at the
+   readability floor (status labels, footer right text, blurbs). */
+[data-mantine-color-scheme='dark'] {
+  --mantine-color-dimmed: var(--mantine-color-gray-5);
+}
+
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
@@ -143,11 +160,13 @@ body {
   vertical-align: middle;
 }
 
-/* Disabled "default" buttons keep the filled default look (dimmed), so rows of
-   mixed enabled/disabled actions read as one consistent button system. */
+/* Disabled "default" buttons keep the filled default look (dimmed) — Mantine's
+   own disabled style transparents the border, which made rows of mixed
+   enabled/disabled actions read as broken. */
 button[data-variant='default']:disabled,
 button[data-variant='default'][data-disabled] {
   background: var(--mantine-color-default);
+  border-color: var(--mantine-color-default-border);
   color: var(--mantine-color-dimmed);
 }
 
@@ -187,10 +206,8 @@ button[data-variant='default'][data-disabled] {
   font-weight: 600;
 }
 
-/* ---- Board-page layout (Play + Analyze) --------------------------------
-   App-first, not a marketing page: the board column is sized from the viewport
-   so the full board AND its controls fit a laptop screen, and the card width
-   hugs the board (no dead air). The rail takes the rest. */
+/* Board-page layout (Play + Analyze): columns stretch to the container so page
+   header, cards and footer share the same left/right edges. */
 .board-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -205,10 +222,9 @@ button[data-variant='default'][data-disabled] {
 @media (min-width: 62em) {
   .board-layout {
     --board-size: clamp(320px, min(calc(100dvh - 350px), calc(100vw - 400px)), 700px);
-    grid-template-columns: calc(var(--board-size) + 34px) minmax(300px, 440px);
+    grid-template-columns: calc(var(--board-size) + 34px) minmax(300px, 1fr);
     gap: 20px;
     align-items: start;
-    justify-content: center;
   }
 
   .board-layout .board-wrap {
@@ -306,17 +322,19 @@ button[data-variant='default'][data-disabled] {
 
 /* sample replay */
 .sample-board {
-  max-width: 340px;
+  max-width: 260px;
   margin: 12px auto 0;
 }
 
 .sample.compact .sample-board {
-  max-width: 280px;
+  max-width: 220px;
 }
 
 /* journal */
 .journal-feed {
-  height: 240px;
+  height: auto;
+  max-height: 240px;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   border-top: 1px solid var(--mantine-color-default-border);
@@ -372,28 +390,6 @@ button[data-variant='default'][data-disabled] {
   padding: 2px 0;
 }
 
-.wdl {
-  display: flex;
-  flex: 1;
-  height: 6px;
-  border-radius: 99px;
-  overflow: hidden;
-  background: var(--mantine-color-default-hover);
-  min-width: 40px;
-}
-
-.wdl-w {
-  background: var(--mantine-color-emerald-6);
-}
-
-.wdl-d {
-  background: var(--mantine-color-gray-5);
-}
-
-.wdl-l {
-  background: var(--mantine-color-orange-6);
-}
-
 /* Elo chart */
 .elo-chart svg {
   display: block;
@@ -409,7 +405,7 @@ button[data-variant='default'][data-disabled] {
 .chart-tick,
 .chart-x {
   fill: var(--mantine-color-dimmed);
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--mantine-font-family-monospace);
 }
 
@@ -449,14 +445,14 @@ button[data-variant='default'][data-disabled] {
 
 .chart-last {
   fill: var(--mantine-primary-color-filled);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--mantine-font-family-monospace);
 }
 
 .chart-best {
   fill: var(--mantine-color-dimmed);
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--mantine-font-family-monospace);
 }
 
@@ -558,6 +554,14 @@ button[data-variant='default'][data-disabled] {
   bottom: 0;
   width: 1px;
   background: rgba(0, 0, 0, 0.45);
+}
+
+.top-move .top-move-inner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
 
 .top-move .top-move-san {

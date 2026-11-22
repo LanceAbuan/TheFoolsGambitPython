@@ -645,9 +645,15 @@ export function Board({
           const ex = x2 - ux * 28;
           const ey = y2 - uy * 28;
           const color = h.color ?? '#2a8c61';
+          // White casing keeps engine arrows readable on both square colors.
           return (
-            <g key={`hint-${idx}`} pointerEvents="none" opacity={0.86}>
-              <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={color} strokeWidth={15} strokeLinecap="round" />
+            <g key={`hint-${idx}`} pointerEvents="none" opacity={0.9}>
+              <line x1={sx} y1={sy} x2={ex} y2={ey} stroke="#f8faf8" strokeWidth={22} strokeLinecap="round" />
+              <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={color} strokeWidth={13} strokeLinecap="round" />
+              <polygon
+                points={`${x2 + ux * 6},${y2 + uy * 6} ${ex - uy * 21},${ey + ux * 21} ${ex + uy * 21},${ey - ux * 21}`}
+                fill="#f8faf8"
+              />
               <polygon
                 points={`${x2},${y2} ${ex - uy * 14},${ey + ux * 14} ${ex + uy * 14},${ey - ux * 14}`}
                 fill={color}

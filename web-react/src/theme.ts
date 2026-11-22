@@ -1,11 +1,4 @@
-import {
-  Button,
-  Card,
-  createTheme,
-  Paper,
-  Tooltip,
-  type MantineColorsTuple,
-} from '@mantine/core';
+import { Badge, Button, Card, Paper, Tooltip, createTheme, type MantineColorsTuple } from '@mantine/core';
 
 // One deep-emerald accent on Mantine's neutral ladder. Type scale is
 // 12/14/16/20/28 at weights 400/600; cards are flat (1px border, no shadow).
@@ -50,6 +43,8 @@ export const theme = createTheme({
     }),
     Paper: Paper.extend({ defaultProps: { radius: 'md' } }),
     Button: Button.extend({ defaultProps: { radius: 'md' } }),
+    // Mantine uppercases Badge text in CSS — the design is sentence case everywhere.
+    Badge: Badge.extend({ styles: { root: { textTransform: 'none' } } }),
     // Mantine 9 inverts tooltips in dark scheme (near-white bg, black text, black
     // border) — reads as a glitch on dark pages. Force one dark tooltip style in
     // both color schemes: dark-7 fill, light text, hairline border. Arrow inherits.
