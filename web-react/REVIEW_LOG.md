@@ -245,4 +245,9 @@ both verified. Tenth consecutive clean pass (5–14).
 Eval bar scored on all 4 watch shots (+0.48, −0.17, +0.02, +0.14); live data uniform across all
 home/about shots. Eleventh consecutive clean pass (5–15).
 
+## Pass 16 (tag `p16`, 2026-11-23, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Eval bar scored on all 4 watch shots (−0.20, +0.04, −0.27, −0.04); live data uniform. Twelfth
+consecutive clean pass (5–16).
+
 
