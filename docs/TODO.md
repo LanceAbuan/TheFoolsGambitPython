@@ -308,3 +308,19 @@ commits each slice as it lands, then pushes + opens the PR:
 - [ ] Delete temp mock-server + extracted zip from `%TEMP%\opencode\fool-frontend` after mock retired.
 - [ ] svelte-check clean run (`npm run check`) — add to CI once green.
 - [ ] Rename session/docs references to old purple theme → sepia tarot (screenshots in plan doc).
+
+## UI overhaul harvest (2026-11-22, `feature/ui-minimalist-overhaul` — 20-pass screenshot loop)
+
+Defect ledger with full per-pass detail lives in `web-react/REVIEW_LOG.md` (passes 1–3+,
+all read, fixes deployed to `web/dist` and verified on production each round).
+
+- [ ] **Mobile nav strategy at ≤390px** — one cramped row (brand glyph + 5 routes + scheme
+      toggle, ~12–13px type, sub-44px tap targets). Fits with zero overflow today; a
+      menu/priority-nav is a feature decision, deliberately not made mid-overhaul.
+- [ ] **Header vs page-container left edge at 390px** — hero/body content appears inset a
+      few px differently than the header brand (needs a padding-token reconciliation).
+- [ ] **Mantine `Badge`/micro-chips audit** — global `textTransform: none` now applied; any
+      future chip that should be uppercase must be authored uppercase (mono mode chips are).
+- [ ] **Watch: gate stat hint format** — currently `last result 0.500` (score); consider
+      `0-16-0` W/D/L form to match the ledger rows.
+

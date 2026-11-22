@@ -1,14 +1,8 @@
-import {
-  Button,
-  Card,
-  createTheme,
-  Paper,
-  type MantineColorsTuple,
-} from '@mantine/core';
+import { Badge, Button, Card, Paper, Tooltip, createTheme, type MantineColorsTuple } from '@mantine/core';
 
-// Fresh identity for the React client: one deep-emerald accent on Mantine's
-// neutral ladder. No carry-over from the Svelte palette — this is a new design,
-// not a port. Dark mode is first-class (auto by default, toggle in the header).
+// One deep-emerald accent on Mantine's neutral ladder. Type scale is
+// 12/14/16/20/28 at weights 400/600; cards are flat (1px border, no shadow).
+// Dark mode is first-class (auto by default, toggle in the header).
 const emerald: MantineColorsTuple = [
   '#e9f6ef',
   '#d2e9de',
@@ -24,7 +18,7 @@ const emerald: MantineColorsTuple = [
 
 export const theme = createTheme({
   primaryColor: 'emerald',
-  primaryShade: { light: 6, dark: 4 },
+  primaryShade: { light: 7, dark: 7 },
   colors: { emerald },
   fontFamily:
     'Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif',
@@ -33,20 +27,35 @@ export const theme = createTheme({
   headings: {
     fontFamily:
       'Inter, "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif',
-    fontWeight: '650',
+    fontWeight: '600',
     sizes: {
-      h1: { fontSize: 'clamp(2.5rem, 6vw, 4.25rem)', lineHeight: '1.02' },
-      h2: { fontSize: 'clamp(1.6rem, 3vw, 2.1rem)', lineHeight: '1.15' },
-      h3: { fontSize: '1.15rem', lineHeight: '1.25' },
+      h1: { fontSize: '28px', lineHeight: '1.2' },
+      h2: { fontSize: '20px', lineHeight: '1.3' },
+      h3: { fontSize: '16px', lineHeight: '1.35' },
+      h4: { fontSize: '14px', lineHeight: '1.4' },
     },
   },
   defaultRadius: 'md',
   cursorType: 'pointer',
   components: {
     Card: Card.extend({
-      defaultProps: { radius: 'lg', padding: 'lg', withBorder: true, shadow: 'sm' },
+      defaultProps: { radius: 'md', padding: 'lg', withBorder: true, shadow: '0' },
     }),
-    Paper: Paper.extend({ defaultProps: { radius: 'lg' } }),
+    Paper: Paper.extend({ defaultProps: { radius: 'md' } }),
     Button: Button.extend({ defaultProps: { radius: 'md' } }),
+    // Mantine uppercases Badge text in CSS — the design is sentence case everywhere.
+    Badge: Badge.extend({ styles: { root: { textTransform: 'none' } } }),
+    // Mantine 9 inverts tooltips in dark scheme (near-white bg, black text, black
+    // border) — reads as a glitch on dark pages. Force one dark tooltip style in
+    // both color schemes: dark-7 fill, light text, hairline border. Arrow inherits.
+    Tooltip: Tooltip.extend({
+      styles: {
+        tooltip: {
+          backgroundColor: 'var(--mantine-color-dark-7)',
+          color: 'var(--mantine-color-gray-2)',
+          border: '1px solid var(--mantine-color-dark-5)',
+        },
+      },
+    }),
   },
 });

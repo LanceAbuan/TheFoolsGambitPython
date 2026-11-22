@@ -28,7 +28,7 @@ import { Board } from '../components/Board';
 import { MoveList } from '../components/MoveList';
 import { useGame } from '../lib/hooks/useGame';
 import { useMetrics } from '../lib/hooks/useMetrics';
-import { bestKnownElo, type Color, type Opponent } from '../lib/api/http';
+import { type Color, type Opponent } from '../lib/api/http';
 import { game } from '../lib/state/game';
 
 const OPPONENT_META: Record<Opponent, { name: string; blurb: string }> = {
@@ -80,7 +80,8 @@ export function Play() {
   const [starting, setStarting] = useState(false);
   const [glyphs, setGlyphs] = useState(readGlyphs);
 
-  const nnElo = bestKnownElo(metrics);
+  // Champion's CURRENT arena Elo — the same number Home and Watch show.
+  const nnElo = typeof metrics?.elo === 'number' ? metrics.elo : null;
   const nnReady = nnElo !== null;
   const card = OPPONENT_META[opponent];
 
@@ -108,16 +109,16 @@ export function Play() {
 
   const statusText = (() => {
     if (state.notice) return state.notice;
-    if (state.endReason === 'abandoned') return 'Claimed by time — auto-resigned after 30 idle minutes.';
-    if (state.resigned) return 'You resign — The Fool prevails.';
+    if (state.endReason === 'abandoned') return 'Auto-resigned after 30 idle minutes.';
+    if (state.resigned) return 'You resigned.';
     if (state.status === 'checkmate') {
-      return game.winner === humanColor ? 'Checkmate — you prevail. ✦' : 'Checkmate — The Fool prevails.';
+      return game.winner === humanColor ? 'Checkmate — you win.' : 'Checkmate — The Fool wins.';
     }
-    if (state.status === 'stalemate') return 'Stalemate — the fates are balanced.';
-    if (state.status === 'draw') return 'A draw — the fates are balanced.';
+    if (state.status === 'stalemate') return 'Stalemate — draw.';
+    if (state.status === 'draw') return 'Draw.';
     if (state.status === 'finished') {
-      if (game.winner === null) return 'A draw — the fates are balanced.';
-      return game.winner === humanColor ? 'The game is decided — you prevail. ✦' : 'The game is decided — The Fool prevails.';
+      if (game.winner === null) return 'Draw.';
+      return game.winner === humanColor ? 'Game over — you win.' : 'Game over — The Fool wins.';
     }
     if (state.thinking) return opponent === 'nn' ? 'The Fool (trained) is thinking…' : 'The Fool is thinking…';
     if (state.turn !== humanColor) return 'The opponent is on the move…';
@@ -150,43 +151,27 @@ export function Play() {
 
   return (
     <Container size={1180} py={{ base: 24, sm: 32 }}>
-      <Stack gap="xl">
-        <Group justify="space-between" align="flex-end" gap="md" wrap="nowrap">
-          <Stack gap={2}>
-            <Text className="eyebrow">The game of chance</Text>
-            <Title order={2}>Play</Title>
-          </Stack>
-          <Text c="dimmed" fz="sm" visibleFrom="sm" pb={3}>
-            Take a seat across from The Fool.
-          </Text>
-        </Group>
+      <Stack gap="lg">
+        <Title order={2}>Play</Title>
 
-        <div className="play-layout">
+        <div className="board-layout">
           <div>
             <Card padding="md">
               <Group justify="space-between" gap="xs" wrap="nowrap">
-                <Group gap={8} wrap="nowrap">
-                  <span className={state.thinking ? 'live-dot pulse' : 'live-dot'} aria-hidden />
-                  <Text fz="xs" fw={700} lts="0.14em" tt="uppercase">
-                    Your journey
-                  </Text>
-                </Group>
-                <Group gap={4} wrap="nowrap">
-                  <Tooltip
-                    label="Keyboard: arrows move the cursor, Enter selects or moves, Esc cancels."
-                    multiline
-                    w={260}
-                    withArrow
-                    position="bottom"
-                  >
-                    <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Keyboard shortcuts">
-                      <IconKeyboard size={15} />
-                    </ActionIcon>
-                  </Tooltip>
-                  <Badge variant="light" color={state.mode === 'live' ? 'emerald' : 'gray'} radius="sm" size="sm">
-                    {modeLabel}
-                  </Badge>
-                </Group>
+                <Badge variant="light" color={state.mode === 'live' ? 'emerald' : 'gray'} radius="sm" size="sm">
+                  {modeLabel}
+                </Badge>
+                <Tooltip
+                  label="Keyboard: arrows move the cursor, Enter selects or moves, Esc cancels."
+                  multiline
+                  w={260}
+                  withArrow
+                  position="bottom"
+                >
+                  <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Keyboard shortcuts">
+                    <IconKeyboard size={15} />
+                  </ActionIcon>
+                </Tooltip>
               </Group>
 
               <Box mt="md">
@@ -258,25 +243,29 @@ export function Play() {
               <Card padding="lg">
                 <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
                   <Stack gap={4} style={{ minWidth: 0 }}>
-                    <Text className="eyebrow">Your opponent</Text>
                     <Title order={3}>{card.name}</Title>
-                    <Group gap={6} wrap="nowrap">
-                      <span className={state.thinking ? 'live-dot pulse' : 'live-dot'} aria-hidden />
-                      <Text fz="xs" c="dimmed" lineClamp={2}>
-                        {card.blurb}
-                      </Text>
-                    </Group>
+                    <Text fz="xs" c="dimmed" lineClamp={2}>
+                      {card.blurb}
+                    </Text>
                   </Stack>
                   <Stack gap={0} align="flex-end" style={{ flexShrink: 0 }}>
-                    <Text fz={30} fw={650} lh={1} className="tabular">
-                      {opponent === 'nn' && nnElo !== null ? Math.round(nnElo) : '—'}
-                    </Text>
-                    <Group gap={4} wrap="nowrap">
-                      <Text fz={9} className="mono" c="dimmed" lts="0.1em">
-                        EST. ELO
+                    {opponent === 'nn' && nnElo !== null ? (
+                      <>
+                        <Text fz={20} fw={600} lh={1.1} className="tabular">
+                          {Math.round(nnElo)}
+                        </Text>
+                        <Group gap={4} wrap="nowrap">
+                          <Text fz="xs" c="dimmed">
+                            Elo
+                          </Text>
+                          <Hint text={TIP_ELO_CARD} />
+                        </Group>
+                      </>
+                    ) : (
+                      <Text fz="xs" c="dimmed">
+                        No rating yet
                       </Text>
-                      <Hint text={TIP_ELO_CARD} />
-                    </Group>
+                    )}
                   </Stack>
                 </Group>
               </Card>
@@ -287,7 +276,7 @@ export function Play() {
                 </Text>
                 <Stack gap="sm">
                   <Group gap={6} wrap="nowrap">
-                    <Text component="label" htmlFor="opponent" fz="sm" fw={500}>
+                    <Text component="label" htmlFor="opponent" fz="sm">
                       Opponent
                     </Text>
                     <Hint text={TIP_OPPONENT} />
@@ -309,12 +298,12 @@ export function Play() {
                       },
                     ]}
                   />
-                  <Text fz={11} c={opponent === 'nn' && nnReady ? 'emerald' : 'dimmed'} lh={1.6}>
+                  <Text fz="xs" c={opponent === 'nn' && nnReady ? 'emerald' : 'dimmed'} lh={1.6}>
                     {opponentHelp}
                   </Text>
 
                   <Group gap={6} wrap="nowrap">
-                    <Text component="label" htmlFor="difficulty" fz="sm" fw={500}>
+                    <Text component="label" htmlFor="difficulty" fz="sm">
                       Difficulty
                     </Text>
                     <Hint text={TIP_DIFFICULTY} />
@@ -327,7 +316,7 @@ export function Play() {
                     data={DIFFICULTY}
                   />
 
-                  <Text component="label" htmlFor="side" fz="sm" fw={500}>
+                  <Text component="label" htmlFor="side" fz="sm">
                     Play as
                   </Text>
                   <Select
@@ -351,24 +340,17 @@ export function Play() {
                     disabled={starting}
                     onClick={() => void beginJourney()}
                   >
-                    {starting ? 'Summoning The Fool…' : 'Begin a new journey'}
+                    {starting ? 'Starting…' : 'Start game'}
                   </Button>
                 </Stack>
               </Card>
 
               <Card padding="lg">
-                <Group justify="space-between" mb="xs">
-                  <Text fw={600}>Move history</Text>
-                  <Text fz={9} className="mono" c="dimmed" lts="0.12em">
-                    PAST STEPS
-                  </Text>
-                </Group>
+                <Text fw={600} mb="xs">
+                  Move history
+                </Text>
                 <MoveList sans={state.sans} />
               </Card>
-
-              <Text fz="sm" c="dimmed" ta="center" fs="italic">
-                “The journey of a thousand miles begins with a single step.”
-              </Text>
             </Stack>
           </div>
         </div>

@@ -30,7 +30,7 @@ export function App() {
             >
               <Group gap={10} wrap="nowrap">
                 <Knight size={22} />
-                <Text fw={700} fz="sm" lts="0.16em" visibleFrom="xs" lh={1}>
+                <Text fw={600} fz="sm" lts="0.16em" visibleFrom="xs" lh={1}>
                   THE FOOL
                 </Text>
               </Group>
@@ -50,23 +50,25 @@ export function App() {
       </AppShell.Header>
 
       <AppShell.Main>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/play" element={<Play />} />
-          <Route path="/analysis" element={<Analysis />} />
-          <Route path="/watch" element={<Watch />} />
-          <Route path="/about" element={<About />} />
-        </Routes>
+        <Box className="routes-grow">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/play" element={<Play />} />
+            <Route path="/analysis" element={<Analysis />} />
+            <Route path="/watch" element={<Watch />} />
+            <Route path="/about" element={<About />} />
+          </Routes>
+        </Box>
 
         {/* Static footer: flows after the content, so it can never overpaint a
             card on a short mobile viewport (the fixed variant did exactly that). */}
         <Box component="footer" className="site-foot">
           <Container size={1180}>
             <Group h={52} justify="space-between" gap="xs" wrap="nowrap">
-              <Text fz={10} c="dimmed" lts="0.12em" truncate>
-                THE FOOL · A CHESS EXPERIMENT
+              <Text fz="xs" c="dimmed" truncate>
+                The Fool — a chess experiment
               </Text>
-              <Text fz={10} c="dimmed" className="mono" visibleFrom="xs" truncate>
+              <Text fz="xs" c="dimmed" className="mono" truncate>
                 local-first · RTX 3080
               </Text>
             </Group>

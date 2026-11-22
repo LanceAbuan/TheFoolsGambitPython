@@ -28,12 +28,12 @@ import {
   IconCheck,
   IconCopy,
   IconEraser,
-  IconFlipFlops,
   IconRefresh,
   IconArrowBackUp,
   IconSpeakerphone,
 } from '@tabler/icons-react';
 import { Board, type BoardHint } from '../components/Board';
+import { ExpectedBar, evalScoreText } from '../components/ExpectedBar';
 import {
   analyze,
   type AnalyzeResponse,
@@ -57,17 +57,9 @@ const TERMINAL_TEXT: Record<TerminalKind, (turn: 'white' | 'black') => string> =
   fivefold: () => 'Draw — fivefold repetition',
 };
 
-/** White-POV score label: `+0.36`, `−M4`, `—`. Mate 0 (position is mate) shows via the banner. */
-function scoreText(cp: number | null, mate: number | null): string {
-  if (mate !== null && mate !== 0) return mate > 0 ? `+M${mate}` : `−M${Math.abs(mate)}`;
-  if (cp === null || !Number.isFinite(cp)) return '—';
-  const v = cp / 100;
-  const s = Math.abs(v).toFixed(2);
-  return v > 0 ? `+${s}` : v < 0 ? `−${s}` : s;
-}
-
 function qText(q: number): string {
-  return q > 0 ? `+${q.toFixed(2)}` : q < 0 ? `−${Math.abs(q).toFixed(2)}` : '0.00';
+  const v = Math.abs(q) < 0.005 ? 0 : q;
+  return v > 0 ? `+${v.toFixed(2)}` : v < 0 ? `−${Math.abs(v).toFixed(2)}` : '0.00';
 }
 
 /** FEN freshness: compare the fields the server normalizes away (ep can differ). */
@@ -76,16 +68,6 @@ function samePosition(a: string | null | undefined, b: string | null | undefined
   const fa = a.trim().split(/\s+/);
   const fb = b.trim().split(/\s+/);
   return fa[0] === fb[0] && fa[1] === fb[1] && fa[2] === fb[2];
-}
-
-function ExpectedBar({ value }: { value: number | null }) {
-  const w = value === null ? 50 : Math.max(0, Math.min(1, value)) * 100;
-  return (
-    <div className="expected" role="img" aria-label={`White expected score ${Math.round(w)} percent`}>
-      <div className="expected-fill" style={{ width: `${w}%` }} />
-      <div className="expected-mid" aria-hidden />
-    </div>
-  );
 }
 
 function MoveButton({
@@ -102,13 +84,14 @@ function MoveButton({
       variant="default"
       size="compact-sm"
       className="top-move"
-      justify="space-between"
       fullWidth
       onClick={onClick}
       title={`Play ${san}`}
     >
-      <span className="mono top-move-san">{san}</span>
-      <span className="top-move-meta">{meta}</span>
+      <span className="top-move-inner">
+        <span className="mono top-move-san">{san}</span>
+        <span className="top-move-meta">{meta}</span>
+      </span>
     </Button>
   );
 }
@@ -116,10 +99,10 @@ function MoveButton({
 function EngineUnavailable({ name, error }: { name: string; error: string | null }) {
   return (
     <Stack gap={4} py="xs">
-      <Text fz={12.5} fw={600}>
+      <Text fz="sm" fw={600}>
         {name} is unavailable
       </Text>
-      <Text fz={11.5} c="dimmed">
+      <Text fz="xs" c="dimmed">
         {error ?? 'No report for this position.'}
       </Text>
     </Stack>
@@ -145,7 +128,7 @@ function FoolCard({
       <Group justify="space-between" gap="xs" mb={6} wrap="nowrap">
         <Group gap={6} wrap="nowrap">
           <span className="engine-dot fool" aria-hidden />
-          <Text fz={12.5} fw={650}>
+          <Text fz="sm" fw={600}>
             The Fool
           </Text>
           {engine?.checkpoint ? (
@@ -155,30 +138,25 @@ function FoolCard({
           ) : null}
         </Group>
         {live && engine?.elapsed_ms !== null && engine ? (
-          <Text fz={10} c="dimmed" className="mono">
+          <Text fz="xs" c="dimmed" className="mono">
             {(engine.elapsed_ms / 1000).toFixed(1)}s
           </Text>
         ) : null}
       </Group>
 
       {!engine ? (
-        <Text fz={11.5} c="dimmed" py="xs">
+        <Text fz="xs" c="dimmed" py="xs">
           No report yet.
         </Text>
       ) : !engine.available ? (
         <EngineUnavailable name="The Fool" error={engine.error} />
       ) : !fresh ? (
-        <Text fz={11.5} c="dimmed" py="xs">
+        <Text fz="xs" c="dimmed" py="xs">
           Waiting for this position…
         </Text>
       ) : (
         <>
-          <Group align="baseline" gap={8} wrap="nowrap">
-            <Text className="eval-score">{scoreText(engine.score_cp, engine.mate)}</Text>
-            <Text fz={10} c="dimmed" className="mono" style={{ whiteSpace: 'nowrap' }}>
-              WHITE POV
-            </Text>
-          </Group>
+          <Text className="eval-score">{evalScoreText(engine.score_cp, engine.mate)}</Text>
           <ExpectedBar value={engine.expected_white} />
           <Stack gap={4} mt="sm">
             {engine.top.slice(0, 3).map((m) => (
@@ -208,7 +186,7 @@ function FoolCard({
           allowDeselect={false}
         />
         {live && engine?.pv.length ? (
-          <Text fz={10.5} c="dimmed" className="mono" lineClamp={1} style={{ minWidth: 0 }}>
+          <Text fz={11} c="dimmed" className="mono" lineClamp={1} style={{ minWidth: 0 }}>
             {engine.pv.join(' ')}
           </Text>
         ) : null}
@@ -236,7 +214,7 @@ function StockfishCard({
       <Group justify="space-between" gap="xs" mb={6} wrap="nowrap">
         <Group gap={6} wrap="nowrap">
           <span className="engine-dot stockfish" aria-hidden />
-          <Text fz={12.5} fw={650}>
+          <Text fz="sm" fw={600}>
             Stockfish
           </Text>
           {live && engine?.depth ? (
@@ -246,37 +224,32 @@ function StockfishCard({
           ) : null}
         </Group>
         {live && engine?.elapsed_ms !== null && engine ? (
-          <Text fz={10} c="dimmed" className="mono">
+          <Text fz="xs" c="dimmed" className="mono">
             {(engine.elapsed_ms / 1000).toFixed(1)}s
           </Text>
         ) : null}
       </Group>
 
       {!engine ? (
-        <Text fz={11.5} c="dimmed" py="xs">
+        <Text fz="xs" c="dimmed" py="xs">
           No report yet.
         </Text>
       ) : !engine.available ? (
         <EngineUnavailable name="Stockfish" error={engine.error} />
       ) : !fresh ? (
-        <Text fz={11.5} c="dimmed" py="xs">
+        <Text fz="xs" c="dimmed" py="xs">
           Waiting for this position…
         </Text>
       ) : (
         <>
-          <Group align="baseline" gap={8} wrap="nowrap">
-            <Text className="eval-score">{scoreText(engine.score_cp, engine.mate)}</Text>
-            <Text fz={10} c="dimmed" className="mono" style={{ whiteSpace: 'nowrap' }}>
-              WHITE POV
-            </Text>
-          </Group>
+          <Text className="eval-score">{evalScoreText(engine.score_cp, engine.mate)}</Text>
           <ExpectedBar value={engine.expected_white} />
           <Stack gap={4} mt="sm">
             {engine.top.slice(0, 3).map((m) => (
               <MoveButton
                 key={m.uci}
                 san={m.san ?? m.uci}
-                meta={scoreText(m.score_cp, m.mate)}
+                meta={evalScoreText(m.score_cp, m.mate)}
                 onClick={() => onPlayMove(m.uci)}
               />
             ))}
@@ -295,7 +268,7 @@ function StockfishCard({
           allowDeselect={false}
         />
         {live && engine?.pv.length ? (
-          <Text fz={10.5} c="dimmed" className="mono" lineClamp={1} style={{ minWidth: 0 }}>
+          <Text fz={11} c="dimmed" className="mono" lineClamp={1} style={{ minWidth: 0 }}>
             {engine.pv.join(' ')}
           </Text>
         ) : null}
@@ -428,10 +401,7 @@ export function Analysis() {
     <Container size={1180} py={{ base: 24, sm: 32 }}>
       <Stack gap="lg">
         <Group justify="space-between" align="flex-end" gap="md" wrap="nowrap">
-          <Stack gap={2}>
-            <Text className="eyebrow">How the Fool sees it</Text>
-            <Title order={2}>Analyze</Title>
-          </Stack>
+          <Title order={2}>Analyze</Title>
           <Badge
             variant="light"
             color={report?.terminal ? 'orange' : 'gray'}
@@ -439,7 +409,7 @@ export function Analysis() {
             size="md"
             className="mono"
           >
-            {report?.terminal && fresh ? TERMINAL_TEXT[report.terminal](report.turn).toUpperCase() : turnLabel.toUpperCase()}
+            {report?.terminal && fresh ? TERMINAL_TEXT[report.terminal](report.turn) : turnLabel}
           </Badge>
         </Group>
 
@@ -459,19 +429,19 @@ export function Analysis() {
               <Group gap={4} wrap="nowrap" className="move-strip">
                 {mode === 'play' ? (
                   movePairs.length === 0 ? (
-                    <Text fz={10.5} c="dimmed">
+                    <Text fz="xs" c="dimmed">
                       Play a move, or switch to Set up to place pieces freely.
                     </Text>
                   ) : (
                     movePairs.slice(-6).map((p) => (
-                      <Text key={p.no} fz={11} className="mono" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                      <Text key={p.no} fz="xs" className="mono" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                         {p.no}.{p.w ? ` ${p.w}` : ''}
                         {p.b ? ` ${p.b}` : ''}
                       </Text>
                     ))
                   )
                 ) : (
-                  <Text fz={10.5} c="dimmed">
+                  <Text fz="xs" c="dimmed">
                     Pick a piece, then click squares to place it. Click the same piece to erase it.
                   </Text>
                 )}
@@ -483,7 +453,7 @@ export function Analysis() {
                   aria-label="Flip board"
                   onClick={() => setOrientation((o) => (o === 'white' ? 'black' : 'white'))}
                 >
-                  <IconFlipFlops size={15} />
+                  Flip
                 </Button>
               </Tooltip>
             </Group>
@@ -536,6 +506,7 @@ export function Analysis() {
                       value={fenInput}
                       onChange={(e) => setFenInput(e.currentTarget.value)}
                       error={fenInput.trim() !== board.fen ? undefined : undefined}
+                      styles={{ input: { textOverflow: 'ellipsis' } }}
                     />
                     <Button
                       variant="default"
@@ -688,6 +659,7 @@ export function Analysis() {
                       aria-label="FEN"
                       value={fenInput}
                       onChange={(e) => setFenInput(e.currentTarget.value)}
+                      styles={{ input: { textOverflow: 'ellipsis' } }}
                     />
                     <Button
                       variant="default"
@@ -714,28 +686,26 @@ export function Analysis() {
 
             <Card padding="md">
               <Group justify="space-between" gap="xs" mb="sm">
-                <Text fz="xs" fw={700} lts="0.14em" tt="uppercase">
-                  Evaluation
-                </Text>
-                <Text fz={10.5} c="dimmed" className="mono">
-                  {analyzing ? 'ANALYZING…' : fresh ? 'UP TO DATE' : evaluable ? 'QUEUED' : 'PLACE BOTH KINGS'}
+                <Text fw={600}>Evaluation</Text>
+                <Text fz="xs" c="dimmed" className="mono">
+                  {analyzing ? 'Analyzing…' : fresh ? 'Up to date' : evaluable ? 'Queued' : 'Place both kings'}
                 </Text>
               </Group>
 
               {error ? (
-                <Text fz={12} c="orange" mb="sm">
+                <Text fz="xs" c="orange" mb="sm">
                   {error}
                 </Text>
               ) : null}
               {!evaluable ? (
-                <Text fz={12} c="dimmed" mb="sm">
+                <Text fz="xs" c="dimmed" mb="sm">
                   A position needs both kings before it can be evaluated. Place them in Set up mode.
                 </Text>
               ) : null}
               {report?.terminal && fresh ? (
                 <div className="terminal-banner">
                   <IconSpeakerphone size={15} aria-hidden />
-                  <Text fz={12.5} fw={600}>
+                  <Text fz="sm" fw={600}>
                     {TERMINAL_TEXT[report.terminal](report.turn)}
                   </Text>
                 </div>
@@ -757,7 +727,7 @@ export function Analysis() {
                 onPlayMove={board.applyUci}
               />
 
-              <Text fz={10.5} c="dimmed" mt="sm">
+              <Text fz="xs" c="dimmed" mt="sm">
                 The Fool runs a short Monte-Carlo search on this machine&apos;s GPU; Stockfish a classic
                 alpha-beta search. Scores are from White&apos;s point of view. Click a move to play it.
               </Text>
