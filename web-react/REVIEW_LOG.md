@@ -240,4 +240,9 @@ numeric scores on 3 of 4 watch shots (−0.42, +0.08, +0.12). Ninth consecutive 
 Elo chart annotations (816/792) legible at 390px; eval bar scored (+0.01, +0.83) and pending states
 both verified. Tenth consecutive clean pass (5–14).
 
+## Pass 15 (tag `p15`, 2026-11-23, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Eval bar scored on all 4 watch shots (+0.48, −0.17, +0.02, +0.14); live data uniform across all
+home/about shots. Eleventh consecutive clean pass (5–15).
+
 
