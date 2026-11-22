@@ -192,4 +192,9 @@ regression restarts the fix→re-capture cadence. PR evidence set: pass01 (befor
 Eval bar confirmed with numeric scores on two more live games (+0.20, −0.57, +0.05); duplicate-move
 fix holds; pin, footer, tokens, coords, rows all stable.
 
+## Pass 7 (tag `p07`, 2026-11-22, same bundle — stability cycle)
+20/20 captured, 0 overflow, 0 errors. Read via 5 per-page sweeps. **Clean — no regressions.**
+Eval bar present in all states across 4 watch shots (pending + scored); latest-move single-render
+holds (spot-checked 5 featured boards); Elo 801, footer pin, tokens, rows stable.
+
 
