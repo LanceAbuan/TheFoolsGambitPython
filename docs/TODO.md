@@ -179,10 +179,13 @@ full-page screenshots, and the U9 audit — state at scoring time:
       during self-play still reads 11 IN PLAY. 11 new tests; full suite 490 passed.
 - [ ] **Journal header says "LIVE FEED" during a 40–80 min gate** (open, low priority). The
       panel is connected and holds backlog, so the label is true about the socket but reads
-      as "new entries are arriving" while the diary is silent by design. Proposal: keep the
-      label, add the newest entry's relative age to the footer (`N LINES · LAST 15M AGO ·
-      FOLLOW ON`) or switch the label to a neutral quiet state. Do not change the state
-      machine without the same screenshot proof used above.
+      as "new entries are arriving" while the diary is silent by design. Proposal: add the
+      newest entry's relative age to the footer (`N LINES · LAST 15M AGO · FOLLOW ON`) or
+      switch the label to a neutral quiet state. Constraint found while scoping:
+      `JournalLine.time` renders `clockTime(msg.ts)`, which is the *server push* time
+      (backlog lines show load time), so the age must come from the line's own embedded JSON
+      `ts` when present and fall back to the arrival time only for plain lines. Do not change
+      the state machine without the same screenshot proof used above.
 
 ## Optimization bench log (standing review loop, converged → optimization phase)
 
