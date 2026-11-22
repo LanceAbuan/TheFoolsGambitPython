@@ -178,9 +178,9 @@
     height: 15px;
     padding: 0;
     border-radius: 50%;
-    border: 1px solid #826747;
+    border: 1px solid var(--line);
     background: transparent;
-    color: #b49c7b;
+    color: var(--muted);
     font: 10px/1 var(--mono);
     display: inline-flex;
     align-items: center;
@@ -192,7 +192,7 @@
   .tip-q:hover {
     color: var(--gold-bright);
     border-color: var(--gold);
-    background: #382d34;
+    background: var(--panel2);
   }
   .tip-q:focus-visible,
   .tip-term:focus-visible {
@@ -202,7 +202,7 @@
   .tip-term {
     background: none;
     border: 0;
-    border-bottom: 1px dotted #b49c7b;
+    border-bottom: 1px dotted var(--muted);
     padding: 0;
     color: inherit;
     font: inherit;
@@ -224,7 +224,7 @@
     border: 1px solid var(--gold);
     padding: 9px 11px;
     font: 12px/1.55 var(--serif);
-    box-shadow: 0 8px 22px rgba(12, 8, 6, 0.55);
+    box-shadow: var(--float-shadow);
     visibility: hidden;
     opacity: 0;
     pointer-events: none;

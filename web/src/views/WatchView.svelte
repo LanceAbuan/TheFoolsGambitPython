@@ -192,7 +192,11 @@
   // session, and >90s without a `live` frame while connected is gate quiet.
   const GATE_QUIET_MS = (() => {
     // Dev/test override: ?gateQuietMs=<0..600000>. Production pages never pass it.
-    const v = Number(new URLSearchParams(location.search).get('gateQuietMs'));
+    // NOTE: an ABSENT param must fall back to 90s — Number(null) is 0, which would
+    // silently satisfy the range check and collapse the quiet window to zero.
+    const raw = new URLSearchParams(location.search).get('gateQuietMs');
+    if (raw === null) return 90_000;
+    const v = Number(raw);
     return Number.isFinite(v) && v >= 0 && v <= 600_000 ? v : 90_000;
   })();
   let sawRunFrame = $state(false); // a run announced itself this session
@@ -683,14 +687,32 @@
     const max = hi + span * 0.15;
     const W = 520;
     const H = 190;
+    // Inset the x domain so the first/last 7px dots are never half-clipped by
+    // the plot edge (they used to sit exactly on x=0 and x=520).
+    const PAD_X = 10;
+    const plotW = W - PAD_X * 2;
+    const n = chartData.pts.length;
     const xy = chartData.pts.map((p, i) => ({
       ...p,
-      x: chartData.pts.length === 1 ? W / 2 : (i / (chartData.pts.length - 1)) * W,
+      x: PAD_X + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW),
       y: H - ((p.elo - min) / (max - min)) * (H - 12) - 6,
     }));
     const d = xy.length > 1 ? `M${xy.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L')}` : null;
-    const ticks = [max, (max + min) / 2, min].map((v) => Math.round(v).toLocaleString('en-US'));
-    return { xy, d, ticks };
+    // Whole-number Elo, no locale truncation (labels render outside the SVG).
+    const ticks = [max, (max + min) / 2, min].map((v) => String(Math.round(v)));
+    // Two or fewer distinct ratings would read as a crash. Say so instead of
+    // fabricating points; the caption only appears in that case.
+    const sparse = new Set(chartData.pts.map((p) => Math.round(p.elo))).size < 3;
+    const last = xy[xy.length - 1]!;
+    const xPct = (last.x / W) * 100;
+    const anchor = xPct > 72 ? 'end' : xPct < 28 ? 'start' : 'middle';
+    const lastLabel = {
+      value: Math.round(last.elo).toLocaleString('en-US'),
+      xPct,
+      yPct: (last.y / H) * 100,
+      anchor,
+    };
+    return { xy, d, ticks, sparse, lastLabel };
   });
 
   const yTicks = $derived(chartView ? chartView.ticks : ['1800', '1600', '1400', '1200', '1000']);
@@ -817,15 +839,36 @@
   const rateLabel = $derived(
     liveRate10s >= 0.95 ? String(Math.round(liveRate10s)) : liveRate10s.toFixed(1),
   );
-  const journalLabel = $derived(
-    journal.length > 0
-      ? conn === 'open'
-        ? 'LIVE FEED'
-        : 'BUFFERED'
-      : journalStreaming
-        ? 'STREAMING'
-        : 'IDLE',
-  );
+  // ---- journal display state (label only; no thresholds touched) -------------
+  // The heartbeat above only fires once a `live` frame has arrived this join.
+  // Between self-play batches the practice stream legitimately pauses a second
+  // or two, so a fresh page could render "IDLE" before its first frame — which
+  // falsely implies training is off. Distinguish:
+  // - 'streaming'  — practice moves flowing (the unchanged heartbeat rule);
+  // - 'listening'  — connected, but zero frames since this join: the feed is
+  //                  waiting for the next practice move (not a training idle);
+  // - 'connecting' — the socket has not opened yet;
+  // - 'idle'       — only the honest quiet cases: frames flowed this join and
+  //                  then went silent past the gate-quiet window (gate/idle),
+  //                  or the feed is offline.
+  type JournalState = 'feed' | 'buffered' | 'streaming' | 'connecting' | 'listening' | 'idle';
+  const JOURNAL_LABEL: Record<JournalState, string> = {
+    feed: 'LIVE FEED',
+    buffered: 'BUFFERED',
+    streaming: 'STREAMING',
+    connecting: 'CONNECTING',
+    listening: 'LISTENING',
+    idle: 'IDLE',
+  };
+  const journalState = $derived.by<JournalState>(() => {
+    if (journal.length > 0) return conn === 'open' ? 'feed' : 'buffered';
+    // A closed socket cannot have frames flowing, even if one landed moments ago.
+    if (journalStreaming && conn === 'open') return 'streaming';
+    if (conn === 'connecting') return 'connecting';
+    if (conn === 'open' && liveArrivals.length === 0) return 'listening';
+    return 'idle';
+  });
+  const journalLabel = $derived(JOURNAL_LABEL[journalState]);
   const chip = $derived(
     conn === 'open' ? 'LIVE · CONNECTED' : conn === 'connecting' ? 'LIVE · CONNECTING' : 'DEMO · OFFLINE',
   );
@@ -1024,36 +1067,46 @@
         <em>{liveMetrics !== null ? 'LIVE · WS FEED' : '↗ +42 THIS WEEK'}</em>
       </div>
       <div class="chart-wrap">
-        <div class="chart-y">{#each yTicks as t (t)}<span>{t}</span>{/each}</div>
-        {#if chartView}
-          <svg
-            class="line-chart"
-            viewBox="0 0 520 190"
-            preserveAspectRatio="none"
-            role="img"
-            aria-label="Real Elo rating after each arena-approved checkpoint"
-          >
-            <path class="chart-grid" d="M0 20H520 M0 60H520 M0 100H520 M0 140H520 M0 180H520" />
-            {#if chartView.d}
-              <path class="chart-line" d={chartView.d} />
-            {/if}
-            {#each chartView.xy as p, i (`${i}-${p.label}`)}
-              <rect class="chart-pt" x={p.x - 3.5} y={p.y - 3.5} width="7" height="7" />
-            {/each}
-          </svg>
-        {:else}
-          <svg class="line-chart" viewBox="0 0 520 190" preserveAspectRatio="none" role="img" aria-label="Sample rating curve, rising trend — an illustration until real arena results arrive">
-            <path class="chart-grid" d="M0 20H520 M0 60H520 M0 100H520 M0 140H520 M0 180H520" />
-            <path
-              class="chart-area"
-              d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18 L520 180 L0 180Z"
-            />
-            <path
-              class="chart-line chart-line-sample"
-              d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18"
-            />
-          </svg>
-        {/if}
+        <div class="chart-y" aria-hidden="true">{#each yTicks as t (t)}<span>{t}</span>{/each}</div>
+        <div class="chart-plot">
+          {#if chartView}
+            <svg
+              class="line-chart"
+              viewBox="0 0 520 190"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="Real Elo rating after each arena-approved checkpoint"
+            >
+              <path class="chart-grid" d="M0 20H520 M0 60H520 M0 100H520 M0 140H520 M0 180H520" />
+              {#if chartView.d}
+                <path class="chart-line" d={chartView.d} />
+              {/if}
+              {#each chartView.xy as p, i (`${i}-${p.label}`)}
+                <rect class="chart-pt" x={p.x - 3.5} y={p.y - 3.5} width="7" height="7" />
+              {/each}
+            </svg>
+            <span
+              class="chart-last"
+              class:at-end={chartView.lastLabel.anchor === 'end'}
+              class:at-start={chartView.lastLabel.anchor === 'start'}
+              style:left="{chartView.lastLabel.xPct}%"
+              style:top="{chartView.lastLabel.yPct}%"
+              aria-hidden="true">{chartView.lastLabel.value}</span
+            >
+          {:else}
+            <svg class="line-chart" viewBox="0 0 520 190" preserveAspectRatio="none" role="img" aria-label="Sample rating curve, rising trend — an illustration until real arena results arrive">
+              <path class="chart-grid" d="M0 20H520 M0 60H520 M0 100H520 M0 140H520 M0 180H520" />
+              <path
+                class="chart-area"
+                d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18 L520 180 L0 180Z"
+              />
+              <path
+                class="chart-line chart-line-sample"
+                d="M0 164 L35 151 L70 157 L105 130 L140 137 L175 112 L210 118 L245 92 L280 103 L315 76 L350 83 L385 57 L420 62 L455 35 L490 42 L520 18"
+              />
+            </svg>
+          {/if}
+        </div>
       </div>
       <div class="chart-legend">
         {#if chartView}
@@ -1064,6 +1117,11 @@
           <span>REAL PLOTS APPEAR AFTER THE FIRST ARENA MATCH</span>
         {/if}
       </div>
+      {#if chartView?.sparse}
+        <p class="chart-note">
+          Fewer than three rated checkpoints so far — the curve fills in as champions defend.
+        </p>
+      {/if}
       <div class="stat-grid">
         <div>
           <small>GAMES PLAYED <Tip text={TIP_GAMES} label="What counts as games played?" /></small>
@@ -1087,7 +1145,7 @@
       </div>
       <div class="journal" bind:this={feedEl} onscroll={onFeedScroll}>
         {#if journal.length === 0}
-          {#if journalStreaming}
+          {#if journalState === 'streaming'}
             <!-- Production reality: during self-play the diary is quiet for
                  ~45 min stretches (log frames carry only iteration/arena lines
                  and the backlog excludes live/game_end). The practice-move
@@ -1098,6 +1156,14 @@
                 : 'a move every few seconds'}, the last was {relAge(lastLiveAt)}. The written journal
               (training iterations, arena gates) is appended only occasionally and appears here when it is.
             </p>
+          {:else if journalState === 'listening'}
+            <!-- Connected but no frame yet: between self-play batches. Say what is
+                 true (waiting for a move) — never that training is idle. -->
+            <p class="journal-empty" role="status">
+              The live feed is connected — waiting for the next practice move.
+            </p>
+          {:else if journalState === 'connecting'}
+            <p class="journal-empty" role="status">Connecting to the live feed…</p>
           {:else}
             <p class="journal-empty">Awaiting training telemetry — the journal fills as the pipeline runs.</p>
           {/if}
@@ -1247,12 +1313,12 @@
     margin-left: auto;
     font: 9px var(--mono);
     letter-spacing: 0.14em;
-    color: #927e63;
+    color: var(--faint);
     white-space: nowrap;
   }
   .primer-body {
     margin-top: 12px;
-    border-top: 1px solid #594634;
+    border-top: 1px solid var(--hairline);
     padding-top: 12px;
   }
   .primer-body > p {
@@ -1289,8 +1355,48 @@
   }
   .chart-pt {
     fill: var(--gold-bright);
-    stroke: #2a2118;
+    stroke: var(--ink);
     stroke-width: 1;
+  }
+  /* value of the newest checkpoint, anchored inside the plot */
+  .chart-last {
+    position: absolute;
+    transform: translate(-50%, calc(-100% - 6px));
+    font: 10px/1 var(--mono);
+    color: var(--paper);
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+    border-radius: 4px;
+    padding: 2px 4px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .chart-last.at-end {
+    transform: translate(calc(-100% - 6px), calc(-100% - 6px));
+  }
+  .chart-last.at-start {
+    transform: translate(6px, calc(-100% - 6px));
+  }
+  .chart-note {
+    font: 10px/1.5 var(--mono);
+    color: var(--faint);
+    margin: -8px 0 16px;
+  }
+  /* content height: the leaderboard must not stretch to the journal's height */
+  .lb-panel {
+    align-self: start;
+  }
+  @media (max-width: 480px) {
+    /* stack the header so the long title never races the timestamp */
+    .lb-panel .section-title {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+    .lb-panel .section-title .tiny-label {
+      font-size: 8px;
+      letter-spacing: 0.1em;
+    }
   }
 
   .training-state.off .live-dot {
@@ -1300,8 +1406,8 @@
   .regime-line {
     font: 9px var(--mono);
     letter-spacing: 0.12em;
-    color: #8f7b61;
-    border-top: 1px solid #594634;
+    color: var(--faint);
+    border-top: 1px solid var(--hairline);
     padding-top: 10px;
     margin: 12px 0 0;
   }
@@ -1313,8 +1419,8 @@
   .journal {
     max-height: 240px;
     overflow-y: auto;
-    background: #17131b;
-    border: 1px solid #44382f;
+    background: var(--field-bg);
+    border: 1px solid var(--hairline);
     padding: 10px 12px;
     display: flex;
     flex-direction: column;
@@ -1327,21 +1433,21 @@
     font: 11px var(--mono);
     line-height: 1.5;
     margin: 0;
-    color: #cbb694;
+    color: var(--paper-dim);
   }
   .journal-line time {
-    color: #7d6b53;
+    color: var(--faint);
     flex: none;
   }
   .journal-line b {
     font-weight: 400;
     flex: none;
     min-width: 44px;
-    color: #a9b88b;
+    color: var(--green);
   }
   .journal-line b[data-level='ERROR'],
   .journal-line b[data-level='WARN'] {
-    color: #c98a80;
+    color: var(--red);
   }
   .journal-line span {
     word-break: break-word;
@@ -1349,18 +1455,18 @@
   }
   .journal-empty {
     font: 11px var(--mono);
-    color: #7d6b53;
+    color: var(--faint);
     margin: 0;
   }
   .journal-foot {
     font: 8px var(--mono);
     letter-spacing: 0.12em;
-    color: #6d5d48;
+    color: var(--faint);
     margin: 8px 0 0;
   }
   .panel-empty {
     font: 11px var(--mono);
-    color: #7d6b53;
+    color: var(--faint);
     line-height: 1.6;
     margin: 6px 0;
   }
@@ -1375,12 +1481,12 @@
     align-items: baseline;
     gap: 10px;
     padding: 9px 10px;
-    background: #241e27;
-    border: 1px solid #44382f;
+    background: var(--panel2);
+    border: 1px solid var(--hairline);
     font: 12px var(--mono);
   }
   .lb-rank {
-    color: #7d6b53;
+    color: var(--faint);
   }
   .lb-name {
     color: var(--paper-dim);
@@ -1400,7 +1506,7 @@
     flex-direction: column;
     gap: 2px;
     padding: 8px 0;
-    border-bottom: 1px solid #44382f;
+    border-bottom: 1px solid var(--hairline);
   }
   .arena-title {
     font: 12px var(--mono);
@@ -1408,11 +1514,11 @@
   }
   .arena-title em {
     font-style: normal;
-    color: #9c896d;
+    color: var(--muted);
   }
   .arena-sub {
     font: 10px var(--mono);
-    color: #9c896d;
+    color: var(--muted);
   }
   /* F-A: history toggle + honesty footnotes (mono, quiet, on-token) */
   .arena-toggle {
@@ -1421,7 +1527,7 @@
   .arena-note {
     font: 10px/1.7 var(--mono);
     letter-spacing: 0.02em;
-    color: #927e63;
+    color: var(--faint);
     margin: 10px 0 0;
   }
 
@@ -1464,8 +1570,8 @@
     flex-direction: column;
     gap: 5px;
     padding: 6px;
-    background: #17131b;
-    border: 1px solid #44382f;
+    background: var(--field-bg);
+    border: 1px solid var(--hairline);
     cursor: pointer;
     text-align: left;
     font-family: inherit;
@@ -1473,7 +1579,7 @@
     min-width: 0;
   }
   .live-cell:hover {
-    border-color: #826747;
+    border-color: var(--line);
   }
   .live-cell:focus-visible {
     outline: 2px solid var(--gold);
@@ -1492,8 +1598,8 @@
     z-index: 2;
     font: 9px var(--mono);
     letter-spacing: 0.08em;
-    color: #2a2118;
-    background: rgba(213, 173, 100, 0.92);
+    color: var(--on-accent);
+    background: var(--accent-solid);
     padding: 1px 4px;
   }
   .live-result {
@@ -1503,8 +1609,8 @@
     display: grid;
     place-items: center;
     font: 20px var(--mono);
-    color: var(--gold-bright);
-    background: rgba(23, 19, 27, 0.74);
+    color: var(--scrim-text);
+    background: var(--scrim);
     pointer-events: none;
   }
   .live-mini {
@@ -1514,15 +1620,15 @@
   .live-meta {
     font: 9px var(--mono);
     letter-spacing: 0.08em;
-    color: #9c896d;
+    color: var(--muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .featured {
     margin: 2px 0 14px;
-    border: 1px solid #594634;
-    background: #241e27;
+    border: 1px solid var(--hairline);
+    background: var(--panel2);
     padding: 12px 14px;
   }
   .featured-head {
@@ -1533,12 +1639,12 @@
   }
   .featured-run {
     font-style: normal;
-    color: #9c896d;
+    color: var(--muted);
   }
   .featured-close {
     margin-left: auto;
     background: none;
-    border: 1px solid #44382f;
+    border: 1px solid var(--hairline);
     color: var(--paper-dim);
     cursor: pointer;
     font: 11px var(--mono);
@@ -1546,7 +1652,7 @@
   }
   .featured-close:hover {
     color: var(--gold-bright);
-    border-color: #826747;
+    border-color: var(--line);
   }
   .featured-close:focus-visible {
     outline: 2px solid var(--gold);
@@ -1572,8 +1678,8 @@
   .featured-moves {
     max-height: 320px;
     overflow-y: auto;
-    background: #17131b;
-    border: 1px solid #44382f;
+    background: var(--field-bg);
+    border: 1px solid var(--hairline);
     padding: 8px 10px;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
@@ -1589,7 +1695,7 @@
   }
   .fm-row b {
     font-weight: 400;
-    color: #7d6b53;
+    color: var(--faint);
   }
   @media (max-width: 900px) {
     .featured-body {
@@ -1619,14 +1725,14 @@
     align-items: baseline;
     gap: 6px 14px;
     flex-wrap: wrap;
-    border-top: 1px solid #44382f;
+    border-top: 1px solid var(--hairline);
     margin-top: 12px;
     padding-top: 10px;
   }
   .finishes-label {
     font: 9px var(--mono);
     letter-spacing: 0.12em;
-    color: #927e63;
+    color: var(--faint);
     white-space: nowrap;
   }
   .finishes-row {
@@ -1654,7 +1760,14 @@
     color: var(--gold);
   }
   .finishes-item time {
-    color: #7d6b53;
+    color: var(--faint);
     margin-left: 6px;
+  }
+  @media (max-width: 540px) {
+    /* one result is wider than a 320px content column: let it wrap instead of
+       pushing the page sideways */
+    .finishes-item {
+      white-space: normal;
+    }
   }
 </style>

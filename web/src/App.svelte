@@ -3,6 +3,7 @@
   import PlayView from './views/PlayView.svelte';
   import WatchView from './views/WatchView.svelte';
   import AboutView from './views/AboutView.svelte';
+  import ThemeSwitcher from './lib/components/ThemeSwitcher.svelte';
 
   type Tab = 'home' | 'play' | 'watch' | 'about';
   const allTabs: readonly Tab[] = ['home', 'play', 'watch', 'about'];
@@ -61,5 +62,8 @@
 </main>
 
 <footer class="site-footer">
-  <span>{footers[tab][0]}</span><span>{footers[tab][1]}</span><span>✦</span>
+  <span class="footer-copy">{footers[tab][0]}</span>
+  <span class="footer-copy footer-tagline">{footers[tab][1]}</span>
+  <span class="footer-star">✦</span>
+  <ThemeSwitcher />
 </footer>

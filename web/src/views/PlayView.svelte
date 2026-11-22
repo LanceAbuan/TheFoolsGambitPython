@@ -248,18 +248,11 @@
   .notice.alert {
     color: var(--gold-bright);
   }
-  .button:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .button:disabled:hover {
-    background: transparent;
-  }
   .kb-hint {
     text-align: center;
     font: 8px var(--mono);
     letter-spacing: 0.14em;
-    color: #7d6b53;
+    color: var(--faint);
     margin: 8px 0 0;
   }
   /* FS-8b: label + tooltip row, and the plain-English helper under the select */
@@ -274,11 +267,11 @@
   .select-help {
     font: 10px var(--mono);
     line-height: 1.6;
-    color: #8e7c65;
+    color: var(--muted);
     margin: 7px 0 0;
   }
   .select-help.ok {
-    color: #a9b88b;
+    color: var(--green);
   }
   .select-help .help-link {
     margin: 0;
@@ -295,7 +288,7 @@
   .check-row input {
     width: 14px;
     height: 14px;
-    accent-color: #b99558;
+    accent-color: var(--accent);
     cursor: pointer;
   }
 </style>
