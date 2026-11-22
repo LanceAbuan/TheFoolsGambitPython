@@ -1,0 +1,1764 @@
+@import 'tailwindcss';
+@import '@fontsource/cormorant-garamond/400.css';
+@import '@fontsource/cormorant-garamond/400-italic.css';
+@import '@fontsource/cormorant-garamond/500.css';
+@import '@fontsource/cormorant-garamond/500-italic.css';
+@import '@fontsource/cormorant-garamond/600.css';
+@import '@fontsource/cormorant-garamond/700.css';
+@import '@fontsource/dm-mono/400.css';
+@import '@fontsource/dm-mono/500.css';
+
+/*
+ * The Fool — THEME SYSTEM (2026-11-21).
+ * Three complete themes, selected by <html data-theme="…"> (see settings.svelte.ts
+ * + ThemeSwitcher.svelte). Every theme defines the SAME token set, so switching
+ * is a pure token swap — no layout shift. The default block below is
+ * `refined-tarot`: the approved sepia-tarot identity executed better (higher
+ * text contrast, tightened type scale, calmer panel chrome, richer board).
+ *
+ * Naming: --gold/--paper/--ink keep their historical names (component CSS and
+ * the approved mock depend on them); in modern-dark `--gold` carries the teal
+ * accent and `--paper` the near-white text. --faint < --muted < --paper is the
+ * text-promotion ladder (all tiers ≥4.5:1 on their surfaces).
+ */
+:root {
+  /* surfaces */
+  --ink: #17141b;
+  --bg-body: radial-gradient(ellipse at 50% -20%, #332839 0%, #17141b 58%);
+  --topbar-bg: rgba(23, 19, 27, 0.93);
+  --panel: #211b25;
+  --panel2: #282130;
+  --panel-grad: linear-gradient(145deg, #282130, #1d1823);
+  --panel-shadow: inset 0 0 0 4px rgba(200, 163, 95, 0.03);
+  --panel-border: 1px solid var(--line-soft);
+  --panel-radius: 0px;
+  --field-bg: #19151c;
+  --scrim: rgba(23, 19, 27, 0.74);
+
+  /* text */
+  --paper: #eee0c2;
+  --muted: #c3ad8c;
+  --faint: #a8957c;
+  --paper-dim: #d6c3a0;
+  --ink-text: #241d24;
+
+  /* accent */
+  --gold: #c8a35f;
+  --gold-bright: #e5cb97;
+  --gold-dim: #9d8a6b;
+  --accent: var(--gold);
+  --accent-solid: #d9bd8b;
+  --on-accent: #241d24;
+  --accent-soft: rgba(200, 163, 95, 0.24);
+  --accent-faint: rgba(200, 163, 95, 0.09);
+  --accent-ghost: rgba(200, 163, 95, 0.04);
+
+  /* lines */
+  --line: #7d6547;
+  --line-soft: rgba(150, 120, 85, 0.38);
+  --hairline: #4a3c31;
+
+  /* status */
+  --red: #c98a80;
+  --green: #a9b88b;
+
+  /* board (per-theme palettes — the board is half the visual) */
+  --sq-light: #e3cda6;
+  --sq-dark: #7a6250;
+  --board-edge: #3f3128;
+  --board-bg: #14111a;
+  --board-shadow: 0 7px 24px rgba(9, 7, 11, 0.5);
+  --board-radius: 0px;
+  --hl-last: rgba(216, 175, 96, 0.38);
+  --hl-last-stroke: rgba(233, 198, 122, 0.9);
+  --hl-hover: rgba(216, 175, 96, 0.24);
+  --hl-stroke: #e0ba72;
+  --hl-kcursor: rgba(216, 175, 96, 0.15);
+  --dot: rgba(20, 14, 26, 0.5);
+  --cap: rgba(20, 14, 26, 0.45);
+  --check-glow: #c05a4a;
+  --upiece-w: #f3e6c8;
+  --upiece-w-edge: #4c3b31;
+  --upiece-b: #201a20;
+  --upiece-b-edge: #c9a969;
+
+  /* charts + hero art */
+  --chart-grid: #514333;
+  --chart-line: #c29b5c;
+  --art-sun-hi: #d6b980;
+  --art-sun-mid: #c4a36b;
+  --art-sun-lo: #8c6e4a;
+  --art-mount-a: #39303a;
+  --art-mount-b: #2b2530;
+  --art-cloak: #211a23;
+  --art-belt: #aa8a60;
+  --hero-grad: linear-gradient(180deg, #28202a, #17141b 75%);
+  --hero-vignette: inset 0 0 70px rgba(9, 8, 12, 0.9);
+  --float-shadow: 0 15px 35px rgba(8, 7, 10, 0.5);
+
+  /* type + shape */
+  --mono: 'DM Mono', ui-monospace, monospace;
+  --serif: 'Cormorant Garamond', Georgia, serif;
+  --sans: -apple-system, 'Segoe UI', system-ui, Roboto, Helvetica, Arial, sans-serif;
+  --font-display: var(--serif);
+  --font-body: var(--serif);
+  --track-label: 0.12em;
+  --radius: 0px;
+  --radius-pill: 0px;
+  /* brass: hairlines + focus rings + active-state details ONLY (never fills) */
+  --brass: #b99558;
+  /* text color on the dark board overlay (live-result scrim) */
+  --scrim-text: #e5cb97;
+
+  /* legacy aliases (component CSS predates the theme system) */
+  --cream: var(--paper);
+  --cream-dim: var(--paper-dim);
+}
+
+/* ---- classical-light: THE hero candidate ----------------------------------
+   Modern minimal system (frosted nav, elevation, pills, whitespace, system
+   sans) recolored to a classical chess identity: ivory surfaces, charcoal-
+   ebony text, walnut/oxblood accent fills, brass ONLY as hairlines, focus
+   rings and active-state details. Board = classic Staunton-box cream/walnut. */
+:root[data-theme='classical-light'] {
+  color-scheme: light;
+
+  /* surfaces */
+  --ink: #f7f5f2;
+  --bg-body: linear-gradient(180deg, #fbfaf8 0%, #f7f5f2 340px, #f7f5f2 100%);
+  --topbar-bg: rgba(250, 249, 247, 0.72);
+  --panel: #ffffff;
+  --panel2: #f3f1ed;
+  --panel-grad: none;
+  --panel-shadow: 0 8px 30px rgba(31, 29, 26, 0.07), 0 1px 2px rgba(31, 29, 26, 0.05);
+  --panel-border: 1px solid transparent;
+  --panel-radius: 18px;
+  --field-bg: #f3f1ed;
+  --scrim: rgba(31, 29, 26, 0.55);
+
+  /* text (warm charcoal ladder) */
+  --paper: #1f1d1a;
+  --muted: #6b645b;
+  --faint: #716a5e;
+  --paper-dim: #443f39;
+  --ink-text: #fdfbf7;
+
+  /* accent: walnut/oxblood fills; brass stays in --brass for details */
+  --gold: #7a2c1e;
+  --gold-bright: #a03d2b;
+  --gold-dim: #5f2318;
+  --accent: var(--gold);
+  --accent-solid: #8a3324;
+  --on-accent: #fdfbf7;
+  --accent-soft: rgba(138, 51, 36, 0.12);
+  --accent-faint: rgba(138, 51, 36, 0.07);
+  --accent-ghost: rgba(138, 51, 36, 0.04);
+
+  /* lines */
+  --line: rgba(31, 29, 26, 0.16);
+  --line-soft: rgba(31, 29, 26, 0.1);
+  --hairline: rgba(31, 29, 26, 0.08);
+  --brass: #a58a5a;
+
+  /* status */
+  --red: #b03228;
+  --green: #276e2f;
+
+  /* board: classic Staunton-box cream + walnut (cream kept deep enough to
+     separate from the ivory page — verified 0.23 lum delta) */
+  --sq-light: #e3d7ba;
+  --sq-dark: #7a5b3d;
+  --board-edge: rgba(31, 29, 26, 0.14);
+  --board-bg: #e8e0cf;
+  --board-shadow: 0 8px 30px rgba(31, 29, 26, 0.14);
+  --board-radius: 12px;
+  --hl-last: rgba(138, 51, 36, 0.16);
+  --hl-last-stroke: rgba(138, 51, 36, 0.5);
+  --hl-hover: rgba(138, 51, 36, 0.1);
+  --hl-stroke: #8a3324;
+  --hl-kcursor: rgba(165, 138, 90, 0.16);
+  --dot: rgba(31, 29, 26, 0.4);
+  --cap: rgba(31, 29, 26, 0.36);
+  --check-glow: #c0392b;
+  --upiece-w: #fdfbf7;
+  --upiece-w-edge: #3c3831;
+  --upiece-b: #211e1b;
+  --upiece-b-edge: rgba(253, 251, 247, 0.85);
+
+  /* charts + hero art */
+  --chart-grid: #e4e1db;
+  --chart-line: #8a3324;
+  --art-sun-hi: #dcc9a5;
+  --art-sun-mid: #c0a675;
+  --art-sun-lo: #8a6f45;
+  --art-mount-a: #e9e6e0;
+  --art-mount-b: #e0ddd6;
+  --art-cloak: #eceae5;
+  --art-belt: #c0a675;
+  --hero-grad: linear-gradient(180deg, #fbfaf8, #f7f5f2 75%);
+  --hero-vignette: inset 0 0 70px rgba(31, 29, 26, 0.06);
+  --float-shadow: 0 18px 40px rgba(31, 29, 26, 0.16);
+
+  /* type + shape: classical serif display over a modern sans body */
+  --font-classical: Georgia, 'Times New Roman', serif;
+  --font-display: var(--sans);
+  --font-body: var(--sans);
+  --track-label: 0.06em;
+  --radius: 16px;
+  --radius-pill: 999px;
+  --scrim-text: #fdfbf7;
+}
+
+/* ---- classical-dark: the dark half of the same system ---------------------
+   Warm ebony/charcoal ladder (#161412 / #211e1b / #2a2622 — warm blacks, no
+   blue-dark), ivory text, same walnut/brass system, walnut/ebony board. */
+:root[data-theme='classical-dark'] {
+  color-scheme: dark;
+
+  --ink: #161412;
+  --bg-body: linear-gradient(180deg, #1b1917 0%, #161412 340px, #161412 100%);
+  --topbar-bg: rgba(22, 20, 18, 0.68);
+  --panel: #211e1b;
+  --panel2: #2a2622;
+  --panel-grad: none;
+  --panel-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --panel-border: 1px solid rgba(243, 239, 232, 0.07);
+  --panel-radius: 18px;
+  --field-bg: #2a2622;
+  --scrim: rgba(18, 16, 14, 0.62);
+
+  --paper: #f3efe8;
+  --muted: #b0a899;
+  --faint: #9a9184;
+  --paper-dim: #d8d2c6;
+  --ink-text: #fdfbf7;
+
+  --gold: #cf8a68;
+  --gold-bright: #e0a483;
+  --gold-dim: #8a4a35;
+  --accent: var(--gold);
+  --accent-solid: #9c4a2f;
+  --on-accent: #fdfbf7;
+  --accent-soft: rgba(192, 122, 91, 0.22);
+  --accent-faint: rgba(192, 122, 91, 0.1);
+  --accent-ghost: rgba(192, 122, 91, 0.05);
+
+  --line: rgba(243, 239, 232, 0.16);
+  --line-soft: rgba(243, 239, 232, 0.1);
+  --hairline: rgba(243, 239, 232, 0.08);
+  --brass: #c2a878;
+
+  --red: #e06d5f;
+  --green: #7cc97f;
+
+  --sq-light: #c7b99e;
+  --sq-dark: #4a3d31;
+  --board-edge: rgba(243, 239, 232, 0.12);
+  --board-bg: #1d1a17;
+  --board-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+  --board-radius: 12px;
+  --hl-last: rgba(192, 122, 91, 0.26);
+  --hl-last-stroke: rgba(224, 164, 131, 0.6);
+  --hl-hover: rgba(192, 122, 91, 0.18);
+  --hl-stroke: #cf8a68;
+  --hl-kcursor: rgba(194, 168, 120, 0.2);
+  --dot: rgba(18, 16, 14, 0.5);
+  --cap: rgba(18, 16, 14, 0.45);
+  --check-glow: #ff453a;
+  --upiece-w: #f3efe8;
+  --upiece-w-edge: #2a2622;
+  --upiece-b: #1d1a17;
+  --upiece-b-edge: rgba(243, 239, 232, 0.8);
+
+  --chart-grid: #302b26;
+  --chart-line: #cf8a68;
+  --art-sun-hi: #c2a878;
+  --art-sun-mid: #a58a5a;
+  --art-sun-lo: #6f5a35;
+  --art-mount-a: #201d1a;
+  --art-mount-b: #1a1815;
+  --art-cloak: #2a2622;
+  --art-belt: #c2a878;
+  --hero-grad: linear-gradient(180deg, #1b1917, #161412 75%);
+  --hero-vignette: inset 0 0 70px rgba(0, 0, 0, 0.55);
+  --float-shadow: 0 18px 40px rgba(0, 0, 0, 0.6);
+
+  --font-classical: Georgia, 'Times New Roman', serif;
+  --font-display: var(--sans);
+  --font-body: var(--sans);
+  --track-label: 0.06em;
+  --radius: 16px;
+  --radius-pill: 999px;
+  --scrim-text: #f5f1e9;
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  color-scheme: dark;
+}
+body {
+  margin: 0;
+  background: var(--bg-body);
+  color: var(--paper);
+  font-family: var(--font-body);
+  min-height: 100vh;
+}
+#app {
+  position: relative;
+  z-index: 1;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+::selection {
+  background: var(--accent-soft);
+  color: var(--paper);
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--panel2);
+  border-radius: 5px;
+  border: 2px solid var(--ink);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+button:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---- chrome ---- */
+
+.topbar {
+  height: 76px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 clamp(22px, 5vw, 76px);
+  gap: 30px;
+  background: var(--topbar-bg);
+  position: relative;
+  z-index: 3;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.brand i {
+  font-style: normal;
+  color: var(--gold);
+  font-size: 18px;
+}
+.brand-card {
+  width: 31px;
+  height: 43px;
+  border: 1px solid var(--gold);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  color: var(--gold);
+  outline: 1px solid var(--line-soft);
+  outline-offset: 3px;
+  border-radius: var(--radius);
+}
+nav {
+  display: flex;
+  gap: 34px;
+  margin-left: auto;
+  font-size: 17px;
+  color: var(--muted);
+}
+nav a,
+nav button {
+  padding: 27px 0 23px;
+  border-bottom: 2px solid transparent;
+  background: none;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+nav a:hover,
+nav a.active,
+nav button:hover,
+nav button.active {
+  color: var(--paper);
+  border-color: var(--brass);
+}
+.nav-star {
+  color: var(--gold);
+  font-size: 24px;
+  margin-left: 6px;
+}
+.site-footer {
+  min-height: 48px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 18px;
+  padding: 8px clamp(22px, 5vw, 76px);
+  font: 9px var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--faint);
+}
+.site-footer .footer-copy,
+.site-footer .footer-star {
+  white-space: nowrap;
+}
+
+/* ---- home ---- */
+
+.home-layout {
+  max-width: 1440px;
+  min-height: calc(100vh - 124px);
+  margin: auto;
+  display: grid;
+  grid-template-columns: 1.03fr 0.97fr;
+  padding: 34px clamp(20px, 5vw, 76px);
+  gap: clamp(30px, 5vw, 76px);
+  align-items: center;
+}
+.hero-art {
+  border-radius: var(--panel-radius);
+  height: min(690px, 74vh);
+  min-height: 520px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--hero-grad);
+  box-shadow: var(--hero-vignette);
+}
+.hero-art:before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 1px solid var(--line-soft);
+  pointer-events: none;
+}
+.sun {
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  border: 1px solid var(--art-sun-mid);
+  border-radius: 50%;
+  left: 50%;
+  top: 12%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--art-sun-hi) 0%, var(--art-sun-mid) 42%, var(--art-sun-lo) 43%, transparent 44%);
+  box-shadow:
+    0 0 0 14px var(--accent-faint),
+    0 0 0 32px var(--accent-ghost);
+}
+.sun:before,
+.sun:after {
+  content: '';
+  position: absolute;
+  inset: -32px;
+  border: 1px dashed var(--gold);
+  border-radius: 50%;
+}
+.sun:after {
+  inset: -55px;
+  border-style: solid;
+  opacity: 0.4;
+}
+.mountain {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-left: 280px solid transparent;
+  border-right: 280px solid transparent;
+  border-bottom: 340px solid var(--art-mount-a);
+}
+.mountain-a {
+  left: -90px;
+}
+.mountain-b {
+  right: -130px;
+  border-bottom-color: var(--art-mount-b);
+  border-left-width: 340px;
+  border-right-width: 340px;
+  border-bottom-width: 270px;
+}
+.cliff {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 34%;
+  background: linear-gradient(160deg, transparent 0 22%, var(--ink) 23% 100%);
+  clip-path: polygon(0 15%, 28% 25%, 48% 0, 66% 21%, 100% 4%, 100% 100%, 0 100%);
+}
+.wanderer {
+  position: absolute;
+  z-index: 2;
+  left: 47%;
+  top: 34%;
+  width: 105px;
+  height: 240px;
+  transform: rotate(-5deg);
+}
+.wanderer-head {
+  position: absolute;
+  left: 38px;
+  top: 0;
+  width: 30px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 2px solid var(--gold-bright);
+}
+.wanderer-body {
+  position: absolute;
+  left: 24px;
+  top: 34px;
+  width: 58px;
+  height: 118px;
+  background: linear-gradient(90deg, var(--ink) 0 30%, var(--art-belt) 31% 35%, var(--art-cloak) 36%);
+  clip-path: polygon(32% 0, 76% 0, 100% 100%, 0 90%);
+  border-bottom: 1px solid var(--gold);
+}
+.wanderer-staff {
+  position: absolute;
+  left: 90px;
+  top: -37px;
+  height: 260px;
+  width: 3px;
+  background: var(--gold);
+  transform: rotate(-17deg);
+  transform-origin: top;
+}
+.wanderer-pack {
+  position: absolute;
+  left: 3px;
+  top: 43px;
+  border: 1px solid var(--gold);
+  border-radius: 50%;
+  padding: 12px;
+  color: var(--gold);
+}
+.little-dog {
+  position: absolute;
+  z-index: 2;
+  left: 62%;
+  bottom: 24%;
+  font-size: 42px;
+  color: var(--ink);
+  text-shadow: 1px 1px var(--gold);
+}
+.art-star {
+  position: absolute;
+  color: var(--gold-bright);
+}
+.star-one {
+  top: 12%;
+  left: 15%;
+  font-size: 28px;
+}
+.star-two {
+  top: 27%;
+  right: 14%;
+  font-size: 38px;
+}
+.star-three {
+  top: 53%;
+  left: 16%;
+  font-size: 22px;
+}
+.art-caption {
+  position: absolute;
+  bottom: 27px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 10px var(--mono);
+  letter-spacing: 0.3em;
+  color: var(--faint);
+}
+.home-copy {
+  text-align: center;
+  max-width: 600px;
+  margin: auto;
+}
+.eyebrow {
+  font: 10px var(--mono);
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+.home-copy .eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.home-copy .eyebrow span {
+  width: 24px;
+  height: 1px;
+  background: var(--gold);
+}
+h1 {
+  font-size: clamp(56px, 7vw, 96px);
+  font-weight: 500;
+  line-height: 0.9;
+  margin: 24px 0 14px;
+  letter-spacing: -0.035em;
+}
+.lead {
+  font-size: 25px;
+  line-height: 1.15;
+  font-style: italic;
+  color: var(--paper-dim);
+  margin: 0;
+}
+.ornament {
+  color: var(--gold);
+  margin: 26px 0;
+  font-size: 14px;
+}
+.intro {
+  max-width: 410px;
+  margin: 0 auto 34px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.45;
+}
+.home-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.action-card {
+  border-radius: var(--panel-radius);
+  min-height: 160px;
+  border: 1px solid var(--line);
+  background: var(--panel-grad);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 8px;
+  transition: 0.2s;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+.action-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--gold);
+  background: var(--panel2);
+}
+.action-card.primary {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  border-color: var(--accent-solid);
+}
+.action-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+  color: var(--gold);
+}
+.primary .action-icon {
+  color: var(--on-accent);
+}
+.action-card strong {
+  font-size: 19px;
+  font-weight: 600;
+}
+.action-card small {
+  font-size: 14px;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+.action-card b {
+  font: 14px var(--mono);
+  margin-top: 12px;
+}
+.bottom-motif {
+  margin-top: 36px;
+  color: var(--gold);
+  font-size: 22px;
+  letter-spacing: 0.4em;
+}
+
+/* ---- shared page scaffolding ---- */
+
+.page-wrap {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 42px clamp(20px, 5vw, 70px) 60px;
+}
+.page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  margin-bottom: 28px;
+}
+.page-heading h1 {
+  font-size: 56px;
+  margin: 12px 0 4px;
+}
+.page-heading p {
+  font-size: 18px;
+  color: var(--muted);
+  margin: 0;
+}
+.chapter-mark,
+.training-state {
+  font: 10px var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--faint);
+  padding-bottom: 9px;
+}
+.chapter-mark span,
+.training-state span {
+  color: var(--gold);
+}
+.training-state {
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: min(var(--radius), 10px);
+}
+.panel {
+  border: var(--panel-border);
+  background: var(--panel-grad);
+  box-shadow: var(--panel-shadow);
+  border-radius: var(--panel-radius);
+  position: relative;
+}
+.panel-top,
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font: 11px var(--mono);
+  letter-spacing: var(--track-label);
+  color: var(--paper-dim);
+}
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 9px var(--green);
+  margin-right: 7px;
+}
+.tiny-label {
+  font: 9px var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--faint);
+}
+
+/* ---- play ---- */
+
+.play-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(270px, 0.8fr);
+  gap: 20px;
+}
+.board-panel {
+  padding: 22px 26px;
+}
+.board-shell {
+  /* The board fills its host card: the old `max-width: 610px` cap left ~200 px
+     of dead air in the Play card at 1440 px and made the Watch panel look
+     broken at ~950 px. Full width + the card's own padding is the gutter. */
+  width: 100%;
+  max-width: 100%;
+  margin: 18px 0 10px;
+  padding: 0;
+  position: relative;
+}
+.coordinates {
+  text-align: center;
+  color: var(--faint);
+  font: 10px var(--mono);
+  letter-spacing: 0.15em;
+}
+.top-coords {
+  margin-bottom: 7px;
+}
+.bottom-coords {
+  margin-top: 7px;
+}
+.board-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 35px;
+  border-top: 1px solid var(--hairline);
+  padding: 14px 0 10px;
+  font: 10px var(--mono);
+  letter-spacing: 0.1em;
+}
+.you-dot,
+.fool-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-solid);
+  margin-left: 7px;
+}
+.fool-dot {
+  background: var(--gold);
+}
+.board-controls {
+  display: flex;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 10px;
+}
+.button {
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  padding: 11px 15px;
+  font: 10px var(--mono);
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.button:hover {
+  background: var(--panel2);
+}
+.button.gold {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  border-color: var(--accent-solid);
+}
+.button.full {
+  width: 100%;
+  margin-top: 23px;
+}
+/* Disabled controls read as "not yet" in every theme: an accent-tinted surface
+   (never a saturated fill) with ink text at ~58%. This deliberately replaces
+   the old blanket opacity, which turned white-on-ivory in classical-light.
+   The `.gold` variants raise specificity above the classical `.button` hook. */
+:root .button:disabled,
+:root[data-theme] .button.gold:disabled,
+:root .button:disabled:hover,
+:root[data-theme] .button.gold:disabled:hover {
+  cursor: default;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  color: color-mix(in srgb, var(--paper) 58%, transparent);
+}
+.button span {
+  float: right;
+}
+.notice {
+  text-align: center;
+  color: var(--muted);
+  font: 10px var(--mono);
+  line-height: 1.5;
+  margin: 15px 0 0;
+}
+.side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.opponent-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+}
+.mini-fool {
+  border-radius: min(var(--radius), 12px);
+  width: 54px;
+  height: 70px;
+  border: 1px solid var(--gold);
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  color: var(--gold);
+  outline: 1px solid var(--line-soft);
+  outline-offset: 3px;
+  margin: 0 6px;
+}
+.opponent-card h2 {
+  font-size: 25px;
+  font-weight: 500;
+  margin: 2px 0;
+}
+.opponent-card p {
+  font: 10px var(--mono);
+  color: var(--muted);
+  margin: 0;
+}
+.rating {
+  margin-left: auto;
+  text-align: center;
+  font-size: 24px;
+  color: var(--gold);
+}
+.rating small {
+  display: block;
+  font: 8px var(--mono);
+  letter-spacing: 0.1em;
+}
+.settings,
+.moves {
+  padding: 22px;
+}
+.section-title {
+  font-size: 12px;
+  letter-spacing: var(--track-label);
+  margin-bottom: 16px;
+}
+.settings label {
+  display: block;
+  font: 10px var(--mono);
+  color: var(--muted);
+  margin: 13px 0 7px;
+}
+.settings select {
+  border-radius: min(var(--radius), 12px);
+  width: 100%;
+  padding: 11px;
+  background: var(--field-bg);
+  color: var(--paper);
+  border: 1px solid var(--line);
+  font: 12px var(--font-body);
+}
+.move-row {
+  border-radius: min(var(--radius), 8px);
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr;
+  padding: 9px;
+  background: var(--panel2);
+  font: 12px var(--mono);
+}
+.move-row span {
+  color: var(--faint);
+}
+.move-row b {
+  font-weight: 500;
+  color: var(--paper-dim);
+}
+.move-row b.cur {
+  color: var(--gold-bright);
+}
+.empty-state {
+  text-align: center;
+  padding: 24px 5px;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 16px;
+}
+.quote {
+  text-align: center;
+  color: var(--muted);
+  font-size: 18px;
+  font-style: italic;
+  line-height: 1.35;
+  padding: 10px;
+}
+
+/* ---- watch ---- */
+
+.watch-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 18px;
+}
+.training-board,
+.progress-panel,
+.log-panel,
+.quote-panel {
+  padding: 22px;
+}
+.small-board {
+  max-width: 440px;
+}
+.playback {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 17px 0;
+}
+.round-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  color: var(--paper);
+  background: transparent;
+  cursor: pointer;
+}
+.play-toggle {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+}
+.playback span {
+  font: 9px var(--mono);
+  color: var(--muted);
+  white-space: nowrap;
+  margin-left: 5px;
+}
+.playback input {
+  min-width: 40px;
+  width: 100%;
+  accent-color: var(--accent);
+}
+.analysis-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+  gap: 10px;
+}
+.analysis-row small,
+.stat-grid small,
+.status-strip small {
+  display: block;
+  font: 8px var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  margin-bottom: 7px;
+}
+.analysis-row strong {
+  font: 17px var(--serif);
+  font-weight: 500;
+}
+.metric-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+.metric-main strong {
+  font-size: 38px;
+  font-weight: 500;
+}
+.metric-main span {
+  font: 9px var(--mono);
+  color: var(--faint);
+}
+.metric-main em {
+  font: 10px var(--mono);
+  color: var(--green);
+  margin-left: auto;
+  font-style: normal;
+}
+.chart-wrap {
+  height: 170px;
+  /* grid, not flex: the svg's viewBox aspect ratio + definite height give it a
+     transferred min-content width (~465px) that a flex item keeps even with
+     min-width:0 — the minmax(0,1fr) track lets it actually shrink */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.chart-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  /* 3-digit Elo labels must not collapse: DM Mono at 8px needs ~4.5ch. */
+  min-width: 4.5ch;
+  text-align: right;
+  font: 8px/10px var(--mono);
+  color: var(--faint);
+  /* align the 3 labels with the grid lines (y=20/100/180 of a 190 viewBox) */
+  padding: 13px 0 4px;
+}
+.chart-plot {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.line-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+.chart-grid {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+  fill: none;
+}
+.chart-area {
+  fill: var(--accent-faint);
+}
+.chart-line {
+  fill: none;
+  stroke: var(--chart-line);
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+.chart-legend {
+  display: flex;
+  justify-content: space-between;
+  font: 8px var(--mono);
+  color: var(--faint);
+  margin: 10px 0 18px;
+}
+.chart-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  background: var(--gold);
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 15px;
+}
+.stat-grid strong {
+  font-size: 23px;
+  font-weight: 500;
+}
+.log-panel {
+  grid-column: 1;
+}
+.log-list > div {
+  display: grid;
+  grid-template-columns: 74px 10px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.log-list time {
+  font: 9px var(--mono);
+  color: var(--faint);
+}
+.log-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-top: 5px;
+}
+.log-list b {
+  display: block;
+  font-size: 17px;
+  font-weight: 500;
+}
+.log-list small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
+.quote-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  min-height: 160px;
+}
+.quote-star {
+  font-size: 28px;
+  color: var(--gold);
+}
+.quote-panel p {
+  font-size: 20px;
+  font-style: italic;
+  line-height: 1.2;
+}
+.quote-panel small {
+  font: 8px var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--faint);
+}
+
+/* ---- about ---- */
+
+.about-hero {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  align-items: center;
+  gap: clamp(30px, 7vw, 90px);
+  padding: 40px 8%;
+}
+.tarot-card {
+  border-radius: var(--panel-radius);
+  width: min(100%, 280px);
+  aspect-ratio: 2/3;
+  margin: auto;
+  padding: 10px;
+  border: 1px solid var(--gold);
+  outline: 1px solid var(--line-soft);
+  outline-offset: 4px;
+  background: var(--panel2);
+  box-shadow: var(--float-shadow);
+}
+.tarot-inner {
+  height: 100%;
+  border: 1px solid var(--gold-dim);
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 34%, var(--art-sun-mid) 0 20%, var(--line) 20.5% 21%, transparent 21.5%),
+    var(--panel-grad);
+}
+.tarot-number,
+.tarot-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 11px var(--mono);
+  letter-spacing: 0.2em;
+  color: var(--gold-bright);
+}
+.tarot-number {
+  top: 9px;
+}
+.tarot-title {
+  bottom: 9px;
+}
+.tarot-sun {
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 88px;
+  color: var(--gold-bright);
+  text-shadow: 0 0 20px var(--accent-soft);
+}
+.tarot-moon {
+  position: absolute;
+  top: 28%;
+  right: 17%;
+  font-size: 30px;
+  color: var(--paper-dim);
+}
+.tarot-mountains {
+  position: absolute;
+  bottom: 14%;
+  left: -15%;
+  width: 130%;
+  height: 42%;
+  background: var(--ink);
+  clip-path: polygon(0 100%, 20% 25%, 37% 65%, 58% 0, 76% 63%, 100% 15%, 100% 100%);
+  border-top: 1px solid var(--gold);
+}
+.tarot-traveler {
+  position: absolute;
+  bottom: 24%;
+  left: 48%;
+  font-size: 55px;
+  color: var(--paper-dim);
+  transform: rotate(-10deg);
+  text-shadow: 2px 2px var(--ink);
+}
+.tarot-stars {
+  position: absolute;
+  top: 49%;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--gold-bright);
+  font-size: 17px;
+}
+.tarot-minimal {
+  display: none;
+}
+.about-intro h2 {
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 0.95;
+  margin: 15px 0 20px;
+}
+.about-intro p {
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 570px;
+}
+.text-link {
+  display: inline-block;
+  margin-top: 12px;
+  border-bottom: 1px solid var(--gold);
+  padding-bottom: 7px;
+  color: var(--gold-bright);
+  font-size: 18px;
+  background: none;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.text-link span {
+  margin-left: 20px;
+}
+.about-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+.story-card {
+  padding: 25px 24px;
+  min-height: 230px;
+}
+.story-icon {
+  font-size: 27px;
+  color: var(--gold);
+}
+.story-card .eyebrow {
+  margin-top: 14px;
+}
+.story-card h3 {
+  font-size: 23px;
+  font-weight: 500;
+  margin: 8px 0;
+}
+.story-card p {
+  font-size: 16px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0;
+}
+/* FS-8b: "How The Fool learns" — the plain-English training story */
+.learn-panel {
+  padding: 26px 28px;
+  margin-top: 20px;
+}
+.learn-panel h3 {
+  font-size: 25px;
+  font-weight: 500;
+  margin: 6px 0 12px;
+}
+.learn-panel p {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 0 0 12px;
+  max-width: 72ch;
+}
+.learn-panel .learn-close {
+  color: var(--paper-dim);
+}
+.status-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 18px 25px;
+  margin-top: 20px;
+  gap: 20px;
+}
+.status-strip strong {
+  font-size: 19px;
+  font-weight: 500;
+}
+
+/* ---- accent alternative: tournament green ---------------------------------
+   The accent hue is one token family, so the walnut choice can be felt against
+   a tournament green WITHOUT a new build. Console preview:
+   document.documentElement.dataset.accent = 'green'   (remove to revert) */
+:root[data-theme='classical-light'][data-accent='green'] {
+  --gold: #46652f;
+  --gold-bright: #54763a;
+  --gold-dim: #37511f;
+  --accent: var(--gold);
+  --accent-solid: #5a7a3f;
+  --accent-soft: rgba(90, 122, 63, 0.14);
+  --accent-faint: rgba(90, 122, 63, 0.08);
+  --accent-ghost: rgba(90, 122, 63, 0.04);
+  --hl-last: rgba(90, 122, 63, 0.18);
+  --hl-last-stroke: rgba(90, 122, 63, 0.55);
+  --hl-hover: rgba(90, 122, 63, 0.12);
+  --hl-stroke: #5a7a3f;
+  --chart-line: #5a7a3f;
+}
+:root[data-theme='classical-dark'][data-accent='green'] {
+  --gold: #9dbb77;
+  --gold-bright: #b5cd94;
+  --gold-dim: #647f43;
+  --accent: var(--gold);
+  --accent-solid: #5a7a3f;
+  --accent-soft: rgba(116, 153, 86, 0.24);
+  --accent-faint: rgba(116, 153, 86, 0.11);
+  --accent-ghost: rgba(116, 153, 86, 0.05);
+  --hl-last: rgba(116, 153, 86, 0.24);
+  --hl-last-stroke: rgba(116, 153, 86, 0.6);
+  --hl-hover: rgba(116, 153, 86, 0.16);
+  --hl-stroke: #8fb069;
+  --chart-line: #9dbb77;
+}
+
+/* ---- data-theme structural hooks ------------------------------------------
+   Tokens recolor; these rules are STRUCTURAL and key off the same attribute.
+   The page skeleton is shared; the classical themes change surface treatment
+   (elevation vs borders), control shape (pills), nav (frosted + sticky) and
+   strip the tarot flourishes. refined-tarot needs no hooks. The :root prefix
+   keeps these ahead of component-scoped rules on ties. */
+:root[data-theme^='classical-'] .topbar {
+  position: sticky;
+  top: 0;
+  backdrop-filter: saturate(160%) blur(20px);
+  -webkit-backdrop-filter: saturate(160%) blur(20px);
+  border-bottom-color: var(--hairline);
+}
+:root[data-theme^='classical-'] h1,
+:root[data-theme^='classical-'] h2,
+:root[data-theme^='classical-'] h3,
+:root[data-theme^='classical-'] .brand {
+  font-family: var(--font-classical);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+:root[data-theme^='classical-'] .lead,
+:root[data-theme^='classical-'] .quote,
+:root[data-theme^='classical-'] .quote-panel p {
+  font-style: normal;
+}
+:root[data-theme^='classical-'] .brand-card {
+  background: var(--accent-solid);
+  border-color: transparent;
+  outline: none;
+  color: var(--on-accent);
+  border-radius: 10px;
+}
+/* strip the ornate chrome: glyphs, dividers, tarot-art figures (the abstract
+   .sun ring stays — it reads as minimal geometry, not ornament) */
+:root[data-theme^='classical-'] .ornament,
+:root[data-theme^='classical-'] .bottom-motif,
+:root[data-theme^='classical-'] .nav-star,
+:root[data-theme^='classical-'] .brand i,
+:root[data-theme^='classical-'] .quote-star,
+:root[data-theme^='classical-'] .chapter-mark,
+:root[data-theme^='classical-'] .story-icon,
+:root[data-theme^='classical-'] .art-star,
+:root[data-theme^='classical-'] .art-caption,
+:root[data-theme^='classical-'] .little-dog,
+:root[data-theme^='classical-'] .wanderer,
+:root[data-theme^='classical-'] .cliff,
+:root[data-theme^='classical-'] .mountain,
+:root[data-theme^='classical-'] .hero-art:before,
+:root[data-theme^='classical-'] .tarot-sun,
+:root[data-theme^='classical-'] .tarot-moon,
+:root[data-theme^='classical-'] .tarot-mountains,
+:root[data-theme^='classical-'] .tarot-traveler,
+:root[data-theme^='classical-'] .tarot-stars,
+:root[data-theme^='classical-'] .section-title > span:last-child:not([class]),
+:root[data-theme^='classical-'] .site-footer .footer-star {
+  display: none;
+}
+/* the about card becomes an engraved plate: brass card edge, ivory/ebony
+   field, and a piece medallion instead of the tarot scene */
+:root[data-theme^='classical-'] .tarot-card {
+  border-color: var(--brass);
+  border-radius: 14px;
+  outline: 1px solid var(--line-soft);
+  outline-offset: 4px;
+  box-shadow: var(--panel-shadow);
+}
+:root[data-theme^='classical-'] .tarot-inner {
+  border-color: var(--hairline);
+  background: var(--panel);
+}
+:root[data-theme^='classical-'] .tarot-inner::after {
+  content: '';
+  position: absolute;
+  left: 24%;
+  right: 24%;
+  bottom: 17%;
+  height: 1px;
+  background: var(--hairline);
+}
+:root[data-theme^='classical-'] .tarot-minimal {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  top: 17%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 64%;
+  aspect-ratio: 1;
+  border: 1px solid var(--brass);
+  border-radius: 50%;
+  color: var(--paper);
+}
+:root[data-theme^='classical-'] .tarot-minimal::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+}
+:root[data-theme^='classical-'] .tarot-minimal span {
+  font-size: 64px;
+  line-height: 1;
+  transform: translateY(-3px);
+}
+:root[data-theme^='classical-'] .hero-art {
+  border-color: transparent;
+}
+/* elevation instead of borders; pill controls */
+:root[data-theme^='classical-'] .button {
+  border-color: transparent;
+  background: var(--panel2);
+}
+/* the primary action keeps its accent fill in the classical themes (the
+   generic .button hook above would otherwise strip it to panel2) */
+:root[data-theme^='classical-'] .button.gold {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+  border-color: transparent;
+}
+:root[data-theme^='classical-'] .button.gold:hover {
+  background: color-mix(in srgb, var(--accent-solid) 88%, #000);
+}
+:root[data-theme='classical-light'] .button:hover {
+  background: #e9e6e0;
+}
+:root[data-theme='classical-dark'] .button:hover {
+  background: #34302b;
+}
+:root[data-theme^='classical-'] .settings select {
+  border-color: transparent;
+}
+:root[data-theme^='classical-'] .round-button {
+  border-color: transparent;
+  background: var(--panel2);
+}
+:root[data-theme^='classical-'] .action-card {
+  border-color: transparent;
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+}
+:root[data-theme^='classical-'] .action-card.primary {
+  background: var(--accent-solid);
+}
+:root[data-theme^='classical-'] .action-card:hover {
+  border-color: transparent;
+  box-shadow: 0 16px 40px rgba(31, 29, 26, 0.12);
+}
+:root[data-theme='classical-dark'] .action-card:hover {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+:root[data-theme^='classical-'] .live-cell,
+:root[data-theme^='classical-'] .journal,
+:root[data-theme^='classical-'] .lb-row,
+:root[data-theme^='classical-'] .featured,
+:root[data-theme^='classical-'] .featured-moves,
+:root[data-theme^='classical-'] .featured-close {
+  border-radius: 12px;
+}
+:root[data-theme^='classical-'] .board-wrap.mini {
+  border-radius: 10px;
+}
+/* generous whitespace — the classical themes breathe */
+:root[data-theme^='classical-'] .page-wrap {
+  padding-top: 56px;
+  padding-bottom: 88px;
+}
+:root[data-theme^='classical-'] .page-heading {
+  margin-bottom: 36px;
+}
+:root[data-theme^='classical-'] .play-grid,
+:root[data-theme^='classical-'] .watch-grid {
+  gap: 24px;
+}
+:root[data-theme^='classical-'] .settings,
+:root[data-theme^='classical-'] .moves,
+:root[data-theme^='classical-'] .training-board,
+:root[data-theme^='classical-'] .progress-panel,
+:root[data-theme^='classical-'] .log-panel,
+:root[data-theme^='classical-'] .quote-panel {
+  padding: 28px;
+}
+:root[data-theme^='classical-'] .board-panel {
+  padding: 28px 30px;
+}
+:root[data-theme^='classical-'] .about-hero {
+  padding: 48px 6%;
+}
+/* scrollbars: visible on the light ivory page */
+:root[data-theme='classical-light'] ::-webkit-scrollbar-thumb {
+  background: #c9c4bb;
+  border-color: transparent;
+}
+:root[data-theme='classical-dark'] ::-webkit-scrollbar-thumb {
+  background: #3a352f;
+  border-color: transparent;
+}
+
+/* ---- responsive ---- */
+
+@media (max-width: 850px) {
+  .home-layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: 20px;
+  }
+  .hero-art {
+    height: 480px;
+    min-height: 0;
+    max-width: 560px;
+    width: 100%;
+    margin: auto;
+  }
+  .home-copy {
+    padding: 20px 0;
+  }
+  .play-grid,
+  .watch-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .log-panel {
+    grid-column: auto;
+  }
+  .about-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 30px;
+  }
+  .tarot-card {
+    width: 210px;
+  }
+  .about-intro {
+    text-align: center;
+  }
+  .about-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .page-heading {
+    align-items: start;
+    gap: 15px;
+    flex-direction: column;
+  }
+  .chapter-mark {
+    padding: 0;
+  }
+  .training-state {
+    align-self: start;
+  }
+}
+@media (max-width: 700px) {
+  /* the footer copy is decorative; the theme control is the interactive part
+     and must stay on one line at 320px */
+  .site-footer .footer-copy,
+  .site-footer .footer-star {
+    display: none;
+  }
+}
+@media (max-width: 540px) {
+  .topbar {
+    height: auto;
+    min-height: 68px;
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    font-size: 24px;
+  }
+  nav {
+    order: 3;
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    font-size: 15px;
+  }
+  nav a,
+  nav button {
+    padding: 8px 0 4px;
+  }
+  .nav-star {
+    margin-left: auto;
+  }
+  .home-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .action-card {
+    min-height: 112px;
+  }
+  .hero-art {
+    height: 390px;
+  }
+  .home-copy h1 {
+    font-size: 62px;
+  }
+  .page-wrap {
+    padding-top: 28px;
+  }
+  .page-heading h1 {
+    font-size: 46px;
+  }
+  .board-panel,
+  .training-board,
+  .progress-panel {
+    padding: 14px;
+  }
+  .board-shell {
+    padding: 0 4px;
+  }
+  .board-controls {
+    flex-wrap: wrap;
+  }
+  .analysis-row strong {
+    font-size: 14px;
+  }
+  .metric-main {
+    flex-wrap: wrap;
+  }
+  .metric-main strong {
+    font-size: 36px;
+  }
+  .metric-main em {
+    margin-left: 0;
+  }
+  .status-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-footer {
+    font-size: 7px;
+    padding: 8px 14px;
+  }
+  .log-list > div {
+    grid-template-columns: 65px 8px 1fr;
+  }
+}

@@ -2,23 +2,24 @@
 
 Auto-pushes model checkpoints to HF Hub. Model persists if local machine goes down.
 """
-import os
 import json
-import time
+import logging
+import os
 import shutil
 import threading
-import torch
-import torch.optim as optim
-torch.backends.cudnn.benchmark = True
-
-import numpy as np
+import time
 from collections import deque
 from datetime import datetime
 
+import numpy as np
+import torch
+from torch import optim
+
+torch.backends.cudnn.benchmark = True
+
 from .model import ChessNet
-from .tensorize import board_to_tensor, move_to_idx, NUM_POSSIBLE_MOVES
 from .selfplay import SelfPlayGame
-import logging
+from .tensorize import board_to_tensor, move_to_idx
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -47,7 +48,7 @@ def push_to_hf(model_path, metadata=None):
         api = HfApi(token=HF_TOKEN)
         try:
             api.create_repo(repo_id=HF_REPO, repo_type="model", exist_ok=True)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - legacy: repo may already exist; creation is best-effort
             pass
         upload_file(
             path_or_fileobj=model_path,
@@ -68,7 +69,7 @@ def push_to_hf(model_path, metadata=None):
             os.remove(meta_path)
         log.info(f"[HF] Pushed to {HF_REPO}")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - legacy: HF push must never crash training
         log.error(f"[HF] Push failed: {e}")
         return False
 
@@ -87,7 +88,7 @@ def download_from_hf():
         shutil.copy2(local_path, os.path.join(LOCAL_MODEL_DIR, 'checkpoint.pt'))
         log.info(f"[HF] Downloaded from {HF_REPO}")
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - legacy: HF download must never crash training
         log.error(f"[HF] Download failed: {e}")
         return False
 
@@ -134,7 +135,7 @@ class Trainer:
         if cuda_visible == '' or not torch.cuda.is_available():
             self.device = torch.device('cpu')
             self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
-            log.info(f'[TRAINER] Running on CPU (CUDA disabled or unavailable)')
+            log.info('[TRAINER] Running on CPU (CUDA disabled or unavailable)')
         else:
             try:
                 self.device = torch.device('cuda')
@@ -142,11 +143,11 @@ class Trainer:
                 with torch.no_grad():
                     test_input = torch.randn(1, 8, 8, 16).to(self.device)
                     self.model(test_input)
-                log.info(f'[TRAINER] Model on CUDA')
+                log.info('[TRAINER] Model on CUDA')
             except RuntimeError:
                 self.device = torch.device('cpu')
                 self.model = ChessNet(num_residual_blocks, residual_filters).to(self.device)
-                log.info(f'[TRAINER] CUDA OOM, falling back to CPU')
+                log.info('[TRAINER] CUDA OOM, falling back to CPU')
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE)
         self.buffer = TrainingBuffer()
 
@@ -156,12 +157,12 @@ class Trainer:
             try:
                 from .stockfish_engine import StockfishPlayer
                 self.stockfish = StockfishPlayer(depth=11)
-                log.info(f'[TRAINER] Stockfish initialized (depth=10, own instance)')
-            except Exception as e:
+                log.info('[TRAINER] Stockfish initialized (depth=10, own instance)')
+            except Exception as e:  # noqa: BLE001 - legacy: optional engine, degrade to None
                 log.info(f'[TRAINER] Stockfish unavailable: {e}')
                 self.stockfish = None
         else:
-            log.info(f'[TRAINER] Using shared Stockfish instance')
+            log.info('[TRAINER] Using shared Stockfish instance')
 
         self.selfplay = SelfPlayGame(self.model, stockfish=self.stockfish)
         self.step = 0
@@ -220,7 +221,7 @@ class Trainer:
             'value_loss': self.value_loss,
             'last_game_pgn': self.last_game_pgn[:500],
             'last_game_result': self.last_game_result,
-            'pushed_at': datetime.utcnow().isoformat(),
+            'pushed_at': datetime.now(datetime.UTC).isoformat(),
             'model_version': 'v1',
         }
         return push_to_hf(checkpoint_path, metadata)
@@ -297,7 +298,6 @@ class Trainer:
     def _calibrate_elo(self):
         """Play calibration games vs Stockfish and record results."""
         import chess
-        from .tensorize import board_to_tensor, move_to_idx
 
 
         if self.stockfish is None:

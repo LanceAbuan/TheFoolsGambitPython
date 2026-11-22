@@ -1,25 +1,22 @@
 """Tests for training/model.py — CPU-only, no GPU required."""
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import torch
 import numpy as np
 import pytest
+import torch
 
 # Force CPU for tests
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 from training.model import (
+    NUM_CHANNELS,
+    NUM_POSSIBLE_MOVES,
+    NUM_RESIDUAL_BLOCKS,
     ChessNet,
     ResidualBlock,
-    NUM_CHANNELS,
-    NUM_RESIDUAL_BLOCKS,
-    RESIDUAL_FILTERS,
-    POLICY_HEAD_CHANNELS,
-    VALUE_HEAD_CHANNELS,
-    NUM_POSSIBLE_MOVES,
 )
 
 
@@ -103,7 +100,7 @@ class TestChessNet:
         legal_mask = torch.zeros(NUM_POSSIBLE_MOVES)
         legal_mask[0] = 1.0
         legal_mask[100] = 1.0
-        policy_probs, value = model.evaluate(board_tensor, legal_mask)
+        policy_probs, _value = model.evaluate(board_tensor, legal_mask)
         # Only legal moves should have non-zero probability
         illegal_probs = policy_probs[legal_mask == 0]
         assert torch.allclose(illegal_probs, torch.zeros_like(illegal_probs), atol=1e-8)

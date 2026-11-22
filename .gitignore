@@ -4,6 +4,10 @@ node_modules/
 .env
 .DS_Store
 .vercel
+# Python virtualenv (uv-managed)
+.venv/
+# Local tooling binaries (e.g. stockfish.exe)
+tools/
 # Model checkpoints (stored locally, pushed to HF instead)
 *.pt
 *.pth
@@ -15,10 +19,20 @@ nohup.out
 eval_cache.json
 # Persistent event/metric data
 data/
+# Training run lineage (checkpoints pushed to HF instead)
+runs/
 # Log files
 *.log
-# Client build output
-client/dist/
+# Rust build output
+target/
+# Web client build output
+web/dist/
 
-# Client node_modules (overrides root rule for nested dir)
-client/node_modules/
+# worker scratch dirs (in-repo tmp benches/smokes - never commit)
+tmp_m3/
+tmp_u1u2/
+
+
+tmp_u9/
+web-react/dist/
+web/dist-svelte-backup/

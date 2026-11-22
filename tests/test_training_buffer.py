@@ -1,6 +1,7 @@
 """Tests for TrainingBuffer — pure Python collections, no GPU needed."""
-import sys
 import os
+import sys
+
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -68,16 +69,23 @@ class TestTrainingBuffer:
         assert policies.shape[0] == 64
         assert len(values) == 64
 
-    def test_sample_returns_none_when_insufficient(self):
+    def test_sample_returns_partial_batch_when_insufficient(self):
+        """Adaptive contract: sample() returns min(len(buffer), batch_size).
+        The Trainer owns the MIN_BATCH_SIZE guard and skips steps below it."""
         self.buffer.add([self._make_example() for _ in range(10)])
         batch = self.buffer.sample(64)
-        assert batch is None
+        assert batch is not None
+        tensors, _, _ = batch
+        assert tensors.shape[0] == 10
+
+    def test_sample_returns_none_when_empty(self):
+        assert self.buffer.sample(64) is None
 
     def test_sample_values_correct_for_win(self):
         examples = [self._make_example(value=1.0) for _ in range(64)]
         self.buffer.add(examples)
         batch = self.buffer.sample(64)
-        tensors, policies, values = batch
+        _, _, values = batch
         assert all(v == 1.0 for v in values.tolist())
 
     def test_sample_values_correct_for_loss(self):
@@ -96,7 +104,7 @@ class TestTrainingBuffer:
         examples = [self._make_example() for _ in range(100)]
         self.buffer.add(examples)
         batch = self.buffer.sample(32)
-        tensors, policies, values = batch
+        tensors, _, _ = batch
         assert tensors.shape[0] == 32
 
     def test_default_max_size(self):

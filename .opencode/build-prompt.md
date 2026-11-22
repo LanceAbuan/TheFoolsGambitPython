@@ -19,7 +19,8 @@
 
 ## This Project
 
-- Repository: `LanceAbuan/TheFoolsGambitPython`
-- Vision: Host a custom-trained chess bot with a website where people can play against it and watch training live-streams
-- Current stack: Python (AI/engine), Node.js API (Vercel serverless), vanilla HTML/CSS/JS frontend with chessground
-- Domain: `gambit.lanceabuan.tech` (Vercel)
+- Repository: `LanceAbuan/fools-gambit` (renamed from `TheFoolsGambitPython` on 2026-11-21 — the language is an implementation detail now; local folder name unchanged)
+- Vision: train a chess bot on a local RTX 3080; watch training live on the site; play against it; host it so friends can play
+- Stack: Python 3.13 + FastAPI/WebSockets/SQLite backend; Svelte 5 + TypeScript + Vite client in `web/`; PyTorch 2.15 (CUDA) training; Rust `gambit_core` (PyO3) hot path
+- Hosting: local-first via Cloudflare tunnel — the old Vercel/serverless flow is retired
+- Standing rule: after milestone work, run the **review loop** in `.opencode/agents/orchestrator.md` — browser sweep of every page at mobile + desktop sizes with screenshots, backend/functional tests, harvest all improvements into `docs/TODO.md`, fix, repeat

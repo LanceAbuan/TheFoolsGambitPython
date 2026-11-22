@@ -1,0 +1,45 @@
+{
+  "tau1_sims8_plies6_seed3": {
+    "digest": "a9ddca8086fd65d5c8f1bc4344237d4abc160ee6a61c9cd95391d0c28bf7a605",
+    "plies": 6,
+    "examples": 6,
+    "result": "1/2-1/2",
+    "moves": [
+      "Nh3",
+      "Nf6",
+      "g3",
+      "Nh5",
+      "Ng5",
+      "Nf6"
+    ]
+  },
+  "argmax_sims4_plies5_seed11": {
+    "digest": "e28f094bc0500665db57d1e11b85c1760f0dae3333d804f5babdb49832c9e345",
+    "plies": 5,
+    "examples": 5,
+    "result": "1/2-1/2",
+    "moves": [
+      "Nh3",
+      "Nh6",
+      "Ng5",
+      "Rg8",
+      "Nxh7"
+    ]
+  },
+  "mixed_sims16_plies8_seed5": {
+    "digest": "21734e667f96693beea746809de279944665388f01892450931081d433989a3e",
+    "plies": 8,
+    "examples": 8,
+    "result": "1/2-1/2",
+    "moves": [
+      "h4",
+      "h5",
+      "Rh3",
+      "Rh7",
+      "Rg3",
+      "Nh6",
+      "Rxg7",
+      "Bxg7"
+    ]
+  }
+}

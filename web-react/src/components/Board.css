@@ -1,0 +1,238 @@
+/* Chessboard: an SVG canvas that fills its host card. Colors are theme-aware
+   via light-dark(), with the emerald accent carrying selection and last-move. */
+
+.board-wrap {
+  --board-bg: light-dark(#dbe4d8, #3a473f);
+  --sq-light: light-dark(#eef2ea, #556459);
+  --sq-dark: light-dark(#7fa58f, #2f4a3d);
+  --hl-last: light-dark(rgba(42, 140, 97, 0.32), rgba(120, 200, 165, 0.28));
+  --hl-last-stroke: light-dark(rgba(42, 140, 97, 0.65), rgba(140, 215, 180, 0.6));
+  --hl-hover: light-dark(rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.16));
+  --hl-stroke: light-dark(rgba(31, 114, 80, 0.9), rgba(140, 215, 180, 0.95));
+  --dot: light-dark(rgba(24, 52, 38, 0.34), rgba(226, 242, 233, 0.42));
+  --cap: light-dark(rgba(24, 52, 38, 0.4), rgba(226, 242, 233, 0.46));
+  --check-glow: light-dark(#c0392b, #ff6b5e);
+  --hl-kcursor: light-dark(rgba(42, 140, 97, 0.12), rgba(140, 215, 180, 0.14));
+  --gold-bright: light-dark(#b07c1f, #e2b55a);
+  --upiece-w: #f7f7f2;
+  --upiece-w-edge: #2b2b2b;
+  --upiece-b: #262626;
+  --upiece-b-edge: #d9d9d9;
+
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  border: 1px solid var(--mantine-color-default-border);
+  background: var(--board-bg);
+  border-radius: var(--mantine-radius-lg);
+  box-shadow:
+    0 1px 2px light-dark(rgba(16, 32, 24, 0.12), rgba(0, 0, 0, 0.4)),
+    0 12px 32px light-dark(rgba(16, 32, 24, 0.1), rgba(0, 0, 0, 0.32));
+  overflow: hidden;
+}
+
+.board-wrap svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.board-wrap:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 3px;
+}
+
+rect.light {
+  fill: var(--sq-light);
+}
+
+rect.dark {
+  fill: var(--sq-dark);
+}
+
+rect.last {
+  fill: var(--hl-last);
+  stroke: var(--hl-last-stroke);
+  stroke-width: 2.5;
+}
+
+rect.hover {
+  fill: var(--hl-hover);
+  stroke: var(--hl-stroke);
+  stroke-width: 3;
+}
+
+rect.sel {
+  fill: none;
+  stroke: var(--hl-stroke);
+  stroke-width: 5;
+}
+
+.dot {
+  fill: var(--dot);
+}
+
+.cap {
+  fill: none;
+  stroke: var(--cap);
+  stroke-width: 9;
+}
+
+/* No ambient transition: position changes snap by default. Only pieces that
+   pass the honest-move guard get .glide. */
+.piece {
+  cursor: grab;
+}
+
+.piece.glide {
+  transition: transform 210ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* The glide is decorative motion — reduce → snap. */
+@media (prefers-reduced-motion: reduce) {
+  .piece.glide {
+    transition: none;
+  }
+}
+
+svg.inert .piece {
+  cursor: default;
+}
+
+.piece.lifted {
+  opacity: 0;
+}
+
+.piece.dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
+.piece image {
+  filter: drop-shadow(0 3px 3px light-dark(rgba(20, 40, 30, 0.28), rgba(0, 0, 0, 0.5)));
+}
+
+.board-wrap.mini {
+  border-radius: var(--mantine-radius-md);
+  box-shadow: none;
+}
+
+rect.kcursor {
+  fill: var(--hl-kcursor);
+  stroke: var(--gold-bright);
+  stroke-width: 3.5;
+  stroke-dasharray: 10 7;
+}
+
+/* In-board coordinates (bottom file letters, left rank numbers). They flip
+   with the board and cost no layout height. */
+text.coord {
+  font-family: var(--mantine-font-family);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+text.coord.on-light {
+  fill: light-dark(#3d5a49, #e8f1ec);
+  opacity: 0.72;
+}
+
+text.coord.on-dark {
+  fill: light-dark(#23392c, #cfe2d6);
+  opacity: 0.8;
+}
+
+/* unicode-glyph piece mode (settings toggle, default off) */
+text.uglyph {
+  font-size: 84px;
+  text-anchor: middle;
+  paint-order: stroke fill;
+  stroke-width: 4;
+  filter: drop-shadow(0 3px 3px rgba(10, 5, 25, 0.35));
+  user-select: none;
+}
+
+text.uglyph.w {
+  fill: var(--upiece-w);
+  stroke: var(--upiece-w-edge);
+}
+
+text.uglyph.b {
+  fill: var(--upiece-b);
+  stroke: var(--upiece-b-edge);
+}
+
+.promo {
+  position: absolute;
+  width: 12.5%;
+  display: flex;
+  flex-direction: column;
+  background: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+  z-index: 5;
+  box-shadow: var(--mantine-shadow-md);
+  container-type: inline-size;
+}
+
+.promo-piece {
+  border: 0;
+  background: transparent;
+  padding: 6%;
+  cursor: pointer;
+  aspect-ratio: 1;
+}
+
+.promo-piece:hover {
+  background: var(--mantine-color-default-hover);
+}
+
+.promo-piece img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.promo-x {
+  border: 0;
+  border-top: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-dimmed);
+  font-size: 12px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.promo-x:hover {
+  color: var(--mantine-primary-color-filled);
+}
+
+.promo-glyph {
+  display: block;
+  text-align: center;
+  line-height: 1;
+  font-size: 58cqi;
+}
+
+.promo-glyph.w {
+  color: var(--upiece-w);
+  text-shadow: 1px 1px 0 var(--upiece-w-edge);
+}
+
+.promo-glyph.b {
+  color: var(--upiece-b);
+  text-shadow: 0 0 2px var(--upiece-b-edge);
+}
+
+/* editor mode (Analysis setup): pieces + squares are click targets */
+.board-wrap svg.editor .piece,
+.board-wrap svg.editor rect.light,
+.board-wrap svg.editor rect.dark {
+  cursor: pointer;
+}

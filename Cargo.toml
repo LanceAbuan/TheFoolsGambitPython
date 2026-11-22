@@ -1,0 +1,12 @@
+[workspace]
+members = ["gambit_core"]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+# Debug perft is painfully slow; a little optimization in test builds is free.
+[profile.test]
+opt-level = 1

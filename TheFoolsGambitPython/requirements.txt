@@ -1,4 +1,0 @@
-Flask>=3.0
-gunicorn>=21.0
-chess>=1.10
-Werkzeug>=3.0

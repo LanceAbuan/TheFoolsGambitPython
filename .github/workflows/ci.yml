@@ -4,69 +4,68 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 jobs:
-  test:
+  web:
+    name: Web client (Svelte 5 + Vite)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
-      - name: Install client dependencies
-        run: cd client && npm ci
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Build React app
-        run: cd client && npm run build
+      - name: Type check (svelte-check)
+        run: npm run check
 
-      - name: Verify Vercel config
-        run: |
-          python3 -c "
-          import json
-          with open('vercel.json') as f:
-            config = json.load(f)
-          assert config['version'] == 2
-          assert config['outputDirectory'] == 'client/dist'
-          assert config['buildCommand']
-          assert any('/index.html' in r.get('destination', '') for r in config.get('rewrites', []))
-          print('Vercel config valid')
-          "
+      - name: Build
+        run: npm run build
 
-      - name: API health check
-        run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://api.lanceabuan.tech/api/train/status 2>&1) || true
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "API server is healthy"
-          else
-            echo "API server not reachable (expected on PRs from forks)"
-          fi
-
-  deploy-check:
-    needs: test
+  python:
+    name: Python (ruff + pytest)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Health check live site
-        run: |
-          echo "Checking live deployment..."
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://gambit.lanceabuan.tech)
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Site returned HTTP $HTTP_CODE"
-            exit 1
-          fi
-          echo "Live site is healthy"
+      - uses: astral-sh/setup-uv@v5
 
-      - name: API health check
+      - name: Lint (ruff)
+        run: uv run --no-project --with ruff ruff check .
+
+      - name: Tests (pytest)
         run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://api.lanceabuan.tech/api/train/status)
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "API returned HTTP $HTTP_CODE"
-            exit 1
+          if [ -d tests ]; then
+            uv sync --frozen
+            uv run pytest -q
+          else
+            echo "tests/ not present yet — pytest gate activates with WP-A (backend)"
           fi
-          echo "API server is healthy"
+
+  rust:
+    name: Rust core (cargo test + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gambit_core
+
+      - name: Tests (cargo test)
+        run: cargo test --manifest-path gambit_core/Cargo.toml
+
+      - name: Lint (clippy)
+        run: cargo clippy --manifest-path gambit_core/Cargo.toml --all-targets -- -D warnings
