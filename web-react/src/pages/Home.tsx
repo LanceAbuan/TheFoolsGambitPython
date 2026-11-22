@@ -75,7 +75,7 @@ export function Home() {
             </Badge>
           </Group>
 
-          <Title order={1}>A chess bot that learns in public.</Title>
+          <Title order={1} style={{ textWrap: 'balance' }}>A chess bot that learns in public.</Title>
 
           <Text size="lg" c="dimmed" maw={620}>
             The Fool plays itself on a local RTX 3080 and climbs a gated checkpoint ladder.

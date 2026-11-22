@@ -23,7 +23,7 @@ export function About() {
 
         <Card>
           <Title order={3} mb="sm">What it is</Title>
-          <Text fz="sm" lh={1.6} c="dimmed">
+          <Text fz="sm" c="dimmed" lh={1.6}>
             The Fool is a chess engine that learns by playing itself — the AlphaZero loop,
             scaled down to a single RTX 3080. It started knowing only the rules of chess.
             Every point of strength it has was earned by beating an earlier version of itself
@@ -35,19 +35,31 @@ export function About() {
           <Title order={3} mb="sm">How training works</Title>
           <List spacing="xs" size="sm" lh={1.55}>
             <List.Item>
-              <b>Self-play</b> — the current network plays thousands of quick games against
-              itself to generate data.
+              <Text span fw={600} inherit>
+                Self-play
+              </Text>{' '}
+              — the current network plays thousands of quick games against itself to generate
+              data.
             </List.Item>
             <List.Item>
-              <b>Learn</b> — the network is nudged toward the moves that led to wins.
+              <Text span fw={600} inherit>
+                Learn
+              </Text>{' '}
+              — the network is nudged toward the moves that led to wins.
             </List.Item>
             <List.Item>
-              <b>Gate</b> — each newly trained checkpoint must beat the reigning champion in
-              a match to take the crown.
+              <Text span fw={600} inherit>
+                Gate
+              </Text>{' '}
+              — each newly trained checkpoint must beat the reigning champion in a match to
+              take the crown.
             </List.Item>
             <List.Item>
-              <b>Repeat</b> — every promotion is recorded in the arena ledger with an Elo
-              rating, the same scale chess clubs use.
+              <Text span fw={600} inherit>
+                Repeat
+              </Text>{' '}
+              — every promotion is recorded in the arena ledger with an Elo rating, the same
+              scale chess clubs use.
             </List.Item>
           </List>
         </Card>

@@ -50,13 +50,15 @@ export function App() {
       </AppShell.Header>
 
       <AppShell.Main>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/play" element={<Play />} />
-          <Route path="/analysis" element={<Analysis />} />
-          <Route path="/watch" element={<Watch />} />
-          <Route path="/about" element={<About />} />
-        </Routes>
+        <Box className="routes-grow">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/play" element={<Play />} />
+            <Route path="/analysis" element={<Analysis />} />
+            <Route path="/watch" element={<Watch />} />
+            <Route path="/about" element={<About />} />
+          </Routes>
+        </Box>
 
         {/* Static footer: flows after the content, so it can never overpaint a
             card on a short mobile viewport (the fixed variant did exactly that). */}

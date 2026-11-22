@@ -151,7 +151,7 @@ body {
   font-size: 10px;
   letter-spacing: 0.08em;
   color: var(--mantine-color-text);
-  opacity: 0.62;
+  opacity: 0.8;
 }
 
 .hint-icon {
@@ -247,12 +247,16 @@ button[data-variant='default'][data-disabled] {
   }
 }
 
-/* live feature: one large board + its context */
+/* live feature: one large board + its context, vertically centered */
 .live-feature {
   display: grid;
   grid-template-columns: minmax(0, 500px) minmax(0, 1fr);
   gap: 20px;
-  align-items: start;
+  align-items: center;
+}
+
+.featured-eval {
+  margin-top: 10px;
 }
 
 .live-board .board-wrap {
@@ -554,6 +558,11 @@ button[data-variant='default'][data-disabled] {
   bottom: 0;
   width: 1px;
   background: rgba(0, 0, 0, 0.45);
+}
+
+.top-move .mantine-Button-label {
+  display: block;
+  width: 100%;
 }
 
 .top-move .top-move-inner {

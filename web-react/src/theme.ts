@@ -18,7 +18,7 @@ const emerald: MantineColorsTuple = [
 
 export const theme = createTheme({
   primaryColor: 'emerald',
-  primaryShade: { light: 6, dark: 4 },
+  primaryShade: { light: 7, dark: 7 },
   colors: { emerald },
   fontFamily:
     'Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif',
