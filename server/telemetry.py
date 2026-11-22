@@ -95,7 +95,9 @@ async def _loop(interval: float) -> None:
         if hub.subscriber_count("train") == 0:
             continue  # idle: no file read, no broadcast
         try:
-            payload: dict[str, Any] = metrics_snapshot()
+            # File reads (metrics file + ledger replay + journal tail window)
+            # stay off the event loop — see server.ws subscribe path.
+            payload: dict[str, Any] = await asyncio.to_thread(metrics_snapshot)
         except Exception:
             log.exception("metrics snapshot failed; skipping push")
             continue
