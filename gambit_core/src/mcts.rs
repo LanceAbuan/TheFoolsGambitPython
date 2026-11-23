@@ -213,6 +213,21 @@ impl<'a> Seq<'a> {
         self.path_moves.clear();
     }
 
+    /// Reset the per-simulation path. The root is pushed ONLY on an empty
+    /// base history: with a game history, `base_pos` already ends with the
+    /// root position (the replay includes it), so pushing it again would
+    /// duplicate that position at the seam. The duplicated entry made
+    /// `move_into` return None at the seam, so `suffix_count` stopped there
+    /// and repetition/fifty-move claims at (or below) the root never saw the
+    /// game history - diverging from python-chess `claim_draw=True` (WP-F
+    /// C6 parity gate regression, fixed with a failing-then-passing test).
+    fn reset_path(&mut self, root: &Position) {
+        self.clear_path();
+        if self.base_pos.is_empty() {
+            self.push_path(root, None);
+        }
+    }
+
     fn push_path(&mut self, pos: &Position, mv: Option<chess::ChessMove>) {
         self.path_pos.push(*pos);
         self.path_keys.push(pos.transposition_key());
@@ -354,7 +369,7 @@ pub fn search(
 
     let mut tree = Tree::new();
     let mut seq = Seq::new(history);
-    seq.push_path(root, None);
+    seq.reset_path(root);
 
     // Root expansion (python `_evaluate_and_expand(root, add_root_noise=True)`).
     if is_game_over_claim(&seq, root, &plain) {
@@ -405,8 +420,7 @@ pub fn search(
             let mut pos = *root;
             let mut node = tree.root();
             let mut path = vec![node];
-            seq.clear_path();
-            seq.push_path(&pos, None);
+            seq.reset_path(&pos);
             loop {
                 let descend = {
                     let n = tree.node(node);
@@ -620,4 +634,167 @@ pub fn select_by_temperature(
         }
     }
     legal_indices[legal_indices.len() - 1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::encoder::policy_index;
+    use crate::position::move_uci;
+
+    const MATE_IN_1: &str = "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1";
+    const MATED: &str = "3R2k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1";
+    const SINGLE_MOVE: &str = "7k/5K2/8/8/8/8/8/6R1 b - - 0 1";
+
+    /// Uniform priors, constant value: the deterministic test double.
+    struct StubEvaluator {
+        value: f32,
+        calls: usize,
+        positions: usize,
+    }
+
+    impl StubEvaluator {
+        fn new(value: f32) -> StubEvaluator {
+            StubEvaluator { value, calls: 0, positions: 0 }
+        }
+    }
+
+    impl Evaluator for StubEvaluator {
+        fn evaluate(&mut self, batch: &[Position]) -> (Vec<f32>, Vec<f32>) {
+            self.calls += 1;
+            self.positions += batch.len();
+            (
+                vec![0.0f32; batch.len() * POLICY_MOVES],
+                vec![self.value; batch.len()],
+            )
+        }
+    }
+
+    fn search_uci(
+        fen: &str,
+        ucis: &[&str],
+        cfg: &SearchConfig,
+        evaluator: &mut dyn Evaluator,
+    ) -> SearchResult {
+        let start = Position::from_fen(fen).expect("valid test fen");
+        let (history, root) = GameHistory::replay(&start, ucis).expect("legal replay");
+        search(&root, &history, cfg, evaluator)
+    }
+
+    #[test]
+    fn mate_in_1_is_found() {
+        let mut ev = StubEvaluator::new(0.0);
+        let cfg = SearchConfig { num_simulations: 96, seed: 7, ..SearchConfig::default() };
+        let result = search_uci(MATE_IN_1, &[], &cfg, &mut ev);
+        assert!(result.visited_root);
+        let best = result.chosen_move.expect("live root has a move");
+        assert_eq!(move_uci(&best), "d1d8");
+        let total: f32 = result.visit_counts.iter().sum();
+        assert_eq!(total, 96.0);
+        let max = result.visit_counts.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(max >= 48.0, "the mate should dominate: max={max}");
+    }
+
+    #[test]
+    fn terminal_root_needs_no_evaluation() {
+        let mut ev = StubEvaluator::new(0.0);
+        let cfg = SearchConfig::default();
+        let result = search_uci(MATED, &[], &cfg, &mut ev);
+        assert!(!result.visited_root);
+        assert_eq!(result.root_value, -1.0);
+        assert!(result.visit_counts.iter().all(|c| *c == 0.0));
+        assert!(result.chosen_move.is_none());
+        assert_eq!(ev.calls, 0);
+    }
+
+    #[test]
+    fn forced_move_shortcut() {
+        let mut ev = StubEvaluator::new(0.0);
+        let cfg = SearchConfig { num_simulations: 10, ..SearchConfig::default() };
+        let result = search_uci(SINGLE_MOVE, &[], &cfg, &mut ev);
+        assert!(result.visited_root);
+        let mv = result.chosen_move.expect("forced move");
+        assert_eq!(move_uci(&mv), "h8h7");
+        let root = Position::from_fen(SINGLE_MOVE).unwrap();
+        assert_eq!(result.visit_counts[policy_index(&root, &mv)], 10.0);
+        let total: f32 = result.visit_counts.iter().sum();
+        assert_eq!(total, 10.0);
+    }
+
+    #[test]
+    fn threefold_claim_semantics_match_python() {
+        // Two full knight shuffles: the start position has now occurred three
+        // times, so the root is game-over under claim_draw=True semantics
+        // (no evaluation, zero visits, draw value).
+        let cfg = SearchConfig { num_simulations: 4, ..SearchConfig::default() };
+        let shuffle = &["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"];
+        let mut ev = StubEvaluator::new(0.0);
+        let result = search_uci(crate::position::START_FEN, shuffle, &cfg, &mut ev);
+        assert!(!result.visited_root);
+        assert_eq!(result.root_value, 0.0);
+        assert!(result.visit_counts.iter().all(|c| *c == 0.0));
+        assert_eq!(ev.calls, 0);
+
+        // One full shuffle: only one prior occurrence of the start position,
+        // so the root is LIVE and the search must evaluate it.
+        let mut ev = StubEvaluator::new(0.0);
+        let result = search_uci(
+            crate::position::START_FEN,
+            &["g1f3", "g8f6", "f3g1", "f6g8"],
+            &cfg,
+            &mut ev,
+        );
+        assert!(result.visited_root);
+        assert_eq!(ev.calls, 5); // root eval + 4 single-leaf waves
+    }
+
+    #[test]
+    fn wave_batch_sums_and_is_deterministic() {
+        let cfg = |seed: u64| SearchConfig {
+            num_simulations: 32,
+            batch_size: 4,
+            root_noise: true,
+            seed,
+            ..SearchConfig::default()
+        };
+        let mut ev_a = StubEvaluator::new(0.25);
+        let a = search_uci(MATE_IN_1, &[], &cfg(11), &mut ev_a);
+        let mut ev_b = StubEvaluator::new(0.25);
+        let b = search_uci(MATE_IN_1, &[], &cfg(11), &mut ev_b);
+        assert_eq!(a.visit_counts, b.visit_counts, "same seed must reproduce");
+        let total: f32 = a.visit_counts.iter().sum();
+        assert_eq!(total, 32.0);
+        let mut ev_c = StubEvaluator::new(0.25);
+        let c = search_uci(MATE_IN_1, &[], &cfg(12), &mut ev_c);
+        let all_legal = a
+            .visit_counts
+            .iter()
+            .chain(c.visit_counts.iter())
+            .all(|v| *v >= 0.0);
+        assert!(all_legal);
+    }
+
+    #[test]
+    fn sequential_mode_is_batch_one_reduced() {
+        // batch_size=1 must equal the plain sequential search: no virtual
+        // loss can be in flight when every wave has exactly one selection.
+        let cfg = SearchConfig { num_simulations: 24, seed: 3, ..SearchConfig::default() };
+        let mut seq = StubEvaluator::new(-0.4);
+        let a = search_uci(MATE_IN_1, &[], &cfg, &mut seq);
+        let one = SearchConfig { batch_size: 1, ..cfg };
+        let mut wav = StubEvaluator::new(-0.4);
+        let b = search_uci(MATE_IN_1, &[], &one, &mut wav);
+        assert_eq!(a.visit_counts, b.visit_counts);
+        assert_eq!(a.root_value, b.root_value);
+    }
+
+    #[test]
+    fn temperature_argmax_takes_first_max() {
+        let mut rng = StdRng::seed_from_u64(1);
+        let legal = vec![10usize, 20, 30];
+        let mut counts = vec![0.0f32; POLICY_MOVES];
+        counts[10] = 4.0;
+        counts[30] = 4.0;
+        assert_eq!(select_by_temperature(&legal, &counts, 0.0, &mut rng), 10);
+    }
 }
