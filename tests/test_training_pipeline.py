@@ -237,7 +237,7 @@ class TestWPAThroughputKnobs:
         assert lrs == [pytest.approx(1e-3), pytest.approx(1e-3)]
 
     def test_profile_signature_carries_lr_schedule(self):
-        from training.pipeline import LRStepSchedule, NIGHT_PROFILE, NIGHT_V2_PROFILE
+        from training.pipeline import NIGHT_PROFILE, NIGHT_V2_PROFILE, LRStepSchedule
         from training.resume import profile_signature
 
         assert profile_signature(NIGHT_PROFILE)["lr_schedule"] is None
