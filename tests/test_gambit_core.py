@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 import gambit_core
-from training.encoder import encode_state, legal_mask, legal_move_map
+from training.encoder import encode_state, encode_v2, legal_mask, legal_move_map
 
 PERFT_STARTPOS = [20, 400, 8902, 197_281, 4_865_609]
 PERFT_KIWIPETE = [48, 2039, 97_862]
@@ -61,6 +61,17 @@ def raw_fen(board: chess.Board) -> str:
     if board.ep_square is not None:
         parts[3] = chess.SQUARE_NAMES[board.ep_square]
     return " ".join(parts)
+
+
+def replay_history(board: chess.Board, moves: list[str]) -> list[chess.Board]:
+    """Most-recent-first history list (t-1, t-2, ...) for `board` from its UCI stack."""
+    replay = chess.Board(board.root().fen(en_passant="fen"))
+    chronological: list[chess.Board] = []
+    for uci in moves:
+        chronological.append(replay.copy())
+        replay.push_uci(uci)
+    chronological.reverse()
+    return chronological
 
 
 def walk_random_game(start_fen: str, rng: random.Random):
@@ -324,6 +335,43 @@ class TestDifferentialFuzz:
         board = chess.Board(fen)
         assert np.array_equal(gambit_core.Board(fen).encode(), encode_state(board))
         assert np.array_equal(gambit_core.legal_masks([fen])[0], legal_mask(board))
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="WP-B rust mirror: gambit_core.encode_v2 lands with WP-F C4 "
+    "(branch feat/opt-f-rust-mcts); remove this marker when it does",
+)
+class TestEncoderV2RustMirror:
+    """Plane-for-plane rust mirror of `training.encoder.encode_v2` (WP-B).
+
+    xfails until WP-F C4 extends gambit_core/src/encoder.rs to the 104-plane
+    v2 layout — strict, so the suite turns red the moment the rust side lands
+    without this marker being removed.
+    """
+
+    def test_encode_v2_plane_for_plane(self):
+        import gambit_core
+
+        rng = random.Random(20261122)
+        fens: list[str] = []
+        histories: list[list[str]] = []  # UCI move stacks (game history per fen)
+        for game in range(12):
+            start = WALK_STARTS[game % len(WALK_STARTS)]
+            stack: list[str] = []
+            for board, uci in walk_random_game(start, rng):
+                if uci is not None:
+                    stack.append(uci)
+                fens.append(raw_fen(board))
+                histories.append(list(stack))
+        assert len(fens) >= 100
+        rust = gambit_core.encode_batch_v2(fens, histories)
+        assert rust.shape == (len(fens), 104, 8, 8)
+        for row, (fen, moves) in enumerate(zip(fens, histories)):
+            board = chess.Board(fen)
+            history = replay_history(board, moves)
+            expected = encode_v2(board, history)
+            assert np.array_equal(rust[row], expected), f"v2 mirror divergence in {fen}"
 
 
 if __name__ == "__main__":

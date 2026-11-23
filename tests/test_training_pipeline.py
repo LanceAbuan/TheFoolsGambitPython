@@ -12,13 +12,14 @@ import torch
 
 from training.journal import TrainingJournal
 from training.ledger import ArenaLedger
-from training.model import MODEL_TINY
+from training.model import MODEL_TINY, GambitNet, ModelConfig
 from training.pipeline import (
     SMOKE_PROFILE,
     ArenaConfig,
-    LRStepSchedule,
     LadderConfig,
+    LRStepSchedule,
     TrainingProfile,
+    encoder_version_for,
     run_training,
 )
 from training.regimes import get_regime
@@ -267,3 +268,53 @@ class TestWPAThroughputKnobs:
         smoke_args = module.build_parser().parse_args(["--profile", "smoke"])
         smoke = module.build_profile(smoke_args)
         assert smoke.name == "smoke" and smoke.model == MODEL_TINY
+
+
+class TestWPBEncoderStamping:
+    """WP-B: encoder-version stamps on checkpoint metadata + journal records."""
+
+    def testencoder_version_for_known_plane_counts(self):
+        from training.encoder import ENCODER_VERSION, NUM_PLANES, NUM_PLANES_V2
+
+        assert encoder_version_for(NUM_PLANES) == 1
+        assert encoder_version_for(NUM_PLANES_V2) == ENCODER_VERSION == 2
+        assert NUM_PLANES_V2 == 104
+        with pytest.raises(ValueError):
+            encoder_version_for(32)
+
+    def test_checkpoint_metadata_stamps_encoder_layout(self, tmp_path):
+        from training.pipeline import _save_checkpoint
+
+        v1 = GambitNet(MODEL_TINY)
+        ckpt = tmp_path / "v1.pt"
+        _save_checkpoint(v1, ckpt, "tag-1", "scratch", "run", 1, 1)
+        data = torch.load(ckpt, map_location="cpu", weights_only=False)
+        assert data["in_channels"] == 29
+        assert data["encoder_version"] == 1
+
+        # A v2-shaped model (104 input planes) stamps version 2 automatically.
+        v2 = GambitNet(ModelConfig(in_channels=104, num_blocks=1, filters=8, value_channels=8, value_fc=16))
+        ckpt2 = tmp_path / "v2.pt"
+        _save_checkpoint(v2, ckpt2, "tag-2", "scratch", "run", 2, 1)
+        data2 = torch.load(ckpt2, map_location="cpu", weights_only=False)
+        assert data2["in_channels"] == 104
+        assert data2["encoder_version"] == 2
+
+    def test_journal_records_stamp_encoder_version(self, tmp_path):
+        summary = run_training(
+            SMOKE_PROFILE,
+            run_id="stamp-test",
+            base_dir=tmp_path / "runs",
+            data_dir=tmp_path / "data",
+        )
+        assert summary.iterations_completed >= 1
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "data" / "train_log.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert events, "journal produced no events"
+        stamped = [e for e in events if e.get("kind") in ("iteration", "arena")]
+        assert stamped, "no iteration/arena journal events"
+        # The smoke model is 29-plane: the honest stamp is v1.
+        assert all(e["encoder_version"] == 1 for e in stamped)

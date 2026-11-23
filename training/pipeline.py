@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .encoder import NUM_PLANES
+from .encoder import ENCODER_VERSION, NUM_PLANES, NUM_PLANES_V2
 from .evaluator import QueuedNNEvaluator
 from .glicko import GlickoRating, expected_games_to_accept, match_honesty
 from .hf import upload_checkpoint
@@ -208,6 +208,25 @@ def _utc_run_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
 
 
+# WP-B: which encoder layout a model consumes, by its input plane count. The
+# stamp is DERIVED from model.config.in_channels (never hardcoded per run) so
+# the current 29-plane runs stamp encoder_version=1 honestly and a future v2
+# profile stamps 2 automatically. NUM_PLANES_V2 (=104) and ENCODER_VERSION
+# (=2) are re-exported here from training.encoder — the plan's constants.
+_ENCODER_VERSION_BY_PLANES: dict[int, int] = {NUM_PLANES: 1, NUM_PLANES_V2: ENCODER_VERSION}
+
+
+def encoder_version_for(in_channels: int) -> int:
+    """Encoder layout version for a model with `in_channels` input planes (WP-B)."""
+    try:
+        return _ENCODER_VERSION_BY_PLANES[int(in_channels)]
+    except KeyError:
+        raise ValueError(
+            f"unknown encoder plane count {in_channels}; expected one of "
+            f"{sorted(_ENCODER_VERSION_BY_PLANES)}"
+        ) from None
+
+
 def _save_checkpoint(
     model: GambitNet,
     path: Path,
@@ -226,6 +245,11 @@ def _save_checkpoint(
             "run_id": run_id,
             "step": step,
             "games": games,
+            # WP-B: encoder-layout stamp — derived from the model's input
+            # plane count (29 -> v1, 104 -> v2) so loaders can branch without
+            # guessing (WP-D warm-start reads this).
+            "in_channels": int(model.config.in_channels),
+            "encoder_version": encoder_version_for(model.config.in_channels),
             "ts": time.time(),
         },
         path,
@@ -385,6 +409,8 @@ def run_training(
     model = GambitNet(profile.model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=regime.learning_rate)
     buffer: TrainingBuffer = TrainingBuffer(max_size=profile.buffer_size)
+    # WP-B: encoder-layout stamp for every journal record this run writes.
+    encoder_version = encoder_version_for(model.config.in_channels)
 
     champion_file = Path(base_dir) / regime.name / CHAMPION_FILENAME
     champion_tag: str | None = None
@@ -624,6 +650,7 @@ def run_training(
                     else None,
                     "parallel_games": effective_parallel,
                     "lr": iteration_lr,
+                    "encoder_version": encoder_version,
                     "regime": regime.name,
                     "run_id": resolved_run_id,
                 }
@@ -844,6 +871,7 @@ def run_training(
                     "loss": last_loss,
                     "policy_loss": last_policy_loss,
                     "value_loss": last_value_loss,
+                    "encoder_version": encoder_version,
                     "regime": regime.name,
                     "run_id": resolved_run_id,
                 }
