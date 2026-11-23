@@ -34,7 +34,16 @@ mod tree;
 #[cfg(feature = "onnx")]
 mod ort_eval;
 
+/// WP-H H3: the Rust self-play game loop (opening sampling, temperature
+/// schedule, SAN port, buffer-schema example records). Feature-free core
+/// (unit-tested hermetically); the ort-backed python entry point is
+/// `selfplay_game` below.
+#[allow(dead_code)]
+mod selfplay;
+
 use numpy::{ndarray::Array, IntoPyArray, PyArray1, PyArray2, PyArray3, PyArray4, PyArrayLike};
+#[cfg(feature = "onnx")]
+use pyo3::types::{PyDict, PyList};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -282,6 +291,80 @@ fn encode_batch_v2<'py>(
     let arr = Array::from_shape_vec((n, encoder::NUM_PLANES_V2, 8, 8), data)
         .expect("N*104*8*8 shape is exact");
     Ok(arr.into_pyarray(py))
+}
+
+/// WP-H H3: play ONE full self-play game in pure Rust (rules + encoder v2 +
+/// MCTS + ort inference — zero Python per move).
+///
+/// Mirrors python `self_play_game` (PUCT path, root noise on, temperature
+/// schedule, one normalized-visit-count policy target and a mover-perspective
+/// {-1, 0, 1} value per ply — the exact `pipeline.py` buffer.add record
+/// schema: board_tensor (104, 8, 8) f32, policy (4672,) f32, value f32).
+/// `opening_seed` samples the game-root FEN like
+/// `training/openings.random_openings` (None = standard start position).
+///
+/// RNG streams are rust-side (see the `selfplay` module docs): same-seed rust
+/// replays are bit-identical; rust vs python games compare structurally
+/// (H6(a)). The loop runs with the GIL released, on the CPU EP
+/// (`prefer_cuda=false` — CUDA EP selection stays an H4 worker decision).
+// The dispatch contract pins this signature (H4 workers call it positionally);
+// 9 parameters is the interface, not a smell.
+#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "onnx")]
+#[pyfunction]
+#[pyo3(signature = (model_path, seed = 0, sims = 64, max_plies = 200, temperature = 1.0, temperature_plies = 30, opening_seed = None, weight_version = 0))]
+fn selfplay_game<'py>(
+    py: Python<'py>,
+    model_path: &str,
+    seed: u64,
+    sims: u32,
+    max_plies: u32,
+    temperature: f64,
+    temperature_plies: u32,
+    opening_seed: Option<u64>,
+    weight_version: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let game = py
+        .detach(|| -> Result<selfplay::SelfPlayGame, String> {
+            let model = ort_eval::OrtModel::load(std::path::Path::new(model_path), false)?;
+            let mut evaluator = ort_eval::OrtMctsEvaluator::new(model);
+            let opening_fen = match opening_seed {
+                Some(os) => selfplay::random_opening_fen(os)?,
+                None => position::START_FEN.to_string(),
+            };
+            let root = Position::from_fen(&opening_fen)?;
+            let params = selfplay::SelfPlayParams {
+                seed,
+                num_simulations: sims,
+                max_plies,
+                temperature,
+                temperature_plies,
+            };
+            Ok(selfplay::play_game(&mut evaluator, &root, &params))
+        })
+        .map_err(PyValueError::new_err)?;
+
+    let dict = PyDict::new(py);
+    let examples = PyList::empty(py);
+    for ex in &game.examples {
+        let record = PyDict::new(py);
+        let tensor = Array::from_shape_vec((encoder::NUM_PLANES_V2, 8, 8), ex.planes.to_vec())
+            .expect("104*8*8 shape is exact");
+        record.set_item("board_tensor", tensor.into_pyarray(py))?;
+        record.set_item("policy", ex.policy.clone().into_pyarray(py))?;
+        record.set_item("value", ex.value)?;
+        examples.append(record)?;
+    }
+    dict.set_item("examples", examples)?;
+    dict.set_item("moves", &game.sans)?;
+    dict.set_item("ucis", &game.ucis)?;
+    dict.set_item("fens", &game.fens)?;
+    dict.set_item("opening_fen", &game.opening_fen)?;
+    dict.set_item("result", &game.result)?;
+    dict.set_item("termination", &game.termination)?;
+    dict.set_item("weight_version", weight_version)?;
+    dict.set_item("ply_count", game.ucis.len())?;
+    Ok(dict)
 }
 
 // ---------------------------------------------------------------------------
@@ -545,6 +628,7 @@ fn gambit_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     {
         m.add_class::<ort_eval::PyOrtModel>()?;
         m.add_function(wrap_pyfunction!(ort_eval::ort_dylib_path, m)?)?;
+        m.add_function(wrap_pyfunction!(selfplay_game, m)?)?;
     }
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())

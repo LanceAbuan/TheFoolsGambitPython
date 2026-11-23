@@ -117,20 +117,28 @@ pub struct SearchResult {
     pub visited_root: bool,
 }
 
-/// Game history strictly before the search root, for repetition state.
+/// Game history strictly before the search root, for repetition state and
+/// v2 history planes (WP-H H3).
 ///
-/// `positions` is chronological (oldest first); `moves[i]` is the move that
-/// produced `positions[i]` (evaluated for irreversibility on
-/// `positions[i-1]`; the oldest entry's own move is never consulted because
-/// the scan stops there — a truncated history is a conservative boundary).
+/// Contract: `positions` is chronological (oldest first) and STRICTLY before
+/// the search root — for a game played from `P0` with the root at `Pk`, it is
+/// `[P0 .. P(k-1)]`. `moves[i]` is the move that produced `positions[i]`
+/// (`None` for the game root `P0`, which is where python-chess's pop-walk
+/// stops when the move stack empties). `root_move` is the move that produced
+/// the search root itself (`None` when the root IS the game start) — without
+/// it the repetition walk would stop at the root and never see positions
+/// before it, under-detecting threefold claims against python (whose search
+/// board carries the full move stack).
 #[derive(Clone, Debug, Default)]
 pub struct GameHistory {
     pub positions: Vec<Position>,
     pub moves: Vec<Option<chess::ChessMove>>,
+    /// The move that produced the search root (`None` at the game start).
+    pub root_move: Option<chess::ChessMove>,
 }
 
 impl GameHistory {
-    /// An empty history (fresh game).
+    /// An empty history (fresh game: the search root IS the game start).
     pub fn empty() -> GameHistory {
         GameHistory::default()
     }
@@ -140,12 +148,19 @@ impl GameHistory {
     pub fn replay(start: &Position, ucis: &[&str]) -> Result<(GameHistory, Position), String> {
         let mut history = GameHistory::empty();
         let mut pos = *start;
+        history.positions.push(pos);
+        history.moves.push(None);
         for uci in ucis {
             let m = find_legal_uci(&pos, uci)?;
+            history.root_move = Some(m);
             pos = pos.make(m);
             history.positions.push(pos);
             history.moves.push(Some(m));
         }
+        // Drop the last entry: `positions` must hold only positions BEFORE
+        // the returned root, and the root's own move lives in `root_move`.
+        history.positions.pop();
+        history.moves.pop();
         Ok((history, pos))
     }
 }
@@ -192,6 +207,10 @@ struct Seq<'a> {
     path_pos: Vec<Position>,
     path_keys: Vec<TranspositionKey>,
     path_moves: Vec<Option<chess::ChessMove>>,
+    /// The move that produced the search root (`None` at the game start),
+    /// captured at `Seq::new` so `reset_path` can re-append the root with
+    /// its producing move (WP-H H3 GameHistory contract).
+    root_mv: Option<chess::ChessMove>,
 }
 
 impl<'a> Seq<'a> {
@@ -204,6 +223,7 @@ impl<'a> Seq<'a> {
             path_pos: Vec::new(),
             path_keys: Vec::new(),
             path_moves: Vec::new(),
+            root_mv: history.root_move,
         }
     }
 
@@ -213,19 +233,19 @@ impl<'a> Seq<'a> {
         self.path_moves.clear();
     }
 
-    /// Reset the per-simulation path. The root is pushed ONLY on an empty
-    /// base history: with a game history, `base_pos` already ends with the
-    /// root position (the replay includes it), so pushing it again would
-    /// duplicate that position at the seam. The duplicated entry made
-    /// `move_into` return None at the seam, so `suffix_count` stopped there
-    /// and repetition/fifty-move claims at (or below) the root never saw the
-    /// game history - diverging from python-chess `claim_draw=True` (WP-F
-    /// C6 parity gate regression, fixed with a failing-then-passing test).
+    /// Reset the per-simulation path to the search root.
+    ///
+    /// Under the merged WP-H H3 `GameHistory` contract (`positions` are
+    /// STRICTLY before the root; the producing move of the root itself
+    /// lives in `root_move`) the root is ALWAYS re-appended here, carrying
+    /// `root_mv` so the repetition/fifty-move suffix walk (C6 python-chess
+    /// `claim_draw=True` parity) steps past the root into the game history
+    /// instead of stopping at the seam. (Upstream C3 pushed the root only
+    /// on an empty base because its replay base ended AT the root; the H3
+    /// contract moved the root into the per-simulation path instead.)
     fn reset_path(&mut self, root: &Position) {
         self.clear_path();
-        if self.base_pos.is_empty() {
-            self.push_path(root, None);
-        }
+        self.push_path(root, self.root_mv);
     }
 
     fn push_path(&mut self, pos: &Position, mv: Option<chess::ChessMove>) {
@@ -346,6 +366,16 @@ fn is_game_over_claim(seq: &Seq, leaf: &Position, legal: &[chess::ChessMove]) ->
     false
 }
 
+/// `board.is_game_over(claim_draw=True)` for `root` given the game's prior
+/// positions (`history`, see [`GameHistory`]) — the H3 game loop's per-ply
+/// termination check, the same probe the search itself uses at root/leaves.
+pub fn is_game_over_claim_draw(root: &Position, history: &GameHistory) -> bool {
+    let mut seq = Seq::new(history);
+    seq.push_path(root, history.root_move);
+    let legal = root.legal_moves();
+    is_game_over_claim(&seq, root, &legal)
+}
+
 /// Run one search. `root` is the position to search; `history` carries the
 /// game's prior positions for repetition claims (empty for a fresh game).
 pub fn search(
@@ -369,7 +399,7 @@ pub fn search(
 
     let mut tree = Tree::new();
     let mut seq = Seq::new(history);
-    seq.reset_path(root);
+    seq.push_path(root, history.root_move);
 
     // Root expansion (python `_evaluate_and_expand(root, add_root_noise=True)`).
     if is_game_over_claim(&seq, root, &plain) {

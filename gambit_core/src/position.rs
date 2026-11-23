@@ -63,7 +63,8 @@ pub fn parse_promo(c: &str) -> Result<Piece, String> {
     }
 }
 
-fn piece_char(piece: Piece, color: Color) -> char {
+/// FEN/SAN letter for a piece with its color (white upper-case).
+pub fn piece_char(piece: Piece, color: Color) -> char {
     let lower = match piece {
         Piece::Pawn => 'p',
         Piece::Knight => 'n',
