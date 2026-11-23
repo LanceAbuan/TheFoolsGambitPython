@@ -24,7 +24,16 @@ import chess.pgn
 import numpy as np
 import torch
 
-from .encoder import encode_batch, encode_move, encode_state, legal_move_map
+from .encoder import (
+    NUM_PLANES_V2,
+    encode_batch,
+    encode_batch_v2,
+    encode_move,
+    encode_state,
+    encode_state_v2,
+    encoder_version_for_model,
+    legal_move_map,
+)
 from .fastpath import fastpath_enabled
 from .model import NUM_POLICY_MOVES_V2, value_head_scalar
 from .tensorize import NUM_POSSIBLE_MOVES, board_to_tensor, move_to_idx
@@ -855,13 +864,17 @@ class BatchNNEvaluator:
     def __init__(self, model: torch.nn.Module, device: torch.device | None = None) -> None:
         self.model = model
         self.device = device if device is not None else next(model.parameters()).device
+        # WP-D: the encoder layout follows the model's input planes — a
+        # 104-plane (encoder v2) model is fed `encode_batch_v2`, everything
+        # else keeps the v1 `encode_batch`.
+        self._encoder_version = encoder_version_for_model(model)
 
     def evaluate(self, boards: Sequence[chess.Board]) -> tuple[np.ndarray, np.ndarray]:
         if not boards:
             return np.zeros((0, NUM_POLICY_MOVES_V2), dtype=np.float32), np.zeros(0, dtype=np.float32)
-        batch = torch.from_numpy(encode_batch(boards)).to(self.device)
+        batch = self._encode(boards)
         with torch.inference_mode():
-            logits, values = self.model(batch)
+            logits, values = self.model(torch.from_numpy(batch).to(self.device))
         # WP-C: wdl heads return (B, 3) logits — collapse to the scalar the
         # search consumes (p_win - p_loss, side-to-move perspective). The
         # Evaluator protocol (and thus MCTSSearch) is unchanged.
@@ -870,6 +883,12 @@ class BatchNNEvaluator:
             logits.detach().cpu().numpy().astype(np.float32),
             scalar_values.detach().cpu().numpy().astype(np.float32),
         )
+
+    def _encode(self, boards: Sequence[chess.Board]) -> np.ndarray:
+        """WP-D: encoder layout follows the model's input plane count."""
+        if self._encoder_version == 2:
+            return encode_batch_v2(boards)
+        return encode_batch(boards)
 
 
 def terminal_value(board: chess.Board) -> float:
@@ -1255,8 +1274,15 @@ class SelfPlayConfig:
     # also record fast turns (their own visit distribution as the target).
     # PUCT-only: see the U1xU2 restriction above.
     playout_cap_record_fast: bool = False
+    # WP-D: encoder layout for the recorded example planes — 1 (v1, 29
+    # planes, `encode_state` + prev_board) or 2 (v2, 104 planes,
+    # `encode_state_v2` with move-stack history). Default 1 keeps every
+    # pre-WP-D profile bit-identical.
+    encoder_version: int = 1
 
     def __post_init__(self) -> None:
+        if self.encoder_version not in (1, 2):
+            raise ValueError(f"encoder_version must be 1 or 2, got {self.encoder_version}")
         if self.playout_randomization and self.search.search_kind != "puct":
             raise ValueError(
                 "playout cap randomization applies to the PUCT search path only "
@@ -1399,7 +1425,13 @@ def self_play_game(
         total = basis.sum()
         policy = basis / total if total > 0 else np.zeros_like(basis)
         if full_search or config.playout_cap_record_fast:
-            pending.append((encode_state(board, prev_board), policy.copy(), board.turn))
+            if config.encoder_version == 2:
+                # WP-D: v2 examples carry the 104-plane encoding with the
+                # move-stack history — the identical derivation the evaluator
+                # used for the search-time eval of this same position.
+                pending.append((encode_state_v2(board), policy.copy(), board.turn))
+            else:
+                pending.append((encode_state(board, prev_board), policy.copy(), board.turn))
 
         temperature = config.temperature if ply < config.temperature_plies else 0.0
         if result.improved_policy is not None and temperature <= 1e-6:

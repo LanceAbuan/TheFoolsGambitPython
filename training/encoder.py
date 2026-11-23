@@ -426,3 +426,69 @@ def encode_v2(board: chess.Board, history: Sequence[chess.Board] | None = None) 
     # Plane 103: side to move (global flag, not perspective-mirrored).
     tensor[V2_SIDE_TO_MOVE_PLANE, 0, 0] = 1.0 if board.turn == chess.WHITE else 0.0
     return tensor
+
+
+def v2_history_from_stack(board: chess.Board, max_steps: int = V2_DEEP_HISTORY_STEPS + 1) -> list[chess.Board]:
+    """History boards [t-1, t-2, ...] recovered from `board.move_stack`.
+
+    The search carries full game stacks on every board (`Board.copy()` keeps
+    `move_stack`), so history is derived position-locally: pop a copy back one
+    ply at a time. Returns [] for an empty stack (game root -> encode_v2's
+    zeroed history slots, v1 parity). `max_steps` bounds the walk; repetition
+    counting then sees at most the last `max_steps` plies — the SAME bound
+    applies at eval and example-recording time, which is what consistency
+    requires.
+    """
+    if not board.move_stack:
+        return []
+    walked = board.copy()
+    out: list[chess.Board] = []
+    for _ in range(min(max_steps, len(board.move_stack))):
+        walked.pop()
+        out.append(walked.copy())
+    return out
+
+
+def encode_state_v2(board: chess.Board) -> np.ndarray:
+    """encode_v2 with the history derived from `board.move_stack`.
+
+    Single source of truth for the v2 encoding of a position that carries its
+    own history (self-play search boards, game example boards): eval time and
+    example time derive the identical tensor for the identical stack.
+    """
+    return encode_v2(board, v2_history_from_stack(board))
+
+
+def encode_batch_v2(boards: Sequence[chess.Board]) -> np.ndarray:
+    """N positions -> (N, 104, 8, 8) float32, histories from move stacks.
+
+    Python fallback path (per-board `encode_state_v2`). The gambit_core
+    `encode_batch_v2` bridge is intentionally NOT used here: its contract
+    requires each game's rows to appear consecutively and grow by exactly one
+    move (forward replay from an empty-stack anchor), which search-time eval
+    batches (single mid-tree rows) cannot satisfy.
+    """
+    if not boards:
+        return np.zeros((0, NUM_PLANES_V2, 8, 8), dtype=np.float32)
+    return np.stack([encode_state_v2(b) for b in boards])
+
+
+def encoder_version_for_model(model: object) -> int:
+    """Encoder layout version a model consumes, from its input plane count.
+
+    `GambitNet` carries `config.in_channels`; legacy models (ChessNet, raw
+    test doubles) have no config and are treated as v1 consumers, preserving
+    their exact pre-WP-D behavior.
+    """
+    config = getattr(model, "config", None)
+    in_channels = getattr(config, "in_channels", None)
+    if in_channels is None:
+        return 1
+    planes = int(in_channels)
+    if planes == NUM_PLANES:
+        return 1
+    if planes == NUM_PLANES_V2:
+        return ENCODER_VERSION
+    raise ValueError(
+        f"unknown encoder plane count {planes}; expected {NUM_PLANES} (v1) or {NUM_PLANES_V2} (v2)"
+    )
