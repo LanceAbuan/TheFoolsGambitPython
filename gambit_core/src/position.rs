@@ -38,7 +38,8 @@ fn square_name(sq: Square) -> String {
     s
 }
 
-fn parse_square(name: &str) -> Result<Square, String> {
+/// Parse a two-char algebraic square name (`"a1"`..`"h8"`, lowercase).
+pub fn parse_square(name: &str) -> Result<Square, String> {
     let b = name.as_bytes();
     if b.len() != 2 || !b[0].is_ascii_lowercase() || !b[1].is_ascii_digit() {
         return Err(format!("bad square name: {name:?}"));
@@ -51,7 +52,8 @@ fn parse_square(name: &str) -> Result<Square, String> {
     Ok(square_from_index((rank * 8 + file) as usize))
 }
 
-fn parse_promo(c: &str) -> Result<Piece, String> {
+/// Parse a single-char UCI promotion piece (`n`/`b`/`r`/`q`, lowercase).
+pub fn parse_promo(c: &str) -> Result<Piece, String> {
     match c {
         "n" => Ok(Piece::Knight),
         "b" => Ok(Piece::Bishop),
@@ -480,9 +482,9 @@ impl Position {
             return (false, false);
         }
         let backrank = color.to_my_backrank();
-        let king_ok = *b.pieces(Piece::King) & *b.color_combined(color)
+        let king_ok = b.pieces(Piece::King) & *b.color_combined(color)
             == BitBoard::set(backrank, File::E);
-        let pieces = *b.pieces(Piece::Rook) & *b.color_combined(color);
+        let pieces = b.pieces(Piece::Rook) & *b.color_combined(color);
         let ks = rights.has_kingside()
             && king_ok
             && pieces & BitBoard::set(backrank, File::H) != BitBoard(0);
@@ -624,14 +626,14 @@ impl Position {
         let (wks, wqs) = self.clean_castling_rights(Color::White);
         let (bks, bqs) = self.clean_castling_rights(Color::Black);
         TranspositionKey {
-            pawns: *b.pieces(Piece::Pawn),
-            knights: *b.pieces(Piece::Knight),
-            bishops: *b.pieces(Piece::Bishop),
-            rooks: *b.pieces(Piece::Rook),
-            queens: *b.pieces(Piece::Queen),
-            kings: *b.pieces(Piece::King),
-            white: *b.color_combined(Color::White),
-            black: *b.color_combined(Color::Black),
+            pawns: b.pieces(Piece::Pawn).0,
+            knights: b.pieces(Piece::Knight).0,
+            bishops: b.pieces(Piece::Bishop).0,
+            rooks: b.pieces(Piece::Rook).0,
+            queens: b.pieces(Piece::Queen).0,
+            kings: b.pieces(Piece::King).0,
+            white: b.color_combined(Color::White).0,
+            black: b.color_combined(Color::Black).0,
             white_to_move: b.side_to_move() == Color::White,
             castling: [wks, wqs, bks, bqs],
             ep: self.legal_ep(),

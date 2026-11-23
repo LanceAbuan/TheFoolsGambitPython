@@ -142,10 +142,10 @@ pub fn find_legal_uci(pos: &Position, uci: &str) -> Result<chess::ChessMove, Str
     if uci.len() != 4 && uci.len() != 5 {
         return Err(format!("bad UCI move: {uci:?}"));
     }
-    let src = crate::position::parse_square_pub(&uci[0..2])?;
-    let dst = crate::position::parse_square_pub(&uci[2..4])?;
+    let src = crate::position::parse_square(&uci[0..2])?;
+    let dst = crate::position::parse_square(&uci[2..4])?;
     let promo = if uci.len() == 5 {
-        Some(crate::position::parse_promo_pub(&uci[4..5])?)
+        Some(crate::position::parse_promo(&uci[4..5])?)
     } else {
         None
     };
@@ -349,7 +349,8 @@ pub fn search(
     } else {
         None
     };
-    expand(&mut tree, tree.root(), &legal_pairs, &logits[..POLICY_MOVES], noise.as_deref(), cfg);
+    let root_idx = tree.root();
+    expand(&mut tree, root_idx, &legal_pairs, &logits[..POLICY_MOVES], noise.as_deref(), cfg);
 
     // Forced move: python returns early with visits[move] = sims and the
     // (unvisited) root's value_mean — which is 0.0. Documented quirk.
@@ -403,7 +404,7 @@ pub fn search(
                 // Selected twice within one wave (virtual loss did not fully
                 // deter it): python-sequential semantics expand immediately —
                 // do the single eval inline.
-                let value = expand_leaf(&mut tree, node, &pos, &mut seq, cfg, evaluator);
+                let value = expand_leaf(&mut tree, node, &pos, cfg, evaluator);
                 tree.backup(&path, value);
             } else if is_game_over_claim(&seq, &pos, &pos.legal_moves()) {
                 let tv = terminal_value(&pos);
@@ -420,12 +421,20 @@ pub fn search(
         if !wave_leaves.is_empty() {
             let batch_pos: Vec<Position> = wave_leaves.iter().map(|(_, p, _)| *p).collect();
             let (logits, values) = evaluator.evaluate(&batch_pos);
-            for ((path, pos, node), i) in wave_leaves.into_iter().enumerate() {
+            debug_assert_eq!(values.len(), batch_pos.len());
+            debug_assert!(logits.len() >= batch_pos.len() * POLICY_MOVES);
+            for (i, (path, pos, node)) in wave_leaves.into_iter().enumerate() {
+                // values[i] is THIS leaf eval - pass the matching row through
+                // so the backup credits the right node.
                 let value = expand_leaf_with_logits(
-                    &mut tree, node, pos, &mut seq, &logits[i * POLICY_MOVES..(i + 1) * POLICY_MOVES],
+                    &mut tree,
+                    node,
+                    &pos,
+                    &logits[i * POLICY_MOVES..(i + 1) * POLICY_MOVES],
+                    values[i] as f64,
+                    cfg,
                 );
                 tree.backup(&path, value);
-                let _ = values; // values[i] == value, sanity-checked in expand_leaf_with_logits
             }
         }
         remaining -= wave as u32;
@@ -484,19 +493,12 @@ fn expand_leaf(
     tree: &mut Tree,
     node: u32,
     pos: &Position,
-    seq: &mut Seq,
     cfg: &SearchConfig,
     evaluator: &mut dyn Evaluator,
 ) -> f64 {
     let (logits, values) = evaluator.evaluate(std::slice::from_ref(pos));
-    expand_with(
-        tree,
-        node,
-        pos,
-        &logits[..POLICY_MOVES],
-        None,
-        cfg,
-    );
+    let legal_pairs = pos.legal_moves_python_order();
+    expand(tree, node, &legal_pairs, &logits[..POLICY_MOVES], None, cfg);
     debug_assert_eq!(values.len(), 1);
     values[0] as f64
 }
@@ -508,12 +510,13 @@ fn expand_leaf_with_logits(
     tree: &mut Tree,
     node: u32,
     pos: &Position,
-    seq: &mut Seq,
     logits: &[f32],
+    value: f64,
+    cfg: &SearchConfig,
 ) -> f64 {
-    // The wave driver passes the matching `values` row through the batch
-    // values vector; here we re-derive nothing — see the wave loop.
-    unreachable!("replaced by expand_leaf_batch")
+    let legal_pairs = pos.legal_moves_python_order();
+    expand(tree, node, &legal_pairs, &logits[..POLICY_MOVES], None, cfg);
+    value
 }
 
 /// Create children for `node` from its legal moves (python-chess order) with
