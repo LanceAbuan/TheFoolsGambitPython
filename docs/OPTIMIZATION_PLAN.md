@@ -37,6 +37,7 @@ any deviation from spec and why.
 | 1 (parallel) | rust-dev | WP-F (tree/search immediately; encoder-v2 mirror after WP-B merges) | independent files |
 | 2 | training-dev | WP-D (needs WP-B + WP-C merged) | warm-start touches both |
 | 3 | orchestrator + **user** | WP-G | needs everything merged + explicit user go |
+| 4 | rust-dev | WP-H (needs WP-F merged **and measured**) | full-Rust self-play builds on proven search parity |
 
 ---
 
@@ -161,6 +162,29 @@ Spec:
 
 **Acceptance:** `pytest tests/test_gambit_core.py tests/test_training_mcts.py` green; `cargo test` green in `gambit_core/`; flag default remains `"python"`; PR includes a throughput comparison table (python vs rust, nodes/sec).
 
+**Scope note:** WP-F removes the GIL from the search hot loop only. The per-move game driver and NN inference stay Python. WP-H below is the *complete* shift.
+
+---
+
+### WP-H — Full Rust self-play backend (zero Python in the per-move path)  ·  owner: rust-dev · branch: `feat/opt-h-rust-backend` (after WP-F merges and its numbers are recorded)
+
+**Goal:** self-play workers become pure Rust processes — rules (`position.rs`), encoder v2, MCTS, **and NN inference** — running full games end-to-end with no Python call per move. Python keeps only what it is genuinely the right tool for: the PyTorch training loop, replay buffer, gates, persistence, orchestration, and the web/serve stack. That is the Lc0/KataGo shape (fast native engine + Python training harness). **Principle: Rust owns everything per-move; Python owns everything per-iteration.**
+
+Spec:
+1. **H1 — ONNX export:** `scripts/export_onnx.py` — export the v2 `GambitNet` (`torch.onnx.export`) after folding batch-norm. The net is plain conv/BN/ReLU/tanh/linear — no custom ops, so export is clean. Parity test: ONNX vs PyTorch outputs agree to 1e-5 on ≥ 1,000 random positions (policy after softmax + value logits).
+2. **H2 — Rust inference:** `gambit_core` gains an `ort`-crate (ONNX Runtime) evaluator loading the exported model. VRAM/device selection via ONNX Runtime CUDA EP. Validate: identical outputs to H1 parity fixture.
+3. **H3 — Rust game driver:** `gambit_core/src/selfplay.rs` — complete game loop in Rust: opening sampling (seeded), encoder v2, MCTS with embedded inference, temperature schedule, root noise, result + termination detection, example/position records with visit-count targets matching the Python buffer schema exactly.
+4. **H4 — Worker topology + IPC:** `N` independent Rust worker **processes** (true parallelism — no GIL question at all), each streaming finished games/examples to the Python trainer over a local socket or shared-memory ring as JSONL/bytes with a versioned schema. Python trainer consumes unchanged (buffer already takes plain arrays).
+   **Weight distribution:** the trainer exports the current model to ONNX (H1 script) every iteration; workers watch the artifact (mtime + hash) and hot-reload **between games** — a game never mixes weights; every game record tags the weight version it used.
+5. **H5 — Config flip:** profile gains `selfplay_backend: "python" | "rust"`. Default `"python"`. Flip after H6.
+6. **H6 — Gates:** (a) example-parity: one Rust game and one Python game from the same seed/position produce schema-identical example records (values may differ from thread nondeterminism — compare shapes, dtypes, legality, target ranges); (b) perf: games/hr ≥ 2× the WP-F result and GPU ≥ 85% — if GPU < 85% with per-worker embedded inference, the first optimization to try is one shared inference process (workers ship eval requests over IPC), nothing else; (c) 24 h soak: no worker crashes, buffer intake rate stable.
+
+**Explicitly still Python (correctly, permanently):** training loop (PyTorch — GPU-bound, ops release the GIL, single process), replay buffer, gates/ladder, checkpoints, FS-5 resume, server/ + web/. Migrating those buys nothing.
+
+**Risk register:** ONNX runtime version pinning (Windows + CUDA EP); example-schema drift (versioned schema + parity test is the guard); worker crash isolation (supervisor restarts a dead worker; trainer keeps buffered examples).
+
+**Acceptance:** `cargo test` green; parity + perf + soak evidence in the PR; flag default stays `"python"`; measured games/hr and GPU util table vs WP-F numbers in the PR description.
+
 ---
 
 ### WP-G — Restart + validation  ·  owner: orchestrator (me) · **gated on explicit user go**
@@ -194,6 +218,7 @@ Spec:
 ## 7. What we are NOT doing (and why)
 
 - `sf-distill` regime switch — abandons from-scratch AlphaZero premise; stays available in `regimes.py`.
+- Porting the **trainer** to Rust (`tch-rs`/`burn`) — the training step is GPU-bound and single-process, so the GIL is irrelevant there; trading PyTorch's autograd/AMP/debugging ecosystem for zero throughput gain is a net loss. The optimal boundary: **Rust owns everything per-move, Python owns everything per-iteration.** Inference itself does NOT need Python — WP-H moves it into Rust via ONNX Runtime, which is faster than PyTorch eager for this net.
 - Transposition tables, nets bigger than 12×160, multi-GPU — scope creep until the above lands and is measured.
 - Any UI change — the 20-pass review loop closed the UI overhaul.
 
