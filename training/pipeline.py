@@ -173,9 +173,25 @@ NIGHT_PROFILE = TrainingProfile(
 # 400->600, train_steps 64->96, batch_size 256->512, min_examples 64->128,
 # plus the step-decay LR schedule (x0.5 at iterations 200/400/600/800).
 # The arena stays at the section 5.1 reduced settings (128 sims / 16 games).
+#
+# WP-D (AMENDED — B3 capacity bump DEFERRED, orchestrator decision): the v2
+# net stays 10 blocks x 128 filters. Residual conv shapes depend on the
+# filter count ([128,128,3,3] vs [160,160,3,3]), so a 12x160 tower could not
+# accept the v1 tower's weights and the warm-start would be impossible; at
+# ~750 absolute Elo the transferable knowledge outweighs fresh capacity.
+# Capacity can rise at a future generation once the loop is proven. What v2
+# changes: the 104-channel encoder (WP-B) and the W/D/L value head (WP-C).
 NIGHT_V2_PROFILE = replace(
     NIGHT_PROFILE,
     name="night-v2",
+    model=ModelConfig(
+        in_channels=NUM_PLANES_V2,
+        num_blocks=10,
+        filters=128,
+        value_channels=32,
+        value_fc=512,
+        value_head="wdl",
+    ),
     parallel_games=32,
     sims=600,
     train_steps=96,
@@ -352,6 +368,38 @@ def _apply_warmstart(
     return True
 
 
+def _apply_init_checkpoint(model: GambitNet, path: Path) -> None:
+    """WP-D: seed a FRESH run's model weights from an explicit checkpoint.
+
+    Raises on an unreadable, architecture-incompatible or config-mismatched
+    file: an explicit seed that silently degraded to random init would restart
+    training from scratch without anyone noticing — the opposite of what the
+    warm-start exists for. The optimizer is intentionally untouched (fresh
+    Adam); v1 checkpoints carry no optimizer state and the restart starts a
+    new Adam on the transferred weights (noted in the artifact metadata).
+    """
+    data = torch.load(path, map_location="cpu", weights_only=False)
+    state = data.get("model_state") if isinstance(data, dict) else None
+    if state is None:
+        raise ValueError(f"init checkpoint {path} carries no model_state")
+    saved_config = data.get("config")
+    if isinstance(saved_config, dict):
+        saved_in = int(saved_config.get("in_channels", -1))
+        if saved_in != model.config.in_channels:
+            raise ValueError(
+                f"init checkpoint {path} is {saved_in}-plane; this run needs "
+                f"{model.config.in_channels} — build the matching artifact "
+                "with scripts/warmstart_v2.py"
+            )
+    model.load_state_dict(state)
+    log.info(
+        "[INIT] seeded model weights from %s (tag=%s, value_head=%s)",
+        path,
+        data.get("tag", "unknown"),
+        model.config.value_head,
+    )
+
+
 def _apply_lr_schedule(
     optimizer: torch.optim.Optimizer,
     schedule: LRStepSchedule | None,
@@ -383,12 +431,17 @@ def run_training(
     resume: str | bool = False,
     search_kind: str | None = None,
     playout_randomization: bool | None = None,
+    init_checkpoint: str | Path | None = None,
 ) -> RunSummary:
     """Run the full loop: collect -> optimize -> ladder -> arena -> ledger.
 
     `resume=True` resumes `run_id`; `resume="<run-id>"` resumes that run
     directly (FS-5): model weights, optimizer, replay buffer, RNG streams and
     the iteration counter are rebuilt from the run's persisted state.
+    `init_checkpoint` (WP-D) seeds a FRESH run's weights from an explicit
+    checkpoint file (e.g. the WP-D warm-start artifact); it is ignored on
+    resume (a resumed run rebuilds its own weights) and raises on an
+    incompatible file.
     """
     started = time.monotonic()
     if profile.seed is not None:
@@ -435,6 +488,8 @@ def run_training(
     # --- FS-5 resume: exact rebuild from persisted state -------------------
     state = load_latest_run_state(paths) if is_resume else None
     if state is not None:
+        if init_checkpoint is not None:
+            log.warning("[INIT] --init-checkpoint ignored on a resumed run (state rebuild wins)")
         saved_signature = state.get("profile_signature")
         if isinstance(saved_signature, dict):
             validate_profile_signature(saved_signature, profile_signature(profile))
@@ -464,7 +519,12 @@ def run_training(
             log.warning(
                 "[RESUME] no persisted state for run %s — starting from iteration 0", resolved_run_id
             )
-        _apply_warmstart(model, regime, Path(base_dir))
+        if init_checkpoint is not None:
+            # WP-D: the explicit seed wins over any regime warm-start spec —
+            # a named artifact is the more specific instruction.
+            _apply_init_checkpoint(model, Path(init_checkpoint))
+        else:
+            _apply_warmstart(model, regime, Path(base_dir))
 
     # --- reigning champion (regime-level pointer, §5.1) ---------------------
     # A resumed run first tries ITS OWN checkpoint for the restored champion
@@ -578,6 +638,9 @@ def run_training(
                 playout_cap_full_prob=regime.playout_cap_full_prob,
                 playout_cap_fast_fraction=regime.playout_cap_fast_fraction,
                 playout_cap_start_ply=regime.playout_cap_start_ply,
+                # WP-D: recorded example planes match the model's encoder —
+                # 104-plane v2 models train on move-stack-history encodings.
+                encoder_version=encoder_version,
             )
             elapsed_minutes = (time.monotonic() - started) / 60.0
             progress = (iteration + 1) / max(profile.iterations, 1)

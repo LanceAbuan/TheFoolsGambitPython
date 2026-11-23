@@ -34,7 +34,7 @@ import chess
 import numpy as np
 import torch
 
-from .encoder import encode_batch
+from .encoder import encode_batch, encode_batch_v2, encoder_version_for_model
 from .model import value_head_scalar
 
 log = logging.getLogger(__name__)
@@ -167,11 +167,16 @@ class QueuedNNEvaluator:
 def _model_forward(model: torch.nn.Module, device: torch.device | None) -> ForwardFn:
     """Build the real batched forward from a GambitNet (+ device)."""
     resolved = device if device is not None else next(model.parameters()).device
+    # WP-D: encoder layout follows the model's input plane count (29 -> v1,
+    # 104 -> v2). Configless models (test doubles) keep the v1 path.
+    encoder_version = encoder_version_for_model(model)
 
     def forward(boards: Sequence[chess.Board]) -> tuple[np.ndarray, np.ndarray]:
-        batch = torch.from_numpy(encode_batch(boards)).to(resolved)
+        batch = (
+            encode_batch_v2(boards) if encoder_version == 2 else encode_batch(boards)
+        )
         with torch.inference_mode():
-            logits, values = model(batch)
+            logits, values = model(torch.from_numpy(batch).to(resolved))
         # WP-C: a wdl value head returns (B, 3) logits; the queued evaluator
         # fans out the derived scalar (p_win - p_loss) so the Evaluator
         # protocol — and every MCTSSearch behind it — is unchanged.

@@ -18,12 +18,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from training.encoder import NUM_PLANES
-from training.model import MODEL_BASE, MODEL_TINY
+from training.model import MODEL_TINY
 from training.pipeline import (
     NIGHT_PROFILE,
     NIGHT_V2_PROFILE,
     SMOKE_PROFILE,
     TrainingProfile,
+    encoder_version_for,
     run_training,
 )
 from training.regimes import REGIME_NAMES
@@ -56,6 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="disable live per-move journal streaming (FS-6b, headless/bulk)")
     parser.add_argument("--resume", nargs="?", const=True, default=None, metavar="RUN_ID",
                         help="resume a run: --resume RUN_ID, or --resume with --run-id")
+    parser.add_argument("--init-checkpoint", default=None, metavar="PATH",
+                        help="WP-D: seed a FRESH run's weights from a checkpoint file "
+                             "(e.g. runs/v2-warmstart/ckpt-v2-0000.pt); ignored with --resume")
     parser.add_argument("--search", choices=["puct", "gumbel"], default=None,
                         help="root search policy (U1): puct (regime default) or gumbel")
     parser.add_argument("--playout-cap", action="store_true",
@@ -65,9 +69,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def build_profile(args: argparse.Namespace) -> TrainingProfile:
     base = _PROFILE_BY_NAME[args.profile]
-    model = MODEL_TINY if args.profile == "smoke" else MODEL_BASE
-    if model.in_channels != NUM_PLANES:
-        raise ValueError("model preset in_channels does not match the encoder")
+    # WP-D: the model comes from the PROFILE (smoke's MODEL_TINY preset,
+    # night's 10x128 preset, night-v2's 104-plane W/D/L preset). Overriding
+    # it here used to clobber night-v2's encoder/head config with MODEL_BASE.
+    model = MODEL_TINY if args.profile == "smoke" else base.model
+    # The encoder layout must be a known one (29-plane v1 or 104-plane v2);
+    # the pipeline's evaluators dispatch on the model's plane count (WP-D).
+    encoder_version_for(model.in_channels)
     overrides: dict[str, object] = {}
     if args.iterations is not None:
         overrides["iterations"] = args.iterations
@@ -109,12 +117,18 @@ def main() -> int:
         logging.getLogger(__name__).error("--resume without a run id: pass --resume RUN_ID or --run-id")
         return 2
     resume: str | bool = args.run_id if args.resume is True else (args.resume or False)
+    if args.init_checkpoint and resume:
+        logging.getLogger(__name__).error(
+            "--init-checkpoint cannot be combined with --resume (a resumed run rebuilds its own weights)"
+        )
+        return 2
     profile = build_profile(args)
     summary = run_training(profile, run_id=args.run_id,
                            base_dir=Path(args.runs_dir), data_dir=Path(args.data_dir),
                            resume=resume,
                            search_kind=args.search,
-                           playout_randomization=True if args.playout_cap else None)
+                           playout_randomization=True if args.playout_cap else None,
+                           init_checkpoint=args.init_checkpoint)
     logging.getLogger(__name__).info(
         "run complete: %s/%s checkpoints=%s champion=%s elo=%s games=%d",
         summary.regime, summary.run_id, summary.checkpoints,
