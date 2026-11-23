@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 import gambit_core
+from tests.test_training_mcts import keyed_rust_callback, requires_rust_search
 from training.encoder import encode_state, encode_v2, legal_mask, legal_move_map
 
 PERFT_STARTPOS = [20, 400, 8902, 197_281, 4_865_609]
@@ -373,3 +374,72 @@ class TestEncoderV2RustMirror:
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+class TestRustSearchBridge:
+    """WP-F C3 pyfunction-level gates (skip without the rebuilt wheel).
+
+    Deeper parity/wrapper coverage lives in tests/test_training_mcts.py
+    (TestRustSearchParity / TestRustBackendWrapper); this class pins the
+    pyfunction surface itself: config knobs, the (start_fen, moves) history
+    argument, and the batched callback contract.
+    """
+
+    @requires_rust_search
+    def test_search_surface(self):
+        assert hasattr(gambit_core, "search")
+        assert hasattr(gambit_core, "SearchConfig")
+        cfg = gambit_core.SearchConfig()
+        assert cfg.cpuct == 1.5
+        assert cfg.num_simulations == 64
+        assert cfg.batch_size == 1
+        assert "SearchConfig" in repr(cfg)
+        cfg.num_simulations = 32
+        assert cfg.num_simulations == 32
+
+    @requires_rust_search
+    def test_history_pair_argument_is_validated(self):
+        counts, value = gambit_core.search(
+            (chess.STARTING_FEN, ["e2e4", "e7e5"]),
+            keyed_rust_callback,
+            gambit_core.SearchConfig(num_simulations=8, root_noise=False),
+        )
+        counts = np.asarray(counts)
+        assert counts.shape == (4672,)
+        assert counts.sum() == 8.0
+        assert -1.0 <= float(value) <= 1.0
+        with pytest.raises(ValueError):
+            gambit_core.search(
+                (chess.STARTING_FEN, ["e2e5"]),  # illegal move
+                keyed_rust_callback,
+                gambit_core.SearchConfig(),
+            )
+        with pytest.raises(ValueError):
+            gambit_core.search(
+                ("not a fen", []), keyed_rust_callback, gambit_core.SearchConfig()
+            )
+
+    @requires_rust_search
+    def test_batched_callback_receives_wave_batches(self):
+        sizes: list[int] = []
+
+        def recorder(fens):
+            sizes.append(len(fens))
+            return keyed_rust_callback(fens)
+
+        gambit_core.search(
+            chess.STARTING_FEN,
+            recorder,
+            gambit_core.SearchConfig(num_simulations=24, batch_size=6, root_noise=False),
+        )
+        # Root eval is standalone; the 24 sims run in waves of 6.
+        assert sizes[0] == 1
+        assert set(sizes[1:]) == {6}
+
+    @requires_rust_search
+    def test_default_cfg_matches_python_knobs(self):
+        cfg = gambit_core.SearchConfig()
+        assert cfg.dirichlet_alpha == 0.3
+        assert cfg.dirichlet_epsilon == 0.25
+        assert cfg.root_noise is True
+        assert cfg.virtual_loss == 1.0
+
