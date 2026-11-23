@@ -44,3 +44,6 @@ Before EVERY follow-up to a running session: re-read the sessionID from the orig
 ## 8. Verification gates
 - Agent runs its own acceptance commands and pastes evidence.
 - Orchestrator re-runs the relevant pytest subset after every merge before dispatching dependents.
+
+| training-dev WP-F C3/C5/C6 (worktree wpf-wiring) | ses_df92fb5ccffegHVs32ZWJAQpcv | running |
+| rust-dev WP-H H1-H3 (worktree wp-h) | ses_df92f6d6dffeL3f8vwVki1eEyw | running |
