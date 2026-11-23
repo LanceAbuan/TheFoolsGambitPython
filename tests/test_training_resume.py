@@ -226,6 +226,72 @@ class TestKillAndResume:
             run_training(tiny_profile(buffer_size=555), run_id="strict", base_dir=runs,
                          data_dir=data, resume=True)
 
+
+class TestSignatureAdditiveModelKeys:
+    """WP-C: `value_head` joined ModelConfig.to_dict() — pre-WP-C state files
+    (whose saved model dict lacks the key) must stay resumable, while a real
+    scalar<->wdl flip between two post-WP-C states still refuses."""
+
+    @staticmethod
+    def _signatures(with_head: bool) -> tuple[dict[str, object], dict[str, object]]:
+        from training.pipeline import TrainingProfile
+        from training.resume import profile_signature
+
+        current = profile_signature(TrainingProfile(name="s", model=MODEL_TINY))
+        if with_head:
+            return current, current
+        saved = {k: v for k, v in current.items()}
+        saved["model"] = {k: v for k, v in current["model"].items() if k != "value_head"}
+        return saved, current
+
+    def test_pre_wpc_signature_resumes(self):
+        """Failing-then-passing: the strict dict compare used to raise here."""
+        from training.resume import validate_profile_signature
+
+        saved, current = self._signatures(with_head=False)
+        assert "value_head" not in saved["model"]
+        validate_profile_signature(saved, current)  # must not raise
+
+    def test_value_head_flip_still_refuses(self):
+        from training.resume import validate_profile_signature
+
+        saved, current = self._signatures(with_head=True)
+        flipped = dict(saved)
+        flipped["model"] = {**saved["model"], "value_head": "wdl"}  # type: ignore[dict-item]
+        with pytest.raises(ValueError, match="cannot resume run"):
+            validate_profile_signature(flipped, current)
+
+    def test_divergent_shared_model_key_still_refuses(self):
+        from training.resume import validate_profile_signature
+
+        saved, current = self._signatures(with_head=False)
+        drifted = dict(saved)
+        drifted["model"] = {**saved["model"], "filters": 999}  # type: ignore[dict-item]
+        with pytest.raises(ValueError, match="cannot resume run"):
+            validate_profile_signature(drifted, current)
+
+    def test_pre_wpc_state_file_resumes_end_to_end(self, tmp_path):
+        """Integration: a state file saved by a signature WITHOUT value_head
+        resumes against the post-WP-C profile (the live run's upgrade path)."""
+        runs = tmp_path / "runs"
+        data = tmp_path / "data"
+        run_training(tiny_profile(iterations=1), run_id="legacy", base_dir=runs, data_dir=data)
+        state_file = next((runs / "scratch" / "legacy" / "state").glob("state-*.pt"))
+        # Rewrite the persisted signature the way a pre-WP-C run wrote it.
+        state = torch.load(state_file, map_location="cpu", weights_only=False)
+        legacy_model = {k: v for k, v in state["profile_signature"]["model"].items()
+                        if k != "value_head"}
+        state["profile_signature"]["model"] = legacy_model
+        torch.save(state, state_file)
+        summary = run_training(tiny_profile(), run_id="legacy", base_dir=runs, data_dir=data,
+                               resume=True)
+        assert summary.resumed is True
+        # The restored counter (1) continued: one more iteration ran and the
+        # NEWEST state file records the resumed total of 2.
+        newest = sorted((runs / "scratch" / "legacy" / "state").glob("state-*.pt"))[-1]
+        resumed_state = torch.load(newest, map_location="cpu", weights_only=False)
+        assert int(resumed_state["iterations_completed"]) == 2
+
     def test_resume_without_state_starts_fresh(self, tmp_path):
         summary = run_training(tiny_profile(iterations=1), run_id="ghost-run",
                                base_dir=tmp_path / "runs", data_dir=tmp_path / "data",

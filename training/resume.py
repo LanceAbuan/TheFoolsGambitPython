@@ -100,16 +100,41 @@ def profile_signature(profile: object) -> dict[str, object]:
     }
 
 
+def _model_config_compatible(saved: dict[str, object], current: dict[str, object]) -> bool:
+    """True when `current`'s model config is resume-compatible with `saved`.
+
+    Additive-key tolerance (WP-C): a saved pre-WP-C signature's model dict
+    lacks `value_head` — its default ("scalar") IS the architecture the state
+    was trained with, so a key missing from the SAVED dict is not a change.
+    A key present in both dicts with different values still refuses (e.g.
+    flipping a run's lineage from scalar to wdl mid-flight).
+    """
+    for key, value in current.items():
+        if key in saved and saved[key] != value:
+            return False
+    return True
+
+
 def validate_profile_signature(
     saved: dict[str, object], current: dict[str, object]
 ) -> None:
     """Refuse to resume a run whose identity-critical knobs changed."""
     strict_keys = ("regime", "model", "buffer_size", "games_per_iteration", "batch_size")
     for key in strict_keys:
-        if saved.get(key) != current.get(key):
+        saved_value, current_value = saved.get(key), current.get(key)
+        # The model config compares additively (WP-C): keys the saved dict
+        # predates (value_head) are not changes; divergent shared keys are.
+        if (
+            key == "model"
+            and isinstance(saved_value, dict)
+            and isinstance(current_value, dict)
+            and _model_config_compatible(saved_value, current_value)
+        ):
+            continue
+        if saved_value != current_value:
             raise ValueError(
                 f"cannot resume run: profile '{key}' changed "
-                f"({saved.get(key)!r} -> {current.get(key)!r})"
+                f"({saved_value!r} -> {current_value!r})"
             )
     drifted = [key for key in saved if key not in strict_keys and saved.get(key) != current.get(key)]
     if drifted:

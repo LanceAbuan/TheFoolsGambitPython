@@ -26,7 +26,7 @@ import torch
 
 from .encoder import encode_batch, encode_move, encode_state, legal_move_map
 from .fastpath import fastpath_enabled
-from .model import NUM_POLICY_MOVES_V2
+from .model import NUM_POLICY_MOVES_V2, value_head_scalar
 from .tensorize import NUM_POSSIBLE_MOVES, board_to_tensor, move_to_idx
 
 log = logging.getLogger(__name__)
@@ -98,13 +98,13 @@ class BatchEvaluator:
             input_tensor = torch.stack([torch.as_tensor(b, device=self.device) for b in batch])
             with torch.inference_mode():
                 policy_logits, values = self.model(input_tensor)
+            # WP-C: a wdl head returns (B, 3) logits; derive the scalar the
+            # search consumes (p_win - p_loss). Scalar heads pass through.
+            scalar_values = value_head_scalar(values)
 
             for i, res_container in enumerate(results):
                 res_container['policy'] = policy_logits[i].detach().cpu().numpy()
-                if values.dim() == 2:
-                    res_container['value'] = values[i].detach().item()
-                else:
-                    res_container['value'] = values[i].detach().item()
+                res_container['value'] = scalar_values[i].detach().item()
                 res_container['event'].set()
 
         except RuntimeError as e:
@@ -862,9 +862,13 @@ class BatchNNEvaluator:
         batch = torch.from_numpy(encode_batch(boards)).to(self.device)
         with torch.inference_mode():
             logits, values = self.model(batch)
+        # WP-C: wdl heads return (B, 3) logits — collapse to the scalar the
+        # search consumes (p_win - p_loss, side-to-move perspective). The
+        # Evaluator protocol (and thus MCTSSearch) is unchanged.
+        scalar_values = value_head_scalar(values)
         return (
             logits.detach().cpu().numpy().astype(np.float32),
-            values.detach().cpu().numpy().astype(np.float32),
+            scalar_values.detach().cpu().numpy().astype(np.float32),
         )
 
 
