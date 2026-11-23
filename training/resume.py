@@ -87,6 +87,10 @@ def profile_signature(profile: object) -> dict[str, object]:
         "min_examples": profile.min_examples,
         "buffer_size": profile.buffer_size,
         "parallel_games": profile.parallel_games,
+        # WP-A: the LR schedule rides in the signature as a NON-strict key —
+        # a changed schedule warns (it changes optimization dynamics) but old
+        # state files without the key resume silently (additive key).
+        "lr_schedule": profile.lr_schedule.to_dict() if profile.lr_schedule is not None else None,
         "ladder": {
             "markers_minutes": list(profile.ladder.markers_minutes),
             "repeat_every_minutes": profile.ladder.repeat_every_minutes,

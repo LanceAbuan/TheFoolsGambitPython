@@ -268,6 +268,7 @@ def sf_vs_sf(engines, white_rung, black_rung, opening_fen, max_plies):
         if board.is_game_over(claim_draw=True):
             break
         turn = white_rung if board.turn == chess.WHITE else black_rung
+        engines[turn].configure({"Skill Level": RUNGS[turn]["skill"]})
         board.push(_sf_move(engines[turn], board, RUNGS[turn]["nodes"]))
     result = board.result(claim_draw=True)
     return "1/2-1/2" if result == "*" else result
@@ -289,6 +290,7 @@ def run_calibrate(args) -> int:
         print(f"[cal] SF binary missing: {SF_BINARY}", file=sys.stderr)
         return 1
     engine = chess.engine.SimpleEngine.popen_uci(str(SF_BINARY))
+    engine.configure({**SF_OPTIONS})
     pairs: list[dict] = []
     try:
         for lo, hi in zip(LADDER_ORDER, LADDER_ORDER[1:]):

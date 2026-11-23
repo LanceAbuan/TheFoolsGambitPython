@@ -5,11 +5,22 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import json
+from pathlib import Path
 
+import pytest
 import torch
 
+from training.journal import TrainingJournal
 from training.ledger import ArenaLedger
-from training.pipeline import SMOKE_PROFILE, run_training
+from training.model import MODEL_TINY
+from training.pipeline import (
+    SMOKE_PROFILE,
+    ArenaConfig,
+    LRStepSchedule,
+    LadderConfig,
+    TrainingProfile,
+    run_training,
+)
 from training.regimes import get_regime
 
 
@@ -106,3 +117,153 @@ def test_regime_config_flows_into_run(tmp_path):
     )
     assert meta["config_hash"] is not None
     assert get_regime("hybrid").data_source == "hybrid"
+
+
+class TestWPAThroughputKnobs:
+    """WP-A: night-v2 profile + resume-stable step-decay LR schedule."""
+
+    def test_night_v2_profile_values(self):
+        """The exact acceptance assertion from the WP-A spec."""
+        from training.pipeline import NIGHT_V2_PROFILE as p
+
+        assert (p.parallel_games, p.sims, p.train_steps, p.batch_size) == (32, 600, 96, 512)
+        assert p.min_examples == 128
+        assert p.name == "night-v2"
+
+    def test_night_profile_untouched(self):
+        """The live run's profile stays byte-identical (resume safety): the
+        v2 knobs live ONLY on NIGHT_V2_PROFILE."""
+        from training.pipeline import NIGHT_PROFILE
+
+        assert NIGHT_PROFILE.name == "night"
+        assert (NIGHT_PROFILE.parallel_games, NIGHT_PROFILE.sims) == (16, 400)
+        assert (NIGHT_PROFILE.train_steps, NIGHT_PROFILE.batch_size) == (64, 256)
+        assert NIGHT_PROFILE.min_examples == 64
+        assert NIGHT_PROFILE.lr_schedule is None
+        # arena unchanged: 128 sims / 16 games (section 5.1)
+        assert NIGHT_PROFILE.ladder.arena.num_simulations == 128
+        assert NIGHT_PROFILE.ladder.arena.games == 16
+
+    def test_night_v2_parallel_games_at_regime_cap(self):
+        """32 sits exactly at MAX_PARALLEL_GAMES — no regime change needed."""
+        from training.pipeline import NIGHT_V2_PROFILE
+        from training.regimes import MAX_PARALLEL_GAMES
+
+        assert NIGHT_V2_PROFILE.parallel_games == MAX_PARALLEL_GAMES == 32
+
+    def test_lr_schedule_rungs(self):
+        """199 -> 1e-3, 200 -> 5e-4, 400 -> 2.5e-4 (x0.5 per milestone)."""
+        from training.pipeline import LRStepSchedule
+
+        schedule = LRStepSchedule(milestones=(200, 400, 600, 800), gamma=0.5)
+        assert schedule.lr_at(199, 1e-3) == pytest.approx(1e-3)
+        assert schedule.lr_at(200, 1e-3) == pytest.approx(5e-4)
+        assert schedule.lr_at(201, 1e-3) == pytest.approx(5e-4)
+        assert schedule.lr_at(399, 1e-3) == pytest.approx(5e-4)
+        assert schedule.lr_at(400, 1e-3) == pytest.approx(2.5e-4)
+        assert schedule.lr_at(799, 1e-3) == pytest.approx(1.25e-4)
+        assert schedule.lr_at(800, 1e-3) == pytest.approx(6.25e-5)
+
+    def test_lr_schedule_resume_from_350_lands_on_right_rung(self):
+        """Resume stability: the rung depends only on the ABSOLUTE iteration,
+        so a run resumed at 350 gets the same LR it never stopped for."""
+        from training.pipeline import LRStepSchedule
+
+        schedule = LRStepSchedule(milestones=(200, 400, 600, 800), gamma=0.5)
+        assert schedule.lr_at(350, 1e-3) == pytest.approx(5e-4)
+
+    def test_lr_schedule_validation(self):
+        from training.pipeline import LRStepSchedule
+
+        with pytest.raises(ValueError):
+            LRStepSchedule(milestones=(400, 200))  # not increasing
+        with pytest.raises(ValueError):
+            LRStepSchedule(milestones=(200, 200))  # not unique
+        with pytest.raises(ValueError):
+            LRStepSchedule(milestones=(200,), gamma=1.5)
+
+    def test_trainer_loop_applies_schedule_per_iteration(self, tmp_path):
+        """The loop's LR follows the schedule rungs; the journal records it."""
+        profile = TrainingProfile(
+            name="lr-sched",
+            model=MODEL_TINY,
+            regime="scratch",
+            iterations=3,
+            games_per_iteration=2,
+            max_plies=4,
+            sims=2,
+            train_steps=2,
+            batch_size=8,
+            min_examples=4,
+            buffer_size=1000,
+            ladder=LadderConfig(arena=ArenaConfig(num_simulations=2, max_plies=4, games=2)),
+            seed=0,
+            snapshot_every_iteration=True,
+            parallel_games=1,
+            lr_schedule=LRStepSchedule(milestones=(1, 2), gamma=0.5),
+        )
+        summary = run_training(profile, run_id="lr-sched", base_dir=tmp_path / "runs",
+                               data_dir=tmp_path / "data")
+        assert summary.iterations_completed == 3
+        events = TrainingJournal(tmp_path / "data" / "train_log.jsonl").read()
+        iteration_events = [e for e in events if e["kind"] == "iteration"]
+        lrs = [float(e["lr"]) for e in iteration_events]
+        assert lrs == [pytest.approx(1e-3), pytest.approx(5e-4), pytest.approx(2.5e-4)]
+
+    def test_trainer_loop_constant_lr_without_schedule(self, tmp_path):
+        """Default profiles keep the regime's constant LR (flag-off parity)."""
+        profile = TrainingProfile(
+            name="lr-const",
+            model=MODEL_TINY,
+            regime="scratch",
+            iterations=2,
+            games_per_iteration=2,
+            max_plies=4,
+            sims=2,
+            train_steps=2,
+            batch_size=8,
+            min_examples=4,
+            buffer_size=1000,
+            ladder=LadderConfig(arena=ArenaConfig(num_simulations=2, max_plies=4, games=2)),
+            seed=0,
+            snapshot_every_iteration=True,
+            parallel_games=1,
+        )
+        run_training(profile, run_id="lr-const", base_dir=tmp_path / "runs",
+                     data_dir=tmp_path / "data")
+        events = TrainingJournal(tmp_path / "data" / "train_log.jsonl").read()
+        lrs = [float(e["lr"]) for e in events if e["kind"] == "iteration"]
+        assert lrs == [pytest.approx(1e-3), pytest.approx(1e-3)]
+
+    def test_profile_signature_carries_lr_schedule(self):
+        from training.pipeline import LRStepSchedule, NIGHT_PROFILE, NIGHT_V2_PROFILE
+        from training.resume import profile_signature
+
+        assert profile_signature(NIGHT_PROFILE)["lr_schedule"] is None
+        sig = profile_signature(NIGHT_V2_PROFILE)
+        assert sig["lr_schedule"] == {"milestones": [200, 400, 600, 800], "gamma": 0.5}
+        # round-trips through from_dict
+        schedule = LRStepSchedule.from_dict(sig["lr_schedule"])  # type: ignore[arg-type]
+        assert schedule == NIGHT_V2_PROFILE.lr_schedule
+
+    def test_cli_night_v2_profile_builds(self):
+        """`--profile night-v2` is launchable: the CLI builds the v2 profile."""
+        import importlib.util
+
+        script = Path(__file__).resolve().parent.parent / "scripts" / "train.py"
+        spec = importlib.util.spec_from_file_location("train_cli_under_test", script)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        args = module.build_parser().parse_args(["--profile", "night-v2"])
+        profile = module.build_profile(args)
+        assert profile.name == "night-v2"
+        assert (profile.parallel_games, profile.sims) == (32, 600)
+        assert (profile.train_steps, profile.batch_size, profile.min_examples) == (96, 512, 128)
+        assert profile.lr_schedule is not None
+        assert profile.lr_schedule.lr_at(200, 1e-3) == pytest.approx(5e-4)
+        # smoke profile untouched by the refactor
+        smoke_args = module.build_parser().parse_args(["--profile", "smoke"])
+        smoke = module.build_profile(smoke_args)
+        assert smoke.name == "smoke" and smoke.model == MODEL_TINY
