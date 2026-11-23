@@ -30,7 +30,7 @@ fn square_from_index(i: usize) -> Square {
     Square::make_square(Rank::from_index(i / 8), File::from_index(i % 8))
 }
 
-fn square_name(sq: Square) -> String {
+pub fn square_name(sq: Square) -> String {
     let i = sq.to_index();
     let mut s = String::with_capacity(2);
     s.push((b'a' + (i % 8) as u8) as char);
