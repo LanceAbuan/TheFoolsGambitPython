@@ -85,7 +85,10 @@ Spec — add `NIGHT_V2_PROFILE = TrainingProfile(...)` **alongside** NIGHT_PROFI
 
 Spec:
 1. **Prefix rule (hard requirement):** the first 29 output planes are exactly v1's 29 planes in the same order for the same position. New planes are appended only.
-2. v2 layout: `8 × 12` piece planes (t0…t−7) = 96, `+2` repetition-count planes (own/opp, capped at 3, normalized 0–1), `+4` castling, `+1` en-passant, `+1` side-to-move = **104**.
+2. v2 layout (**resolved, authoritative** — the prefix rule forces v1's 29 planes first): v1 prefix = t0 pieces 0–11, t−1 pieces 12–23, castling 24–27, en-passant 28; then appended: t−2…t−7 piece planes at 29–100 (block t−k at `29 + 12·(k−2)`), repetition-own 101, repetition-opp 102, side-to-move 103. Inventory check: 96 piece + 2 rep + 4 castling + 1 ep + 1 stm = 104. **Rust mirror (WP-F C4) must use exactly this indexing.**
+   - History is most-recent-first (`history[0]` = t−1). Prefix guaranteed by construction: `encode_v2(x)[:29] == encode(x)` always.
+   - Padding: non-empty history shorter than 7 pads older slots with the startpos snapshot; **empty** history zeroes all history slots (v1 `prev_board=None` parity, holds the prefix rule at ply 0).
+   - Repetition planes: prior occurrences of the current position in history (current excluded), split own-turn (101) vs opp-turn (102), capped at 3, normalized ÷3. Plane 103 = 1.0 when white to move.
 3. Keep the v1 `encode` function intact and exported (WP-D's parity proof and any old-checkpoint tooling depend on it).
 4. Add `encode_v2(board, history: list[Board]) -> np.ndarray` (or equivalent); history shorter than 7 plies pads with the initial position snapshot (document the choice).
 
