@@ -16,7 +16,7 @@ plane  28               en-passant target square
 ======================  =============================================
 
 Policy encoding (73 x 64 = 4672): one 73-plane stack per origin square, index
-``from_square * 73 + plane`` where ``from_square`` is the origin square in
+`from_square * 73 + plane` where `from_square` is the origin square in
 side-to-move perspective.
 
 - planes  0-55: queen-like moves — 8 directions x 7 distances
@@ -34,6 +34,10 @@ reappear.
 All plane/delta math happens in perspective coordinates on both encode and
 decode, so the encoding round-trips for both colors and the network weights
 stay color-symmetric.
+
+v2 (WP-B): `encode_v2` extends this to 104 channels — the 29 v1 planes as a
+strict prefix (hard requirement), then t-2..t-7 piece planes, two repetition
+count planes and a side-to-move flag. See the layout block below `NUM_PLANES_V2`.
 """
 from __future__ import annotations
 
@@ -47,6 +51,37 @@ from .fastpath import fastpath_enabled, import_gambit_core
 NUM_PLANES = 29
 POLICY_PLANES = 73
 POLICY_MOVES = POLICY_PLANES * 64  # 4672
+
+# --- v2 layout (WP-B): 104 channels = v1 prefix + deep history + repetition ---
+#
+# The v1 29 planes are a strict PREFIX of v2 (hard requirement): the first 29
+# output planes of `encode_v2` are exactly v1's 29 planes for the same
+# (board, t-1) pair, in the same order — new planes are appended only. This is
+# what makes the WP-D warm-start a straight weight copy on channels 0-28.
+#
+# v2 plane map:
+#     0-11    t0  pieces (v1)            12-23   t-1 pieces (v1 history slot)
+#     24-27   castling rights (v1)      28      en-passant target (v1)
+#     29-100  t-2 .. t-7 pieces (6 x 12)
+#     101     repetition count, own side to move   (capped at 3, /3 -> 0-1)
+#     102     repetition count, opponent side to move (capped at 3, /3 -> 0-1)
+#     103     side to move (1.0 white / 0.0 black)
+NUM_PLANES_V2 = 104
+ENCODER_VERSION = 2
+
+V2_REP_CAP = 3                                     # counts saturate here
+V2_DEEP_HISTORY_STEPS = 6                          # t-2 .. t-7 (t0, t-1 in prefix)
+V2_DEEP_HISTORY_OFFSET = NUM_PLANES                # 29
+V2_DEEP_HISTORY_PLANES = V2_DEEP_HISTORY_STEPS * 12  # 72 -> planes 29..100
+V2_REP_OWN_PLANE = V2_DEEP_HISTORY_OFFSET + V2_DEEP_HISTORY_PLANES  # 101
+V2_REP_OPP_PLANE = V2_REP_OWN_PLANE + 1            # 102
+V2_SIDE_TO_MOVE_PLANE = V2_REP_OPP_PLANE + 1       # 103
+assert V2_SIDE_TO_MOVE_PLANE == NUM_PLANES_V2 - 1
+
+# Padding snapshot for missing deep-history slots (documented WP-B choice: the
+# standard initial position, written from the CURRENT side's perspective like
+# every other history plane). Only read, never mutated.
+_INITIAL_BOARD = chess.Board()
 
 PIECE_ORDER: tuple[chess.PieceType, ...] = (
     chess.PAWN,
@@ -273,8 +308,8 @@ def decode_index(board: chess.Board, index: int) -> chess.Move | None:
 def legal_move_map(board: chess.Board) -> dict[int, chess.Move]:
     """Map every legal move's policy index to the move (bijective by design).
 
-    Insertion order follows ``board.legal_moves`` in BOTH paths: the Rust path
-    enumerates moves in python-chess order (``gambit_core.legal_move_pairs``,
+    Insertion order follows `board.legal_moves` in BOTH paths: the Rust path
+    enumerates moves in python-chess order (`gambit_core.legal_move_pairs`,
     order-differential-fuzzed), and MCTS child order / tie-breaks depend on it.
     """
     if fastpath_enabled():
@@ -299,3 +334,95 @@ def legal_mask(board: chess.Board) -> np.ndarray:
     for index in legal_move_map(board):
         mask[index] = 1.0
     return mask
+
+
+# --- v2 encoder (WP-B) --------------------------------------------------------
+
+
+def _history_transposition_key(board: chess.Board) -> tuple:
+    """python-chess 1.11.2 transposition key of one position.
+
+    The private method is pinned via uv.lock and already load-bearing for the
+    M3 FastBoard (`training/selfplay.py`); using it keeps the repetition
+    planes consistent with the search's threefold-repetition semantics.
+    """
+    return board._transposition_key()  # type: ignore[attr-defined]
+
+
+def repetition_counts(
+    board: chess.Board, history: Sequence[chess.Board]
+) -> tuple[int, int]:
+    """(own, opp) PRIOR occurrences of the current position within `history`.
+
+    Authoritative WP-B layout (docs/OPTIMIZATION_PLAN.md, resolved): the
+    CURRENT position is EXCLUDED, both counts start at 0, and only history
+    entries contribute. `own` counts entries identical to `board` (same piece
+    placement AND side to move, python-chess transposition-key semantics);
+    `opp` counts entries with the SAME piece placement but the OPPOSITE side
+    to move. Counts run over the FULL history list, beyond the 7-step plane
+    window, so long repetition cycles still register.
+    """
+    key = _history_transposition_key(board)
+    flipped = board.copy(stack=False)
+    flipped.turn = not board.turn  # same placement, opposite mover (hypothetical key)
+    opp_key = _history_transposition_key(flipped)
+    own = 0
+    opp = 0
+    for previous in history:
+        previous_key = _history_transposition_key(previous)
+        if previous_key == key:
+            own += 1
+        elif previous_key == opp_key:
+            opp += 1
+    return own, opp
+
+
+def encode_v2(board: chess.Board, history: Sequence[chess.Board] | None = None) -> np.ndarray:
+    """Encode one position into the 104-channel v2 tensor, (104, 8, 8) float32.
+
+    Plane map is in the module docstring block (WP-B): v1's 29 planes as a
+    strict prefix, then t-2..t-7 piece planes (29-100), two repetition-count
+    planes (101 own / 102 opp, capped at 3, normalized 0-1 by /3) and the
+    side-to-move flag (103, 1.0 white — a global flag, never mirrored).
+
+    `history[0]` is t-1 (the position immediately before `board`), `history[1]`
+    is t-2, ... Piece planes consume at most the first 7 entries; repetition
+    counts consume the full list.
+
+    Padding (authoritative WP-B layout): a NON-EMPTY history shorter than 7
+    pads its missing slots with the standard initial position snapshot,
+    written from the current side perspective like every other history
+    plane. An EMPTY history (or None) zeroes ALL history slots instead:
+    planes 12-23 (t-1, inside the v1 prefix) AND planes 29-100, which is
+    v1 encode_state(board, prev_board=None) parity and holds the hard
+    prefix rule at ply 0.
+
+    Prefix rule (hard requirement, regression-tested)::
+
+        encode_v2(b, h)[:29] == encode_state(b, h[0] if h else None)
+    """
+    tensor = np.zeros((NUM_PLANES_V2, 8, 8), dtype=np.float32)
+    flip = _perspective(board)
+    hist = list(history) if history is not None else []
+
+    # Planes 0-28: bit-identical v1 prefix (t-1 from history[0], else zeros).
+    tensor[:NUM_PLANES] = encode_state(board, hist[0] if hist else None)
+
+    # Planes 29-100: t-2..t-7 piece planes. Empty history -> all zero (v1
+    # parity); non-empty short history -> startpos-snapshot padding.
+    if hist:
+        for step in range(V2_DEEP_HISTORY_STEPS):  # step 0 -> t-2
+            offset = V2_DEEP_HISTORY_OFFSET + step * 12
+            index = step + 1  # history index of t-(step+2)
+            source = hist[index] if index < len(hist) else _INITIAL_BOARD
+            _piece_planes(source, flip, offset, tensor, board.turn)
+
+
+    # Planes 101-102: repetition counts, capped and normalized to 0-1.
+    own, opp = repetition_counts(board, hist)
+    tensor[V2_REP_OWN_PLANE, 0, 0] = min(own, V2_REP_CAP) / V2_REP_CAP
+    tensor[V2_REP_OPP_PLANE, 0, 0] = min(opp, V2_REP_CAP) / V2_REP_CAP
+
+    # Plane 103: side to move (global flag, not perspective-mirrored).
+    tensor[V2_SIDE_TO_MOVE_PLANE, 0, 0] = 1.0 if board.turn == chess.WHITE else 0.0
+    return tensor

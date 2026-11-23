@@ -27,10 +27,11 @@ Usage (repo root):
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,8 +97,8 @@ def champion_checkpoint() -> Path:
 
 def random_openings(count: int, seed: int) -> list[str]:
     """`count` unique opening position FENs via seeded random play (6 half-moves)."""
-    import numpy as np
     import chess
+    import numpy as np
 
     rng_seed = seed
     seen: set[str] = set()
@@ -119,6 +120,7 @@ def random_openings(count: int, seed: int) -> list[str]:
 def play_game(evaluator, opening_fen: str, nn_is_white: bool, engine, nodes: int, sims: int, max_plies: int):
     """One game: NN vs SF from `opening_fen`; mirrors ladder.play_match_game NN path."""
     import chess
+
     from training.selfplay import MCTSSearch, SearchConfig
 
     board = chess.Board(fen=opening_fen)
@@ -222,7 +224,7 @@ def run_bench(args) -> int:
             record = {
                 "kind": "sf_bench",
                 "ts": time.time(),
-                "iso": datetime.now(timezone.utc).isoformat(),
+                "iso": datetime.now(UTC).isoformat(),
                 "checkpoint": ckpt.name,
                 "tag": tag,
                 "regime": "scratch",
@@ -293,7 +295,7 @@ def run_calibrate(args) -> int:
     engine.configure({**SF_OPTIONS})
     pairs: list[dict] = []
     try:
-        for lo, hi in zip(LADDER_ORDER, LADDER_ORDER[1:]):
+        for lo, hi in itertools.pairwise(LADDER_ORDER):
             n = args.games_per_pair + (args.games_per_pair % 2)
             openings = random_openings(n // 2, args.seed + abs(hash(lo + ">" + hi)) % 1000)
             wins_hi = draws = 0
@@ -320,7 +322,7 @@ def run_calibrate(args) -> int:
         ratings[pair["lo"]] = ratings[pair["hi"]] - pair["elo_gap"]
     payload = {
         "kind": "sf_calibration", "ts": time.time(),
-        "iso": datetime.now(timezone.utc).isoformat(),
+        "iso": datetime.now(UTC).isoformat(),
         "anchor": {"rung": LADDER_ORDER[-1], "elo": ANCHOR_ELO},
         "pairs": pairs, "ratings": {k: round(v, 1) for k, v in ratings.items()},
     }

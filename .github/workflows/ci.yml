@@ -38,6 +38,9 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
+      # The pytest job builds the gambit_core extension (maturin develop)
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Lint (ruff)
         run: uv run --no-project --with ruff ruff check .
 
@@ -45,6 +48,12 @@ jobs:
         run: |
           if [ -d tests ]; then
             uv sync --frozen
+            # Build the gambit_core Rust extension into the venv first:
+            # without it, import gambit_core resolves to the crate source
+            # directory (namespace package) and every gambit test fails with
+            # AttributeError. Mirrors the documented local build:
+            #   uv run maturin develop --release -m gambit_core/Cargo.toml
+            uv run --with maturin maturin develop --release -m gambit_core/Cargo.toml
             uv run pytest -q
           else
             echo "tests/ not present yet — pytest gate activates with WP-A (backend)"

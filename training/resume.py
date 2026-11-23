@@ -335,7 +335,12 @@ def resolve_warmstart(spec: str, base_dir: Path | str = "runs") -> dict[str, tor
     """`warmstart_from` spec -> a model state_dict; None degrades to fresh init."""
     base = Path(base_dir)
     checkpoint: Path | None = None
-    if spec.startswith("hf:") or "/" in spec:
+    # A spec naming an EXISTING local file is always a local path, even when it
+    # contains "/" (absolute POSIX paths do) - without this check such specs
+    # were mis-routed into the HF downloader (test_direct_path_spec).
+    if Path(spec).is_file():
+        checkpoint = Path(spec)
+    elif spec.startswith("hf:") or "/" in spec:
         checkpoint = _download_hf_checkpoint(spec.removeprefix("hf:"))
     elif spec == "champion":
         pointer = _newest_champion_pointer(base)
