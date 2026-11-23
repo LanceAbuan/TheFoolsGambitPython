@@ -301,6 +301,7 @@ The tunnel gives visitors the exact model the owner trained, at full strength, f
 | Promotion policy | All promotions share one 4096 logit | 73×64 encoding gives underpromotions real planes |
 | Game history | In-memory, truncated to 20 SAN, no PGN | SQLite archive, full PGN, all game kinds |
 | Stockfish path | Linux-only hardcode; also single shared instance w/o queue fairness | Windows resolution chain; keep lock, add health-check + auto-restart (exists) |
+| Rust repetition history (WP-F) | C2 'Seq' re-pushed the search root over the replayed game history, so 'suffix_count' stopped at the seam and repetition/fifty-move claims at or below the root never saw the game - rust kept searching positions python scores as claimable draws | `Seq::reset_path` (root pushed only on an empty base history); regression: threefold-claim parity test in tests/test_training_mcts.py + cargo threefold_claim_semantics_match_python (failing-then-passing) |
 
 ---
 

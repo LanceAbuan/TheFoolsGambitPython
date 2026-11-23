@@ -41,12 +41,14 @@ mod ort_eval;
 #[allow(dead_code)]
 mod selfplay;
 
-use numpy::{ndarray::Array, IntoPyArray, PyArray1, PyArray2, PyArray3, PyArray4};
+use numpy::{ndarray::Array, IntoPyArray, PyArray1, PyArray2, PyArray3, PyArray4, PyArrayLike};
 #[cfg(feature = "onnx")]
 use pyo3::types::{PyDict, PyList};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use crate::encoder::POLICY_MOVES;
+use crate::mcts::{Evaluator, GameHistory, SearchConfig as RustSearchConfig};
 use position::Position;
 
 /// FEN parse helper: `String` error -> Python `ValueError`.
@@ -365,6 +367,248 @@ fn selfplay_game<'py>(
     Ok(dict)
 }
 
+// ---------------------------------------------------------------------------
+// WP-F C3: PyO3 search bridge.
+// ---------------------------------------------------------------------------
+
+/// Python-facing search config - mirrors `mcts::SearchConfig` (WP-F C2)
+/// field-for-field. Construct with keyword defaults; every field is readable
+/// and writable so tests can tweak one knob.
+#[pyclass(name = "SearchConfig")]
+#[derive(Clone)]
+pub struct PySearchConfig {
+    #[pyo3(get, set)]
+    pub cpuct: f64,
+    #[pyo3(get, set)]
+    pub dirichlet_alpha: f64,
+    #[pyo3(get, set)]
+    pub dirichlet_epsilon: f64,
+    #[pyo3(get, set)]
+    pub root_noise: bool,
+    #[pyo3(get, set)]
+    pub num_simulations: u32,
+    #[pyo3(get, set)]
+    pub virtual_loss: f64,
+    /// Selections per wave (1 = the python-sequential parity mode).
+    #[pyo3(get, set)]
+    pub batch_size: usize,
+    /// Seed for the root Dirichlet draw.
+    #[pyo3(get, set)]
+    pub seed: u64,
+}
+
+#[pymethods]
+impl PySearchConfig {
+    #[new]
+    #[pyo3(signature = (
+        *,
+        cpuct = 1.5,
+        dirichlet_alpha = 0.3,
+        dirichlet_epsilon = 0.25,
+        root_noise = true,
+        num_simulations = 64,
+        virtual_loss = 1.0,
+        batch_size = 1,
+        seed = 0,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        cpuct: f64,
+        dirichlet_alpha: f64,
+        dirichlet_epsilon: f64,
+        root_noise: bool,
+        num_simulations: u32,
+        virtual_loss: f64,
+        batch_size: usize,
+        seed: u64,
+    ) -> Self {
+        PySearchConfig {
+            cpuct,
+            dirichlet_alpha,
+            dirichlet_epsilon,
+            root_noise,
+            num_simulations,
+            virtual_loss,
+            batch_size,
+            seed,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SearchConfig(cpuct={}, alpha={}, epsilon={}, noise={}, sims={}, vloss={}, batch={}, seed={})",
+            self.cpuct,
+            self.dirichlet_alpha,
+            self.dirichlet_epsilon,
+            self.root_noise,
+            self.num_simulations,
+            self.virtual_loss,
+            self.batch_size,
+            self.seed
+        )
+    }
+}
+
+impl From<&PySearchConfig> for RustSearchConfig {
+    fn from(cfg: &PySearchConfig) -> Self {
+        RustSearchConfig {
+            cpuct: cfg.cpuct,
+            dirichlet_alpha: cfg.dirichlet_alpha,
+            dirichlet_epsilon: cfg.dirichlet_epsilon,
+            root_noise: cfg.root_noise,
+            num_simulations: cfg.num_simulations,
+            virtual_loss: cfg.virtual_loss,
+            batch_size: cfg.batch_size,
+            seed: cfg.seed,
+        }
+    }
+}
+
+/// Extract a flat f32 vector (row-major) from a numpy array or a float list.
+///
+/// ndarray iteration is in C-order logical order regardless of strides, so
+/// (N, 4672) logit batches flatten row-major exactly like python
+/// `array.reshape(-1)`. float64 arrays and plain lists are accepted as a
+/// convenience for test doubles.
+fn extract_f32_vec(obj: &Bound<PyAny>) -> PyResult<Vec<f32>> {
+    if let Ok(arr) = obj.extract::<PyArrayLike<f32, numpy::IxDyn>>() {
+        let mut out = Vec::with_capacity(arr.as_array().len());
+        for v in arr.as_array().iter() {
+            out.push(*v);
+        }
+        return Ok(out);
+    }
+    if let Ok(arr) = obj.extract::<PyArrayLike<f64, numpy::IxDyn>>() {
+        let mut out = Vec::with_capacity(arr.as_array().len());
+        for v in arr.as_array().iter() {
+            out.push(*v as f32);
+        }
+        return Ok(out);
+    }
+    obj.extract::<Vec<f32>>()
+}
+
+/// Bridges the Rust `Evaluator` trait to a Python callable (WP-F C3).
+///
+/// The callback receives ONE list of FENs per expansion wave (the wave leaves
+/// batched - mirroring how `BatchNNEvaluator` aggregates) and returns
+/// `(logits, values)`: raw UNMASKED policy logits, row-major (N, 4672), and a
+/// scalar value per position from the side to move perspective.
+///
+/// Python exceptions cannot cross the `Evaluator` trait (it returns plain
+/// tuples), so the first failure is captured in `error`, neutral zero rows
+/// keep the tree walk well-defined, and the pyfunction re-raises the original
+/// error once the search unwinds.
+struct PyBatchCallback {
+    callback: Py<PyAny>,
+    error: Option<PyErr>,
+    eval_calls: usize,
+    eval_positions: usize,
+}
+
+impl PyBatchCallback {
+    fn evaluate_via_python(&mut self, batch: &[Position]) -> PyResult<(Vec<f32>, Vec<f32>)> {
+        Python::attach(|py| {
+            let fens: Vec<String> = batch.iter().map(Position::to_fen).collect();
+            let result = self.callback.bind(py).call1((fens,))?;
+            let (logits_obj, values_obj): (Bound<PyAny>, Bound<PyAny>) = result.extract()?;
+            let logits = extract_f32_vec(&logits_obj)?;
+            let values = extract_f32_vec(&values_obj)?;
+            Ok((logits, values))
+        })
+    }
+}
+
+impl Evaluator for PyBatchCallback {
+    fn evaluate(&mut self, batch: &[Position]) -> (Vec<f32>, Vec<f32>) {
+        let n = batch.len();
+        if self.error.is_some() {
+            // A previous wave already failed; feed neutral rows until the
+            // search unwinds and the captured error is re-raised.
+            return (vec![0.0; n * POLICY_MOVES], vec![0.0; n]);
+        }
+        match self.evaluate_via_python(batch) {
+            Ok((logits, values)) => {
+                if values.len() != n || logits.len() < n * POLICY_MOVES {
+                    self.error = Some(PyValueError::new_err(format!(
+                        "eval callback returned {} logit floats / {} values for {} positions; expected (N, {POLICY_MOVES}) logits and (N,) values",
+                        logits.len(),
+                        values.len(),
+                        n
+                    )));
+                    (vec![0.0; n * POLICY_MOVES], vec![0.0; n])
+                } else {
+                    self.eval_calls += 1;
+                    self.eval_positions += n;
+                    (logits, values)
+                }
+            }
+            Err(err) => {
+                self.error = Some(err);
+                (vec![0.0; n * POLICY_MOVES], vec![0.0; n])
+            }
+        }
+    }
+}
+
+/// `board` -> (game history, root position). See [`search`].
+fn parse_search_root(board: &Bound<PyAny>) -> PyResult<(GameHistory, Position)> {
+    if let Ok(fen) = board.extract::<String>() {
+        return Ok((GameHistory::empty(), parse(&fen)?));
+    }
+    let (start_fen, moves): (String, Vec<String>) = board.extract().map_err(|_| {
+        PyValueError::new_err("board must be a FEN string or a (start_fen, [uci, ...]) pair")
+    })?;
+    let start = parse(&start_fen)?;
+    let ucis: Vec<&str> = moves.iter().map(String::as_str).collect();
+    GameHistory::replay(&start, &ucis).map_err(PyValueError::new_err)
+}
+
+/// `search(board, eval_callback, cfg) -> (visit_counts, root_value)` (WP-F C3).
+///
+/// `board` is the search root:
+/// - a FEN string (no game history), or
+/// - a `(start_fen, [uci, ...])` pair: the position reached by playing the
+///   UCI move list from `start_fen`. The replayed history powers repetition
+///   and fifty-move claims exactly like python-chess `claim_draw=True`.
+///
+/// `eval_callback(fens: list[str]) -> (logits, values)` is called once per
+/// expansion wave with the wave leaves batched (always a batch of 1 in the
+/// deterministic single-thread mode, `batch_size=1`). Tree work runs under
+/// `py.detach` - the GIL is only re-acquired inside the callback, and a
+/// callback exception is re-raised after the search unwinds.
+///
+/// Returns `(visit_counts, root_value)`: a (4672,) float32 visit-count array
+/// over the 73x64 policy encoding (python-chess `MCTSSearch.search` shape
+/// contract) and the root value from the root side-to-move perspective.
+#[pyfunction]
+#[pyo3(signature = (board, eval_callback, cfg = None))]
+fn search(
+    py: Python,
+    board: &Bound<PyAny>,
+    eval_callback: Bound<PyAny>,
+    cfg: Option<&PySearchConfig>,
+) -> PyResult<(Py<PyArray1<f32>>, f64)> {
+    let (history, root) = parse_search_root(board)?;
+    let rust_cfg = match cfg {
+        Some(c) => RustSearchConfig::from(c),
+        None => RustSearchConfig::default(),
+    };
+    let mut evaluator = PyBatchCallback {
+        callback: eval_callback.unbind(),
+        error: None,
+        eval_calls: 0,
+        eval_positions: 0,
+    };
+    let result = py.detach(|| mcts::search(&root, &history, &rust_cfg, &mut evaluator));
+    if let Some(err) = evaluator.error {
+        return Err(err);
+    }
+    let counts = Array::from_shape_vec((POLICY_MOVES,), result.visit_counts)
+        .expect("visit counts are exactly POLICY_MOVES long");
+    Ok((counts.into_pyarray(py).unbind(), result.root_value))
+}
+
 #[pymodule]
 fn gambit_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBoard>()?;
@@ -378,6 +622,8 @@ fn gambit_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(zobrist, m)?)?;
     m.add_function(wrap_pyfunction!(outcome, m)?)?;
     m.add_function(wrap_pyfunction!(encode_batch_v2, m)?)?;
+    m.add_class::<PySearchConfig>()?;
+    m.add_function(wrap_pyfunction!(search, m)?)?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<ort_eval::PyOrtModel>()?;

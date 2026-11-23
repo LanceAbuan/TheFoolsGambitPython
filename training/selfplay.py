@@ -17,7 +17,7 @@ import time
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import chess
 import chess.pgn
@@ -25,7 +25,6 @@ import numpy as np
 import torch
 
 from .encoder import (
-    NUM_PLANES_V2,
     encode_batch,
     encode_batch_v2,
     encode_move,
@@ -37,6 +36,9 @@ from .encoder import (
 from .fastpath import fastpath_enabled
 from .model import NUM_POLICY_MOVES_V2, value_head_scalar
 from .tensorize import NUM_POSSIBLE_MOVES, board_to_tensor, move_to_idx
+
+if TYPE_CHECKING:
+    from .rust_search import RustMCTSSearch
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -743,6 +745,22 @@ class SearchConfig:
     gumbel_candidates: int = 16   # m in Alg. 2 (paper: 16)
     gumbel_c_visit: float = 50.0  # c_visit in Eq. 8 (paper chess setting)
     gumbel_c_scale: float = 1.0   # c_scale in Eq. 8 (paper chess setting)
+    # WP-F C5: which engine runs the tree search. "python" = MCTSSearch
+    # (default - every pre-C5 construction is unchanged); "rust" = the
+    # gambit_core PUCT search via training.rust_search.RustMCTSSearch. The
+    # default stays "python" until the C6 gates justify flipping it.
+    search_backend: Literal["python", "rust"] = "python"
+
+    def __post_init__(self) -> None:
+        if self.search_backend not in ("python", "rust"):
+            raise ValueError(
+                f"search_backend must be 'python' or 'rust', got {self.search_backend!r}"
+            )
+        if self.search_backend == "rust" and self.search_kind != "puct":
+            raise ValueError(
+                "search_backend='rust' implements the PUCT root policy only; "
+                f"got search_kind={self.search_kind!r} (gumbel stays python-only)"
+            )
 
 
 @dataclass(frozen=True)
@@ -889,6 +907,25 @@ class BatchNNEvaluator:
         if self._encoder_version == 2:
             return encode_batch_v2(boards)
         return encode_batch(boards)
+
+
+def build_search(
+    evaluator: Evaluator,
+    config: SearchConfig,
+    rng: np.random.Generator | None = None,
+) -> "MCTSSearch | RustMCTSSearch":
+    """WP-F C5: construct the search backend a SearchConfig selects.
+
+    'python' returns MCTSSearch unchanged (every pre-C5 call site is
+    bit-identical); 'rust' returns the gambit_core-backed
+    RustMCTSSearch, imported lazily so python-only environments never need
+    the wheel. Gumbel configs reject the rust backend at SearchConfig level.
+    """
+    if config.search_backend == "rust":
+        from .rust_search import RustMCTSSearch  # deferred: the wheel is optional
+
+        return RustMCTSSearch(evaluator, config, rng=rng)
+    return MCTSSearch(evaluator, config, rng=rng)
 
 
 def terminal_value(board: chess.Board) -> float:
@@ -1375,13 +1412,13 @@ def self_play_game(
     search_kind="gumbel" it raises ValueError rather than silently changing
     which target construction the cheap-search plies would record.
     """
-    search = MCTSSearch(evaluator, config.search, rng=rng)
+    search = build_search(evaluator, config.search, rng=rng)
     # U2: cap_rng is the only new rng consumer and exists only when the flag
     # is on, so flag-off games draw the rng exactly as before (bit-identical).
     cap_rng: np.random.Generator | None = None
     if config.playout_randomization:
         cap_rng = rng if rng is not None else np.random.default_rng()
-    fast_search: MCTSSearch | None = None
+    fast_search: MCTSSearch | RustMCTSSearch | None = None
     # M3: FastBoard makes repetition CLAIMS cheap inside the search's
     # is_game_over(claim_draw=True) calls. Gated; plain Board keeps the
     # pre-M3 behavior bit-for-bit.
@@ -1411,7 +1448,7 @@ def self_play_game(
                     config.playout_cap_fast_min,
                     round(config.search.num_simulations * config.playout_cap_fast_fraction),
                 )
-                fast_search = MCTSSearch(
+                fast_search = build_search(
                     evaluator,
                     replace(config.search, num_simulations=fast_n, root_noise=False),
                     rng=rng,
@@ -1596,14 +1633,14 @@ def play_match_game(
     SearchConfig objects (e.g. gumbel) instead. `opening_fen` (FB-1) starts
     the game from a seeded opening position instead of the initial position.
     """
-    white_search = MCTSSearch(
+    white_search = build_search(
         white_evaluator,
         white_config
         if white_config is not None
         else SearchConfig(root_noise=False, num_simulations=num_simulations),
         rng=rng,
     )
-    black_search = MCTSSearch(
+    black_search = build_search(
         black_evaluator,
         black_config
         if black_config is not None

@@ -133,6 +133,10 @@ class TrainingProfile:
     # None -> the regime's constant `learning_rate` exactly as before, so every
     # pre-existing profile (smoke, night) keeps its behavior byte-identical.
     lr_schedule: LRStepSchedule | None = None
+    # WP-F C5: which MCTS engine runs self-play/arena searches. The default
+    # stays "python" (MCTSSearch) until the C6 gates justify flipping it;
+    # "rust" routes through training.rust_search.RustMCTSSearch.
+    search_backend: str = "python"
 
 
 SMOKE_PROFILE = TrainingProfile(
@@ -198,6 +202,9 @@ NIGHT_V2_PROFILE = replace(
     batch_size=512,
     min_examples=128,
     lr_schedule=LRStepSchedule(milestones=(200, 400, 600, 800), gamma=0.5),
+    # WP-F C5: the flag is wired end-to-end; the default stays python
+    # (flipping is a separate, measured decision after the C6 gates).
+    search_backend="python",
 )
 
 
@@ -631,6 +638,7 @@ def run_training(
                     num_simulations=profile.sims,
                     search_kind=regime.search_kind,
                     gumbel_candidates=regime.gumbel_candidates,
+                    search_backend=profile.search_backend,
                 ),
                 max_plies=profile.max_plies,
                 temperature_plies=profile.max_plies,  # sample throughout a smoke game

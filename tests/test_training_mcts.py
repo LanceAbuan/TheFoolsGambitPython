@@ -1,4 +1,5 @@
 """MCTS v2 tests: §10 sign bug regression (mate-in-1), PUCT, noise, temperature."""
+import hashlib
 import os
 import sys
 
@@ -10,21 +11,24 @@ import pytest
 import torch
 from torch import nn
 
+import gambit_core
 from training.encoder import encode_move, legal_move_map
 from training.model import ModelConfig
+from training.rust_search import RUST_SEARCH_AVAILABLE, RustMCTSSearch
 from training.selfplay import (
     MCTS,  # legacy class — §10 sign fix verified on it
+    BatchNNEvaluator,
     MCTSSearch,
     SearchConfig,
     SelfPlayConfig,
     SelfPlayGame,  # legacy class — §10 resign fix verified on it
     _Node,
+    build_search,
     play_match_game,
     select_move_from_visits,
     self_play_game,
     terminal_value,
 )
-from training.selfplay import BatchNNEvaluator
 
 MATE_IN_1_FEN = "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1"  # Rd8#
 MATED_FEN = "3R2k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1"  # black to move, back-rank mated
@@ -359,3 +363,294 @@ class TestWDLValueThroughSearch:
 
         torch.manual_seed(42)
         return GambitNet(self.WDL_TINY)
+
+# ---------------------------------------------------------------------------
+# WP-F C3/C5/C6: the Rust search backend (gambit_core.search).
+#
+# The keyed stub below is the parity oracle: per-position deterministic
+# (logits, value) derived from a stable hash of position-identity fields
+# (no move-stack fields), so the python path (chess.Board with stack) and
+# the rust bridge path (FEN -> chess.Board) see BIT-IDENTICAL evaluator
+# outputs. That makes visit-count differences pure search-engine signals.
+# ---------------------------------------------------------------------------
+
+
+def _rust_search_available() -> bool:
+    return RUST_SEARCH_AVAILABLE and hasattr(gambit_core, "search")
+
+
+requires_rust_search = pytest.mark.skipif(
+    not _rust_search_available(),
+    reason="gambit_core wheel lacks the C3 search pyfunction (build + install the wheel)",
+)
+
+
+def _canon_key(board: chess.Board) -> tuple[str, bool, int, int | None]:
+    """Position identity both bridge paths agree on (no move-stack fields)."""
+    return (board.board_fen(), board.turn, board.castling_rights, board.ep_square)
+
+
+def _keyed_logits_values(key: tuple) -> tuple[np.ndarray, float]:
+    """Deterministic pseudo-random logits/value for one canonical position."""
+    digest = hashlib.blake2b(repr(key).encode("utf-8"), digest_size=8).digest()
+    seed = int.from_bytes(digest, "little")
+    rng = np.random.default_rng(seed)
+    logits = rng.standard_normal(4672).astype(np.float32)
+    value = float(rng.uniform(-1.0, 1.0))
+    return logits, value
+
+
+def _keyed_eval_many(boards) -> tuple[np.ndarray, np.ndarray]:
+    n = len(boards)
+    logits = np.zeros((n, 4672), dtype=np.float32)
+    values = np.zeros(n, dtype=np.float32)
+    for i, board in enumerate(boards):
+        row, value = _keyed_logits_values(_canon_key(board))
+        logits[i] = row
+        values[i] = value
+    return logits, values
+
+
+class KeyedStubEvaluator:
+    """Deterministic per-position evaluator (python Evaluator protocol)."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def evaluate(self, boards):
+        self.calls += len(boards)
+        return _keyed_eval_many(boards)
+
+
+def keyed_rust_callback(fens):
+    """Rust bridge callback: FENs -> keyed (logits, values) numpy arrays."""
+    return _keyed_eval_many([chess.Board(fen) for fen in fens])
+
+
+class _UniformEval:
+    """All-zero logits, zero value: exact structural-parity oracle."""
+
+    def evaluate(self, boards):
+        n = len(boards)
+        return np.zeros((n, 4672), dtype=np.float32), np.zeros(n, dtype=np.float32)
+
+
+def uniform_rust_callback(fens):
+    """Rust bridge callback: all-zero logits/values (uniform priors)."""
+    n = len(fens)
+    return np.zeros((n, 4672), dtype=np.float32), np.zeros(n, dtype=np.float32)
+
+
+@requires_rust_search
+class TestRustSearchParity:
+    """C6 gate (a): rust vs python in deterministic single-thread mode."""
+
+    def test_uniform_stub_exact_parity(self):
+        board = chess.Board()
+        cfg = gambit_core.SearchConfig(num_simulations=64, root_noise=False)
+        rust_counts, rust_value = gambit_core.search(chess.STARTING_FEN, uniform_rust_callback, cfg)
+        py = MCTSSearch(_UniformEval(), SearchConfig(num_simulations=64, root_noise=False)).search(
+            board.copy()
+        )
+        assert np.array_equal(np.asarray(rust_counts), py.visit_counts)
+        assert float(rust_value) == pytest.approx(py.root_value, abs=1e-12)
+
+    def test_keyed_stub_parity_on_fixed_positions(self):
+        fens = [
+            chess.STARTING_FEN,
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+            "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1",
+            "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        ]
+        for fen in fens:
+            board = chess.Board(fen)
+            py = MCTSSearch(
+                KeyedStubEvaluator(), SearchConfig(num_simulations=96, root_noise=False)
+            ).search(board.copy())
+            rust_counts, rust_value = gambit_core.search(
+                fen,
+                keyed_rust_callback,
+                gambit_core.SearchConfig(num_simulations=96, root_noise=False),
+            )
+            rust_counts = np.asarray(rust_counts)
+            # fp exp ulps can flip knife-edge selections between the exp
+            # implementations; distributions must stay near-identical.
+            assert np.abs(rust_counts - py.visit_counts).max() <= 3, fen
+            tv = float(0.5 * np.abs(rust_counts - py.visit_counts).sum()) / 96.0
+            assert tv <= 0.05, fen
+            # A few differing leaves shift the value MEAN; the gate is structural
+            # drift (sign/terminal bugs move this by O(0.1)), not fp noise.
+            assert float(rust_value) == pytest.approx(py.root_value, abs=0.05), fen
+
+    def test_repetition_claim_parity_with_game_history(self):
+        """Two full knight shuffles: the root is claimable-terminal for BOTH engines.
+
+        This is the regression for the C2 Seq seam bug the C6 gate caught:
+        suffix_count stopped at the path root and never walked the game
+        history, so rust kept searching a position python scores as a draw.
+        """
+        moves = ["g1f3", "g8f6", "f3g1", "f6g8"] * 2
+        board = chess.Board()
+        for uci in moves:
+            board.push_uci(uci)
+        assert board.can_claim_threefold_repetition()
+        py = MCTSSearch(
+            KeyedStubEvaluator(), SearchConfig(num_simulations=8, root_noise=False)
+        ).search(board.copy())
+        assert py.visited_root is False
+        assert py.chosen_move is None
+        assert py.root_value == 0.0
+        rust_counts, rust_value = gambit_core.search(
+            (chess.STARTING_FEN, moves),
+            keyed_rust_callback,
+            gambit_core.SearchConfig(num_simulations=8, root_noise=False),
+        )
+        assert float(np.asarray(rust_counts).sum()) == 0.0
+        assert float(rust_value) == 0.0
+
+    def test_wave_mode_produces_valid_distribution(self):
+        cfg = gambit_core.SearchConfig(num_simulations=64, batch_size=8, root_noise=False)
+        counts, _value = gambit_core.search(chess.STARTING_FEN, keyed_rust_callback, cfg)
+        counts = np.asarray(counts)
+        assert counts.sum() == 64.0
+        legal = set(legal_move_map(chess.Board()))
+        assert set(np.nonzero(counts)[0].tolist()) <= legal
+
+    def test_mated_root_and_forced_move(self):
+        counts, value = gambit_core.search(
+            MATED_FEN, keyed_rust_callback, gambit_core.SearchConfig(num_simulations=8)
+        )
+        assert np.asarray(counts).sum() == 0.0
+        assert float(value) == -1.0
+        counts, _value = gambit_core.search(
+            SINGLE_MOVE_FEN, keyed_rust_callback, gambit_core.SearchConfig(num_simulations=10)
+        )
+        counts = np.asarray(counts)
+        assert counts.sum() == 10.0
+        legal = set(legal_move_map(chess.Board(SINGLE_MOVE_FEN)))
+        assert set(np.nonzero(counts)[0].tolist()) <= legal
+
+    def test_callback_exception_propagates(self):
+        def boom(fens):
+            raise RuntimeError("evaluator exploded")
+
+        with pytest.raises(RuntimeError, match="evaluator exploded"):
+            gambit_core.search(
+                chess.STARTING_FEN, boom, gambit_core.SearchConfig(num_simulations=4)
+            )
+
+    def test_callback_shape_mismatch_raises(self):
+        def bad_cb(fens):
+            return np.zeros((len(fens), 10), dtype=np.float32), np.zeros(len(fens), dtype=np.float32)
+
+        with pytest.raises(ValueError):
+            gambit_core.search(
+                chess.STARTING_FEN, bad_cb, gambit_core.SearchConfig(num_simulations=4)
+            )
+
+    def test_bad_board_argument_raises(self):
+        with pytest.raises(ValueError):
+            gambit_core.search(123, keyed_rust_callback, gambit_core.SearchConfig())  # type: ignore[arg-type]
+
+
+@requires_rust_search
+class TestRustBackendWrapper:
+    """C3 wrapper + C5 routing through the python pipeline entry points."""
+
+    def test_build_search_routes_by_flag(self):
+        evaluator = KeyedStubEvaluator()
+        assert isinstance(build_search(evaluator, SearchConfig()), MCTSSearch)
+        rust = build_search(evaluator, SearchConfig(search_backend="rust"))
+        assert isinstance(rust, RustMCTSSearch)
+        seeded = build_search(
+            evaluator, SearchConfig(search_backend="rust"), rng=np.random.default_rng(0)
+        )
+        assert isinstance(seeded, RustMCTSSearch)
+
+    def test_search_config_validation(self):
+        with pytest.raises(ValueError):
+            SearchConfig(search_backend="gpu")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            SearchConfig(search_backend="rust", search_kind="gumbel")
+
+    def test_rust_backend_unavailable_raises_runtime_error(self, monkeypatch):
+        import training.rust_search as rust_search_module
+
+        monkeypatch.setattr(rust_search_module, "RUST_SEARCH_AVAILABLE", False)
+        with pytest.raises(RuntimeError):
+            build_search(KeyedStubEvaluator(), SearchConfig(search_backend="rust"))
+
+    def test_wrapper_parity_matches_python(self):
+        fens = [
+            chess.STARTING_FEN,
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+            "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        ]
+        for fen in fens:
+            board = chess.Board(fen)
+            py = MCTSSearch(
+                KeyedStubEvaluator(), SearchConfig(num_simulations=96, root_noise=False)
+            ).search(board.copy())
+            rust = RustMCTSSearch(
+                KeyedStubEvaluator(), SearchConfig(num_simulations=96, root_noise=False)
+            ).search(board.copy())
+            assert np.abs(rust.visit_counts - py.visit_counts).max() <= 3, fen
+            assert rust.chosen_move == py.chosen_move, fen
+            assert rust.visited_root == py.visited_root, fen
+            assert rust.root_value == pytest.approx(py.root_value, abs=0.05), fen
+
+    def test_wrapper_noise_is_seeded_and_deterministic(self):
+        board = chess.Board()
+        one = RustMCTSSearch(
+            KeyedStubEvaluator(),
+            SearchConfig(num_simulations=32, root_noise=True),
+            rng=np.random.default_rng(17),
+        ).search(board.copy())
+        two = RustMCTSSearch(
+            KeyedStubEvaluator(),
+            SearchConfig(num_simulations=32, root_noise=True),
+            rng=np.random.default_rng(17),
+        ).search(board.copy())
+        assert np.array_equal(one.visit_counts, two.visit_counts)
+
+    def test_wrapper_forced_move_and_terminal_root(self):
+        rust = RustMCTSSearch(KeyedStubEvaluator(), SearchConfig(num_simulations=10))
+        forced = rust.search(chess.Board(SINGLE_MOVE_FEN))
+        assert forced.chosen_move == chess.Move.from_uci("h8h7")
+        assert forced.visit_counts.sum() == 10.0
+        assert forced.visited_root is True
+        mated = rust.search(chess.Board(MATED_FEN))
+        assert mated.chosen_move is None
+        assert mated.visited_root is False
+        assert mated.root_value == -1.0
+        assert mated.visit_counts.sum() == 0.0
+
+    def test_self_play_game_with_rust_backend(self):
+        config = SelfPlayConfig(
+            search=SearchConfig(
+                num_simulations=4, root_noise=False, search_backend="rust"
+            ),
+            max_plies=6,
+            temperature_plies=0,
+        )
+        result = self_play_game(KeyedStubEvaluator(), config, rng=np.random.default_rng(5))
+        assert result.moves
+        assert result.ply_count == len(result.moves)
+        replay = chess.Board()
+        for san in result.moves:
+            replay.push_san(san)  # raises on any illegal move
+
+    def test_play_match_game_with_rust_backend(self):
+        white = SearchConfig(root_noise=False, num_simulations=2, search_backend="rust")
+        black = SearchConfig(root_noise=False, num_simulations=2, search_backend="rust")
+        result, termination = play_match_game(
+            KeyedStubEvaluator(),
+            KeyedStubEvaluator(),
+            num_simulations=2,
+            max_plies=6,
+            white_config=white,
+            black_config=black,
+        )
+        assert result in ("1-0", "0-1", "1/2-1/2")
+        assert termination == "max-plies"
+
