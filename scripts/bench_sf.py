@@ -133,6 +133,8 @@ BOOK_OPENINGS: list[str] = [
 
 
 def book_openings(count: int, seed: int) -> list[str]:
+    import numpy as np
+
     idx = np.random.default_rng(seed).permutation(len(BOOK_OPENINGS))[:count]
     return [BOOK_OPENINGS[i] for i in idx]
 
