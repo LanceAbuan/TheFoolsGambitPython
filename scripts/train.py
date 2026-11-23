@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 # Make `training` importable when run as a script from the repo root.
@@ -18,14 +19,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from training.encoder import NUM_PLANES
 from training.model import MODEL_BASE, MODEL_TINY
-from training.pipeline import NIGHT_PROFILE, SMOKE_PROFILE, TrainingProfile, run_training
+from training.pipeline import (
+    NIGHT_PROFILE,
+    NIGHT_V2_PROFILE,
+    SMOKE_PROFILE,
+    TrainingProfile,
+    run_training,
+)
 from training.regimes import REGIME_NAMES
+
+_PROFILE_BY_NAME: dict[str, TrainingProfile] = {
+    "smoke": SMOKE_PROFILE,
+    "night": NIGHT_PROFILE,
+    "night-v2": NIGHT_V2_PROFILE,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fool's Gambit v2 training (WP-C)")
-    parser.add_argument("--profile", choices=["smoke", "night"], default="smoke",
-                        help="smoke = tiny/fast sanity run; night = full run")
+    parser.add_argument("--profile", choices=list(_PROFILE_BY_NAME), default="smoke",
+                        help="smoke = tiny/fast sanity run; night = full run; "
+                             "night-v2 = night + WP-A throughput knobs + LR schedule")
     parser.add_argument("--regime", choices=list(REGIME_NAMES), default="scratch",
                         help="training regime (§5.2)")
     parser.add_argument("--run-id", default=None, help="run id (default: UTC timestamp)")
@@ -50,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_profile(args: argparse.Namespace) -> TrainingProfile:
-    base = SMOKE_PROFILE if args.profile == "smoke" else NIGHT_PROFILE
+    base = _PROFILE_BY_NAME[args.profile]
     model = MODEL_TINY if args.profile == "smoke" else MODEL_BASE
     if model.in_channels != NUM_PLANES:
         raise ValueError("model preset in_channels does not match the encoder")
@@ -69,22 +83,15 @@ def build_profile(args: argparse.Namespace) -> TrainingProfile:
         overrides["parallel_games"] = args.parallel_games
     if args.no_stream_games:
         overrides["stream_games"] = False
-    return TrainingProfile(
+    # WP-A: dataclasses.replace keeps every un-overridden base field —
+    # including `lr_schedule`, `train_steps`, `batch_size`, `min_examples`
+    # and the ladder — so a new profile flag can never silently drop one.
+    return replace(
+        base,
         name=base.name,
         model=model,
         regime=args.regime,
-        iterations=int(overrides.get("iterations", base.iterations)),
-        games_per_iteration=int(overrides.get("games_per_iteration", base.games_per_iteration)),
-        max_plies=int(overrides.get("max_plies", base.max_plies)),
-        sims=int(overrides.get("sims", base.sims)),
-        train_steps=base.train_steps,
-        batch_size=base.batch_size,
-        min_examples=base.min_examples,
-        ladder=base.ladder,
-        seed=overrides.get("seed", base.seed),  # type: ignore[arg-type]
-        snapshot_every_iteration=base.snapshot_every_iteration,
-        parallel_games=overrides.get("parallel_games", base.parallel_games),  # type: ignore[arg-type]
-        stream_games=overrides.get("stream_games", base.stream_games),  # type: ignore[arg-type]
+        **overrides,  # type: ignore[arg-type]
     )
 
 

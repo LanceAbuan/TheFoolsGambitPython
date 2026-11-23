@@ -70,6 +70,45 @@ CHAMPION_FILENAME = "champion.json"
 
 
 @dataclass(frozen=True)
+class LRStepSchedule:
+    """Step learning-rate decay on ABSOLUTE iteration milestones (WP-A).
+
+    The LR for iteration `i` is ``base_lr * gamma ** (#milestones <= i)``.
+    Because the rung depends only on the absolute iteration number — never on
+    steps-since-start — the schedule is stable under `--resume` from any
+    iteration: a run resumed at iteration 350 lands on exactly the rung it
+    would have been on had it never stopped.
+
+    `base_lr` is passed per call (the pipeline feeds the regime's
+    `learning_rate`) so one schedule instance stays regime-agnostic.
+    """
+
+    milestones: tuple[int, ...]
+    gamma: float = 0.5
+
+    def __post_init__(self) -> None:
+        if self.gamma <= 0 or self.gamma > 1.0:
+            raise ValueError(f"gamma must be in (0, 1], got {self.gamma}")
+        if any(m < 0 for m in self.milestones) or list(self.milestones) != sorted(set(self.milestones)):
+            raise ValueError("milestones must be non-negative, strictly increasing integers")
+
+    def lr_at(self, iteration: int, base_lr: float) -> float:
+        """LR for `iteration`: one gamma decay per milestone already reached."""
+        decayed = sum(1 for milestone in self.milestones if iteration >= milestone)
+        return base_lr * (self.gamma**decayed)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"milestones": list(self.milestones), "gamma": self.gamma}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> LRStepSchedule:
+        return cls(
+            milestones=tuple(int(m) for m in data["milestones"]),  # type: ignore[arg-type]
+            gamma=float(data["gamma"]),  # type: ignore[arg-type]
+        )
+
+
+@dataclass(frozen=True)
 class TrainingProfile:
     """One runnable slice of training. `smoke` for CI/sanity, `night` for real."""
 
@@ -89,6 +128,10 @@ class TrainingProfile:
     snapshot_every_iteration: bool = False  # smoke: gate every iteration
     parallel_games: int | None = None  # None -> RegimeConfig.parallel_games
     stream_games: bool | None = None  # None -> RegimeConfig.stream_moves (FS-6b)
+    # WP-A: optional step-decay LR schedule (milestones on ABSOLUTE iterations).
+    # None -> the regime's constant `learning_rate` exactly as before, so every
+    # pre-existing profile (smoke, night) keeps its behavior byte-identical.
+    lr_schedule: LRStepSchedule | None = None
 
 
 SMOKE_PROFILE = TrainingProfile(
@@ -121,6 +164,23 @@ NIGHT_PROFILE = TrainingProfile(
     ladder=LadderConfig(arena=ArenaConfig(num_simulations=128, max_plies=200, games=16)),
     seed=None,
     parallel_games=16,
+)
+
+# WP-A: throughput knobs on top of `night` — the live run's profile is NOT
+# edited in place (its on-disk state must stay resumable byte-identically).
+# Changes: parallel_games 16->32 (exactly at MAX_PARALLEL_GAMES), sims
+# 400->600, train_steps 64->96, batch_size 256->512, min_examples 64->128,
+# plus the step-decay LR schedule (x0.5 at iterations 200/400/600/800).
+# The arena stays at the section 5.1 reduced settings (128 sims / 16 games).
+NIGHT_V2_PROFILE = replace(
+    NIGHT_PROFILE,
+    name="night-v2",
+    parallel_games=32,
+    sims=600,
+    train_steps=96,
+    batch_size=512,
+    min_examples=128,
+    lr_schedule=LRStepSchedule(milestones=(200, 400, 600, 800), gamma=0.5),
 )
 
 
@@ -255,6 +315,29 @@ def _apply_warmstart(
         return False
     log.info("[WARMSTART] regime '%s' initialized from '%s'", regime.name, regime.warmstart_from)
     return True
+
+
+def _apply_lr_schedule(
+    optimizer: torch.optim.Optimizer,
+    schedule: LRStepSchedule | None,
+    iteration: int,
+    base_lr: float,
+) -> float:
+    """Set the optimizer LR for `iteration`; returns the LR in effect (WP-A).
+
+    With a schedule, the LR is a pure function of the ABSOLUTE iteration
+    number (`LRStepSchedule.lr_at`), so `--resume` from any iteration lands on
+    the correct rung. With no schedule (every pre-existing profile) the
+    optimizer is left exactly as constructed — constant regime LR, untouched.
+    """
+    if schedule is None:
+        if not optimizer.param_groups:
+            return base_lr
+        return float(optimizer.param_groups[0]["lr"])
+    lr = schedule.lr_at(iteration, base_lr)
+    for group in optimizer.param_groups:
+        group["lr"] = lr
+    return lr
 
 
 def run_training(
@@ -395,6 +478,7 @@ def run_training(
         resumed=state is not None,
     )
     last_snapshot_minute = 0.0
+    last_iteration_lr = -1.0  # WP-A: forces the first iteration's LR log line
     arena_games_total = 0
     last_loss: float | None = None
     last_policy_loss: float | None = None
@@ -485,6 +569,18 @@ def run_training(
             )
 
             # --- optimize ---------------------------------------------------
+            # WP-A: per-iteration LR (constant when no schedule is configured).
+            iteration_lr = _apply_lr_schedule(
+                optimizer, profile.lr_schedule, iteration, regime.learning_rate
+            )
+            if iteration_lr != last_iteration_lr:
+                log.info(
+                    "[TRAIN] iteration %d: lr %.4g%s",
+                    iteration,
+                    iteration_lr,
+                    " (schedule rung)" if profile.lr_schedule is not None else "",
+                )
+                last_iteration_lr = iteration_lr
             model.train()
             for _step in range(profile.train_steps):
                 batch = buffer.sample(profile.batch_size)
@@ -527,6 +623,7 @@ def run_training(
                     if games_per_hour_measured is not None
                     else None,
                     "parallel_games": effective_parallel,
+                    "lr": iteration_lr,
                     "regime": regime.name,
                     "run_id": resolved_run_id,
                 }
