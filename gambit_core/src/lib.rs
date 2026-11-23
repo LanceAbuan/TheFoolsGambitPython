@@ -16,10 +16,23 @@
 //! python-chess remains the oracle; see `tests/test_gambit_core.py` for the
 //! differential fuzzing gates.
 
+// The C2/C4 search+encoder API surface below is wired to Python by C3/WP-H
+// (mcts is not exposed yet); until then their pub items are intentionally
+// unreachable from the python module and clippy's dead-code lint is off for
+// exactly these four modules (pre-existing on main, kept scoped).
+#[allow(dead_code)]
 mod encoder;
+#[allow(dead_code)]
 mod mcts;
+#[allow(dead_code)]
 mod position;
+#[allow(dead_code)]
 mod tree;
+
+/// WP-H H2: ONNX Runtime inference (`ort` crate) - behind the `onnx` feature
+/// so default builds (cargo test / CI / plain maturin) stay hermetic.
+#[cfg(feature = "onnx")]
+mod ort_eval;
 
 use numpy::{ndarray::Array, IntoPyArray, PyArray1, PyArray2, PyArray3, PyArray4};
 use pyo3::exceptions::PyValueError;
@@ -282,6 +295,11 @@ fn gambit_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(zobrist, m)?)?;
     m.add_function(wrap_pyfunction!(outcome, m)?)?;
     m.add_function(wrap_pyfunction!(encode_batch_v2, m)?)?;
+    #[cfg(feature = "onnx")]
+    {
+        m.add_class::<ort_eval::PyOrtModel>()?;
+        m.add_function(wrap_pyfunction!(ort_eval::ort_dylib_path, m)?)?;
+    }
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

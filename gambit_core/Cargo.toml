@@ -15,8 +15,13 @@ pyo3 = { version = "0.30", features = ["abi3-py311"] }
 numpy = "0.30"
 rand = "0.8"
 rand_distr = "0.4"
+ort = { version = "2.0.0-rc.15", features = ["download-binaries", "load-dynamic", "cuda"], optional = true }
 
 [features]
 # maturin builds with this feature so the cdylib links as a Python extension;
 # plain `cargo test` (default features) links libpython instead, so tests run.
 extension-module = ["pyo3/extension-module"]
+# WP-H H2: ONNX Runtime inference (ort 2.0.0-rc.15, load-dynamic so the .pyd
+# has no link-time dependency; the dylib resolves at session-creation time).
+# OFF by default: ``cargo test`` / CI stay hermetic (no ORT download at all).
+onnx = ["dep:ort"]

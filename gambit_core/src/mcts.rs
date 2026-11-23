@@ -84,6 +84,21 @@ pub trait Evaluator {
     /// `logits.len() == batch.len() * POLICY_MOVES` and
     /// `values.len() == batch.len()`.
     fn evaluate(&mut self, batch: &[Position]) -> (Vec<f32>, Vec<f32>);
+
+    /// History-aware evaluation (WP-H H3). `paths[i]` is the chronological
+    /// position sequence from the game ROOT through `batch[i]` inclusive
+    /// (`paths[i].last() == &batch[i]`). The 104-plane v2 encoder derives its
+    /// deep-history and repetition planes from it; python truncates that
+    /// history to the LAST 7 positions (`v2_history_from_stack`), and the
+    /// same truncation is the evaluator's job. Default: history-free, so
+    /// v1-style evaluators are untouched.
+    fn evaluate_history(
+        &mut self,
+        batch: &[Position],
+        _paths: &[Vec<Position>],
+    ) -> (Vec<f32>, Vec<f32>) {
+        self.evaluate(batch)
+    }
 }
 
 /// Outcome of one root search — the python `MCTSResult` contract.
@@ -208,6 +223,16 @@ impl<'a> Seq<'a> {
         self.base_pos.len() + self.path_pos.len()
     }
 
+    /// Chronological snapshot of the whole sequence (base history + path).
+    /// Captured per wave-leaf BEFORE the next selection clears the path, so
+    /// the batched history-aware evaluator sees each leaf's own ancestry.
+    fn full_path(&self) -> Vec<Position> {
+        let mut v = Vec::with_capacity(self.base_pos.len() + self.path_pos.len());
+        v.extend_from_slice(self.base_pos);
+        v.extend_from_slice(&self.path_pos);
+        v
+    }
+
     fn pos(&self, i: usize) -> &Position {
         if i < self.base_pos.len() {
             &self.base_pos[i]
@@ -265,8 +290,8 @@ impl<'a> Seq<'a> {
 
 /// python `board.is_game_over(claim_draw=True)` for the LAST position of
 /// `seq` (which must be `leaf`), with `legal` its legal moves:
-/// mate/stalemate, insufficient material, fifty-move (clock >= 100, or clock
-/// >= 99 with a legal non-zeroing move reaching 100 — python
+/// mate/stalemate, insufficient material, fifty-move (clock >= 100, or the
+/// clock >= 99 variant with a legal non-zeroing move reaching 100 — python
 /// `can_claim_fifty_moves`), and threefold-repetition claims (now, or reached
 /// by one legal move — python `can_claim_threefold_repetition`).
 /// Seventyfive-move / fivefold are subsumed by their claimable counterparts.
@@ -341,7 +366,9 @@ pub fn search(
             visited_root: false,
         };
     }
-    let (logits, values) = evaluator.evaluate(std::slice::from_ref(root));
+    let root_path = seq.full_path();
+    let (logits, values) =
+        evaluator.evaluate_history(std::slice::from_ref(root), std::slice::from_ref(&root_path));
     debug_assert!(values.len() == 1 && logits.len() >= POLICY_MOVES);
     let noise: Option<Vec<f64>> = if cfg.root_noise && plain.len() > 1 {
         let mut rng = StdRng::seed_from_u64(cfg.seed);
@@ -372,7 +399,8 @@ pub fn search(
         let wave = (remaining as usize).min(batch);
         // (path, leaf position, node) per in-wave leaf; terminals are backed
         // up immediately.
-        let mut wave_leaves: Vec<(Vec<u32>, Position, u32)> = Vec::with_capacity(wave);
+        let mut wave_leaves: Vec<(Vec<u32>, Position, u32, Vec<Position>)> =
+            Vec::with_capacity(wave);
         for _ in 0..wave {
             let mut pos = *root;
             let mut node = tree.root();
@@ -400,7 +428,7 @@ pub fn search(
             if n.terminal {
                 let v = n.terminal_value;
                 tree.backup(&path, v);
-            } else if wave_leaves.iter().any(|(_, _, n)| *n == node) {
+            } else if wave_leaves.iter().any(|(_, _, id, _)| *id == node) {
                 // Selected twice within one wave (virtual loss did not fully
                 // deter it): python-sequential semantics expand immediately —
                 // do the single eval inline.
@@ -414,16 +442,19 @@ pub fn search(
                 n.expanded = true;
                 tree.backup(&path, tv);
             } else {
-                wave_leaves.push((path, pos, node));
+                let leaf_path = seq.full_path();
+                wave_leaves.push((path, pos, node, leaf_path));
             }
         }
 
         if !wave_leaves.is_empty() {
-            let batch_pos: Vec<Position> = wave_leaves.iter().map(|(_, p, _)| *p).collect();
-            let (logits, values) = evaluator.evaluate(&batch_pos);
+            let batch_pos: Vec<Position> = wave_leaves.iter().map(|(_, p, _, _)| *p).collect();
+            let batch_paths: Vec<Vec<Position>> =
+                wave_leaves.iter().map(|(_, _, _, path)| path.clone()).collect();
+            let (logits, values) = evaluator.evaluate_history(&batch_pos, &batch_paths);
             debug_assert_eq!(values.len(), batch_pos.len());
             debug_assert!(logits.len() >= batch_pos.len() * POLICY_MOVES);
-            for (i, (path, pos, node)) in wave_leaves.into_iter().enumerate() {
+            for (i, (path, pos, node, _leaf_path)) in wave_leaves.into_iter().enumerate() {
                 // values[i] is THIS leaf eval - pass the matching row through
                 // so the backup credits the right node.
                 let value = expand_leaf_with_logits(
@@ -580,7 +611,7 @@ pub fn select_by_temperature(
     if total <= 0.0 {
         return legal_indices[0];
     }
-    let draw = f64::from(rand::Rng::gen::<f64>(rng)) * total;
+    let draw = rand::Rng::gen::<f64>(rng) * total;
     let mut acc = 0.0;
     for (i, p) in powered.iter().enumerate() {
         acc += p;
