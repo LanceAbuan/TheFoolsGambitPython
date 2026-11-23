@@ -312,7 +312,7 @@ pub fn encode_batch_v2_rows(
     let mut replay: Vec<Position> = Vec::new();
     for (row, (fen, stack)) in fens.iter().zip(stacks.iter()).enumerate() {
         let bad = |msg: String| format!("encode_batch_v2 row {row}: {msg}");
-        let cur = Position::from_fen(fen).map_err(|e| bad(e))?;
+        let cur = Position::from_fen(fen).map_err(bad)?;
         if stack.is_empty() {
             // New game anchor: the given FEN IS the root.
             replay.clear();
@@ -328,7 +328,7 @@ pub fn encode_batch_v2_rows(
             let prev = replay[replay.len() - 1];
             let next = prev
                 .make_move_uci(stack[stack.len() - 1].trim())
-                .map_err(|e| bad(e))?;
+                .map_err(bad)?;
             replay.push(next);
         }
         let replayed = replay[replay.len() - 1];
