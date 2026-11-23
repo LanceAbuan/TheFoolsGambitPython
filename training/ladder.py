@@ -24,6 +24,7 @@ from typing import Literal
 import numpy as np
 
 from .glicko import GlickoRating, rate_player
+from .openings import sample_gate_openings
 from .selfplay import ArenaConfig, Evaluator, play_match_game
 from .sprt import (
     DEFAULT_ALPHA,
@@ -113,6 +114,10 @@ class MatchResult:
     wins: int
     draws: int
     losses: int
+    # FB-1: the opening FENs of the games actually played, in game order.
+    # Empty for matches run without opening randomization (opening_seed=None),
+    # so every pre-FB-1 consumer keeps its exact shape.
+    openings: tuple[str, ...] = ()
 
     @property
     def win_rate(self) -> float:
@@ -255,7 +260,15 @@ def decide_promotion(
 
 
 class Arena:
-    """Runs a candidate-vs-champion match, both colors, sequential games."""
+    """Runs a candidate-vs-champion match, both colors, sequential games.
+
+    FB-1: with `ArenaConfig.opening_seed` set, every game starts from a
+    seeded opening position — one FEN per game, mirrored across color pairs
+    (`training.openings.sample_gate_openings`) — instead of all games sharing
+    the initial position (which made deterministic arena play an effective
+    sample size of ~2). The seed is a pure function of (run_seed, gate_index)
+    supplied by the pipeline, so each gate event reproduces its own set.
+    """
 
     def __init__(
         self,
@@ -267,17 +280,29 @@ class Arena:
         self.champion_evaluator = champion_evaluator
         self.config = config
 
+    def _opening_fens(self, games: int) -> tuple[str, ...]:
+        """One FEN per planned game, or () when randomization is off."""
+        if self.config.opening_seed is None or games < 2:
+            return ()
+        return sample_gate_openings(games, self.config.opening_seed)
+
     def run(self, candidate_tag: str, champion_tag: str) -> Iterator[tuple[str, str, str]]:
         """Play the match game by game; yields (result, candidate_color, termination)."""
         games = self.config.games + (self.config.games % 2)  # balance colors
+        openings = self._opening_fens(games)
         for game_index in range(games):
             candidate_is_white = game_index % 2 == 0
             if candidate_is_white:
                 white_eval, black_eval = self.candidate_evaluator, self.champion_evaluator
             else:
                 white_eval, black_eval = self.champion_evaluator, self.candidate_evaluator
+            opening_fen = openings[game_index] if openings else None
             result, termination = play_match_game(
-                white_eval, black_eval, self.config.num_simulations, self.config.max_plies
+                white_eval,
+                black_eval,
+                self.config.num_simulations,
+                self.config.max_plies,
+                opening_fen=opening_fen,
             )
             yield result, ("white" if candidate_is_white else "black"), termination
 
@@ -295,10 +320,15 @@ class Arena:
         the stop a provable no-op (see RESEARCH_NOTES §3 pre-registration).
         """
         early_stop = self.config.sprt_early_stop if stop_on_sprt is None else stop_on_sprt
+        planned = self.config.games + (self.config.games % 2)
+        openings = self._opening_fens(planned)
         wins = draws = losses = 0
         games = 0
+        played_openings: list[str] = []
         for result, _candidate_color, _termination in self.run(candidate_tag, champion_tag):
             games += 1
+            if openings:
+                played_openings.append(openings[games - 1])
             if result == "1/2-1/2":
                 draws += 1
             elif result == "1-0":
@@ -328,18 +358,25 @@ class Arena:
                 )
                 break
         match_result = MatchResult(
-            candidate=candidate_tag, champion=champion_tag, games=games, wins=wins, draws=draws, losses=losses
+            candidate=candidate_tag,
+            champion=champion_tag,
+            games=games,
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            openings=tuple(played_openings),
         )
         log.info(
-            "[ARENA] %s vs %s: %d games (of %d planned), +%.1f-%.1f-%d (score %.3f)",
+            "[ARENA] %s vs %s: %d games (of %d planned), +%.1f-%.1f-%d (score %.3f)%s",
             candidate_tag,
             champion_tag,
             games,
-            self.config.games + (self.config.games % 2),
+            planned,
             wins,
             draws,
             losses,
             match_result.win_rate,
+            f", {len(match_result.openings)} openings" if match_result.openings else "",
         )
         return match_result
 
