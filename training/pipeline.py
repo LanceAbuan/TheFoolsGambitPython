@@ -44,6 +44,7 @@ from .ladder import (
 )
 from .ledger import ArenaLedger, LedgerEntry, MetricsWriter, recompute_elos, recompute_glickos
 from .model import GambitNet, ModelConfig
+from .openings import gate_opening_seed
 from .regimes import RegimeConfig, RunPaths, build_data_provider, create_run, get_regime
 from .resume import (
     load_latest_run_state,
@@ -469,21 +470,36 @@ def run_training(
     # A resumed run first tries ITS OWN checkpoint for the restored champion
     # tag (exact rebuild), then falls back to the regime pointer.
     champion_model: GambitNet | None = None
+    # FB-2: the champion's tag and its checkpoint path are resolved TOGETHER
+    # (one checkpoint object) and carried as a pair everywhere, so the
+    # champion.json writer can never pair one checkpoint's tag with another's
+    # path — the observed corruption (`runs/scratch/champion.json` exhibited
+    # tag ckpt-001536-0768 with a path pointing at a different file).
+    champion_ckpt_path: Path | None = None
     pointer = _load_champion_pointer(champion_file)
     if champion_tag is not None:
         own_checkpoint = paths.checkpoints / f"{champion_tag}.pt"
-        loaded = _load_champion(own_checkpoint, device) if own_checkpoint.exists() else None
+        loaded: tuple[GambitNet, str, float] | None = None
+        loaded_from: Path | None = None
+        if own_checkpoint.exists():
+            loaded = _load_champion(own_checkpoint, device)
+            loaded_from = own_checkpoint
         if loaded is None and pointer is not None:
             loaded = _load_champion(pointer[0], device)
+            loaded_from = pointer[0]
         if loaded is not None:
             champion_model = loaded[0]
+            champion_ckpt_path = loaded_from
             log.info(
                 "[CHAMPION] resumed champion %s (elo %.1f)", champion_tag, champion_elo
             )
     elif pointer is not None:
         loaded = _load_champion(pointer[0], device)
         if loaded is not None:
+            # The tag comes FROM the loaded checkpoint object (not the stale
+            # pointer's tag field), so (tag, path) is one consistent pair.
             champion_model, champion_tag, champion_elo = loaded[0], loaded[1], pointer[1]
+            champion_ckpt_path = pointer[0]
             log.info("[CHAMPION] reigning champion %s (elo %.1f)", champion_tag, champion_elo)
 
     # --- U9: champion Glicko bootstrap (resume-state -> ledger -> pointer) --
@@ -726,6 +742,7 @@ def run_training(
                 # later gate play the model against itself (0.5 forever).
                 champion_model = _champion_snapshot(ckpt_path, device, model)
                 champion_tag, champion_elo = tag, provisional_elo
+                champion_ckpt_path = ckpt_path  # FB-2: tag/path as one pair
                 champion_glicko = first_glicko
                 promote = True
                 log.info("[GATE] %s becomes the first champion (baseline elo %.1f)", tag, provisional_elo)
@@ -737,6 +754,11 @@ def run_training(
                 # knobs; they are copied onto the match config so `Arena.match`
                 # can stop sequentially (gate economics — decisive matches
                 # cost fewer games; at 16-game gates this is a provable no-op).
+                # FB-1: every gate event seeds a FRESH opening set from
+                # f(run_seed, gate_index) — gate_index is the ABSOLUTE
+                # iteration number, so a resumed run reproduces the opening
+                # set of the gate it stopped at. Openings are mirrored across
+                # color pairs and logged in the gate record below.
                 arena_config = replace(
                     profile.ladder.arena,
                     sprt_early_stop=True,
@@ -744,6 +766,7 @@ def run_training(
                     sprt_elo1=profile.ladder.sprt_elo1,
                     sprt_alpha=profile.ladder.sprt_alpha,
                     sprt_beta=profile.ladder.sprt_beta,
+                    opening_seed=gate_opening_seed(profile.seed, iteration),
                 )
                 match: MatchResult = _arena_match(
                     model, champion_model, device, arena_config, tag, champion_tag or "unknown"
@@ -784,6 +807,7 @@ def run_training(
                     # just-saved checkpoint; never alias the live model.
                     champion_model = _champion_snapshot(ckpt_path, device, model)
                     champion_tag = tag
+                    champion_ckpt_path = ckpt_path  # FB-2: tag/path as one pair
                     log.info(
                         "[GATE] %s promoted (%s: score %.3f, llr %.3f in [%.3f, %.3f], rd %.1f)",
                         tag,
@@ -806,8 +830,16 @@ def run_training(
                     )
 
             # --- champion + metrics feed -------------------------------------
+            # FB-2: tag and path come from the SAME resolved checkpoint object
+            # (`champion_ckpt_path` moves with `champion_tag` at every
+            # baseline/promote/hold), and the writer asserts
+            # `tag == Path(path).stem` before touching champion.json — a
+            # champion that HOLDS keeps its own checkpoint's pointer, never
+            # the losing candidate's path under the champion's tag (the
+            # observed corruption).
+            assert champion_ckpt_path is not None, "champion resolved without its checkpoint path"
             _save_champion(champion_file, champion_model, champion_tag or tag, champion_elo,
-                           resolved_run_id, ckpt_path, champion_glicko)
+                           resolved_run_id, champion_ckpt_path, champion_glicko)
             ledger_rows = ledger.read()
             elo_map = recompute_elos(ledger_rows, profile.ladder.base_elo, profile.ladder.k_factor)
             glicko_map = recompute_glickos(ledger_rows)
@@ -858,6 +890,12 @@ def run_training(
                     "wins": last_match.wins if last_match is not None else 0,
                     "draws": last_match.draws if last_match is not None else 0,
                     "losses": last_match.losses if last_match is not None else 0,
+                    # FB-1: the gate record carries the gate event identity
+                    # (absolute iteration) and every opening FEN actually
+                    # played, so any gate is reproducible from
+                    # (run_seed, gate_index) -> sample_gate_openings.
+                    "gate_index": iteration,
+                    "openings": list(last_match.openings) if last_match is not None else [],
                     "arena_result": {
                         "win_rate": last_match.win_rate,
                         "promoted": promote,
@@ -980,7 +1018,22 @@ def _save_champion(
     U9: carries the champion lineage's Glicko record additively (`glicko`
     key) so a fresh run seeding from the pointer continues the rating
     series; older pointers without the key are read fine.
+
+    FB-2: `tag` and `checkpoint_path` must be one resolved checkpoint object.
+    The writer asserts ``tag == Path(checkpoint_path).stem`` BEFORE writing —
+    a divergent pair (champion's tag under a different checkpoint's path, the
+    corruption observed on runs/scratch/champion.json) raises instead of
+    poisoning every downstream reader (resume champion load, warm start,
+    bench scripts).
     """
+    resolved = Path(checkpoint_path)
+    if tag != resolved.stem:
+        raise ValueError(
+            "champion pointer integrity (FB-2): refusing to write "
+            f"{champion_file} — tag {tag!r} does not match checkpoint "
+            f"filename {resolved.name!r}; tag and path must come from the "
+            "same resolved checkpoint object"
+        )
     champion_file.parent.mkdir(parents=True, exist_ok=True)
     champion_file.write_text(
         json.dumps(

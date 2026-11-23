@@ -1537,6 +1537,12 @@ class ArenaConfig:
     sprt_elo1: float = 10.0
     sprt_alpha: float = 0.05
     sprt_beta: float = 0.05
+    # FB-1: per-gate-event opening randomization. None (default) keeps the
+    # pre-FB-1 behavior bit-identical — every game from the initial position.
+    # When set, the arena samples a fresh seeded opening set (one FEN per
+    # game, mirrored across color pairs) and `MatchResult.openings` records
+    # the played FENs for the gate record.
+    opening_seed: int | None = None
 
 
 def play_match_game(
@@ -1547,6 +1553,7 @@ def play_match_game(
     white_config: SearchConfig | None = None,
     black_config: SearchConfig | None = None,
     rng: np.random.Generator | None = None,
+    opening_fen: str | None = None,
 ) -> tuple[str, str]:
     """Play one arena game; returns (result, termination).
 
@@ -1554,7 +1561,8 @@ def play_match_game(
     termination is 'game-over' or 'max-plies' (scored as a draw).
     white_config/black_config default to the canonical PUCT arena search
     (section 5.1 semantics unchanged); U1 ablations pass explicit per-side
-    SearchConfig objects (e.g. gumbel) instead.
+    SearchConfig objects (e.g. gumbel) instead. `opening_fen` (FB-1) starts
+    the game from a seeded opening position instead of the initial position.
     """
     white_search = MCTSSearch(
         white_evaluator,
@@ -1570,7 +1578,12 @@ def play_match_game(
         else SearchConfig(root_noise=False, num_simulations=num_simulations),
         rng=rng,
     )
-    board: chess.Board = FastBoard() if fastpath_enabled() else chess.Board()
+    if opening_fen is not None:
+        board: chess.Board = (
+            FastBoard(fen=opening_fen) if fastpath_enabled() else chess.Board(fen=opening_fen)
+        )
+    else:
+        board = FastBoard() if fastpath_enabled() else chess.Board()
     termination = "max-plies"
     for _ply in range(max_plies):
         if board.is_game_over(claim_draw=True):
