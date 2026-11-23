@@ -6,9 +6,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import chess
 import numpy as np
+import pytest
+import torch
 from torch import nn
 
 from training.encoder import encode_move, legal_move_map
+from training.model import ModelConfig
 from training.selfplay import (
     MCTS,  # legacy class — §10 sign fix verified on it
     MCTSSearch,
@@ -21,6 +24,7 @@ from training.selfplay import (
     self_play_game,
     terminal_value,
 )
+from training.selfplay import BatchNNEvaluator
 
 MATE_IN_1_FEN = "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1"  # Rd8#
 MATED_FEN = "3R2k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1"  # black to move, back-rank mated
@@ -288,3 +292,70 @@ class TestSelfPlayDriver:
         )
         assert result in ("1-0", "0-1", "1/2-1/2")
         assert termination in ("game-over", "max-plies")
+
+
+class TestWDLValueThroughSearch:
+    """WP-C: a wdl value head feeds MCTS the derived p_win - p_loss scalar.
+
+    The search interface is unchanged: `Evaluator.evaluate` still returns
+    (logits (N, 4672), values (N,)) — the derivation lives in
+    `BatchNNEvaluator` via `training.model.value_head_scalar`.
+    """
+
+    WDL_TINY = ModelConfig(num_blocks=1, filters=16, value_channels=8, value_fc=32, value_head="wdl")
+
+    def test_batch_nn_evaluator_returns_scalar_for_wdl_model(self):
+        wdl_net = self._wdl_net()
+        evaluator = BatchNNEvaluator(wdl_net, torch.device("cpu"))
+        logits, values = evaluator.evaluate([chess.Board(), chess.Board()])
+        assert logits.shape == (2, 4672)
+        assert values.shape == (2,)
+        # p_win - p_loss is in [-1, 1] by construction.
+        assert all(-1.0 <= float(v) <= 1.0 for v in values)
+
+    def test_batch_nn_evaluator_wdl_scalar_matches_hand_derivation(self):
+        """The evaluator's scalar equals softmax(W) - softmax(L) of the net."""
+        wdl_net = self._wdl_net()
+        wdl_net.eval()
+        board = chess.Board()
+        evaluator = BatchNNEvaluator(wdl_net, torch.device("cpu"))
+        _logits, values = evaluator.evaluate([board])
+        from training.encoder import encode_batch
+
+        batch = torch.from_numpy(encode_batch([board]))
+        with torch.inference_mode():
+            _policy, raw = wdl_net(batch)
+        probs = torch.softmax(raw, dim=-1)[0]
+        expected = float(probs[0] - probs[2])
+        assert float(values[0]) == pytest.approx(expected, abs=1e-6)
+
+    def test_mcts_search_with_wdl_model_is_unchanged_interface(self):
+        """A full search over a wdl model: legal move chosen, visits sum right."""
+        evaluator = BatchNNEvaluator(self._wdl_net(), torch.device("cpu"))
+        board = chess.Board()
+        result = MCTSSearch(evaluator, SearchConfig(num_simulations=16, root_noise=False)).search(board)
+        assert result.chosen_move in legal_move_map(board).values()
+        assert result.visit_counts.sum() == 16
+        legal = set(legal_move_map(board))
+        assert set(np.nonzero(result.visit_counts)[0]) <= legal
+
+    def test_mate_in_1_found_with_wdl_model(self):
+        """§10 regression on the wdl path: the mate is still the top move."""
+        board = chess.Board(MATE_IN_1_FEN)
+        evaluator = BatchNNEvaluator(self._wdl_net(), torch.device("cpu"))
+        result = MCTSSearch(evaluator, SearchConfig(num_simulations=48, root_noise=False)).search(board)
+        mate_index = encode_move(board, chess.Move.from_uci("d1d8"))
+        assert result.visit_counts[mate_index] == result.visit_counts.max()
+
+    def test_play_match_game_with_wdl_models(self):
+        white = BatchNNEvaluator(self._wdl_net(), torch.device("cpu"))
+        black = BatchNNEvaluator(self._wdl_net(), torch.device("cpu"))
+        result, termination = play_match_game(white, black, num_simulations=2, max_plies=6)
+        assert result in ("1-0", "0-1", "1/2-1/2")
+        assert termination == "max-plies"
+
+    def _wdl_net(self) -> torch.nn.Module:
+        from training.model import GambitNet
+
+        torch.manual_seed(42)
+        return GambitNet(self.WDL_TINY)

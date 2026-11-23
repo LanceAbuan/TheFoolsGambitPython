@@ -117,6 +117,26 @@ def random_openings(count: int, seed: int) -> list[str]:
     return out
 
 
+# Curated real openings (FB-3): the bot only ever trains from the startpos, so
+# random 6-ply openings measure it in alien territory. These are mainstream
+# positions after 2-4 natural plies.
+BOOK_OPENINGS: list[str] = [
+    "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq -",   # Italian
+    "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq -",      # Sicilian
+    "rnbqkbnr/pppp1ppp/4p3/8/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",        # French
+    "rnbqkbnr/pp1ppppp/2p5/8/3PP3/2N5/PPP2PPP/R1BQKBNR b KQkq -",      # Caro-Kann
+    "r1bqkbnr/pp1ppppp/2n5/2p5/4P3/2N5/PPPP1PPP/R1BQKBNR w KQkq -",    # Closed Sicilian
+    "rnbqkbnr/ppp1pppp/8/3p4/3PP3/8/PPP2PPP/RNBQKBNR b KQkq -",        # Scandinavian
+    "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",        # Open game
+    "rnbqkb1r/pppp1ppp/5n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -",   # Italian, ...Bf6
+]
+
+
+def book_openings(count: int, seed: int) -> list[str]:
+    idx = np.random.default_rng(seed).permutation(len(BOOK_OPENINGS))[:count]
+    return [BOOK_OPENINGS[i] for i in idx]
+
+
 def play_game(evaluator, opening_fen: str, nn_is_white: bool, engine, nodes: int, sims: int, max_plies: int):
     """One game: NN vs SF from `opening_fen`; mirrors ladder.play_match_game NN path."""
     import chess
@@ -155,6 +175,8 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20261123)
     parser.add_argument("--checkpoint", default=None, help="override champion resolution")
     parser.add_argument("--out", default="data/sf_bench.jsonl")
+    parser.add_argument("--openings", default="random", choices=["random", "book"],
+                        help="random: seeded random 6-ply positions; book: curated real openings (FB-3)")
     args = parser.parse_args()
 
     if str(ROOT) not in sys.path:
@@ -189,7 +211,11 @@ def run_bench(args) -> int:
                 continue
             preset = PRESETS[preset_name]
             n = args.games_per_preset + (args.games_per_preset % 2)  # balance colors
-            openings = random_openings(n // 2, args.seed + abs(hash(preset_name)) % 1000)
+            openings = (
+                book_openings(n // 2, args.seed + abs(hash(preset_name)) % 1000)
+                if args.openings == "book"
+                else random_openings(n // 2, args.seed + abs(hash(preset_name)) % 1000)
+            )
             engine.configure({**SF_OPTIONS, "Skill Level": preset["skill"]})
 
             wins = draws = losses = 0
@@ -366,6 +392,19 @@ def run_fit(args) -> int:
             break
         r = r + step if hi < lo else r - step
         step *= 0.98
+
+    total_score = sum(g[0] for g in games)
+    total_n = sum(g[1] for g in games)
+    if total_score == 0.0:
+        bound = min(g[2] for g in games) - elo_gap(0.02)
+        print(f"[fit] 0/{total_n} scored — point estimate undefined (NLL saturated).")
+        print(f"[fit] honest bound: bot Elo <= {bound:.0f} (clamp limit vs strongest rung played)")
+        return 0
+    if total_score == total_n:
+        bound = max(g[2] for g in games) + elo_gap(0.98)
+        print(f"[fit] {total_n}/{total_n} scored — point estimate undefined (NLL saturated).")
+        print(f"[fit] honest bound: bot Elo >= {bound:.0f}")
+        return 0
 
     print(f"[fit] games used: {len(games)} across rungs {sorted({g[2] for g in games})}")
     print(f"[fit] fitted bot Elo: {r:.0f}  (anchor: {cal['anchor']['rung']} = {cal['anchor']['elo']})")

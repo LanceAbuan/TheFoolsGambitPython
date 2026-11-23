@@ -62,7 +62,7 @@ from .selfplay import (
     SelfPlayResult,
     StreamContext,
 )
-from .trainer import TrainingBuffer
+from .trainer import TrainingBuffer, wdl_targets
 
 log = logging.getLogger(__name__)
 
@@ -250,6 +250,9 @@ def _save_checkpoint(
             # guessing (WP-D warm-start reads this).
             "in_channels": int(model.config.in_channels),
             "encoder_version": encoder_version_for(model.config.in_channels),
+            # WP-C: value-head layout stamp ("scalar" | "wdl") — the loader
+            # rebuilds the matching head from the checkpoint's config dict.
+            "value_head": model.config.value_head,
             "ts": time.time(),
         },
         path,
@@ -260,7 +263,13 @@ def _save_checkpoint(
 def _load_champion(
     checkpoint_path: Path, device: torch.device
 ) -> tuple[GambitNet, str, float] | None:
-    """Load a champion checkpoint file; None when absent or incompatible."""
+    """Load a champion checkpoint file; None when absent or incompatible.
+
+    WP-C: the head layout branches on the checkpoint's config — a `wdl`
+    checkpoint rebuilds with 3 value logits, a pre-WP-C `scalar` checkpoint
+    (whose config dict lacks the `value_head` key) loads exactly as before
+    via the `ModelConfig.value_head` default.
+    """
     try:
         data = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     except Exception:  # noqa: BLE001 - unreadable champion checkpoints gate as "no champion"
@@ -270,6 +279,7 @@ def _load_champion(
     model = GambitNet(config).to(device)
     model.load_state_dict(data["model_state"])
     model.eval()
+    log.info("[CHAMPION] loaded %s (value_head=%s)", checkpoint_path.name, config.value_head)
     return model, str(data.get("tag", "unknown")), float(data.get("elo", 800.0))
 
 
@@ -621,7 +631,15 @@ def run_training(
                 pred_policy, pred_value = model(tensors)
                 log_probs = torch.log_softmax(pred_policy, dim=-1)
                 policy_loss = -(policies * log_probs).sum(dim=-1).mean()
-                value_loss = torch.nn.functional.mse_loss(pred_value, values)
+                if profile.model.value_head == "wdl":
+                    # WP-C: cross-entropy on the one-hot game result (W/D/L
+                    # from the mover's perspective); the MSE term is dropped
+                    # for this head (policy CE + value CE + nothing else).
+                    value_loss = torch.nn.functional.cross_entropy(
+                        pred_value, wdl_targets(values)
+                    )
+                else:
+                    value_loss = torch.nn.functional.mse_loss(pred_value, values)
                 loss = policy_loss + value_loss
                 loss.backward()
                 optimizer.step()
