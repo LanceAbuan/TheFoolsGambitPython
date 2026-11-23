@@ -38,7 +38,8 @@ fn square_name(sq: Square) -> String {
     s
 }
 
-fn parse_square(name: &str) -> Result<Square, String> {
+/// Parse a two-char algebraic square name (`"a1"`..`"h8"`, lowercase).
+pub fn parse_square(name: &str) -> Result<Square, String> {
     let b = name.as_bytes();
     if b.len() != 2 || !b[0].is_ascii_lowercase() || !b[1].is_ascii_digit() {
         return Err(format!("bad square name: {name:?}"));
@@ -51,7 +52,8 @@ fn parse_square(name: &str) -> Result<Square, String> {
     Ok(square_from_index((rank * 8 + file) as usize))
 }
 
-fn parse_promo(c: &str) -> Result<Piece, String> {
+/// Parse a single-char UCI promotion piece (`n`/`b`/`r`/`q`, lowercase).
+pub fn parse_promo(c: &str) -> Result<Piece, String> {
     match c {
         "n" => Ok(Piece::Knight),
         "b" => Ok(Piece::Bishop),
@@ -480,9 +482,9 @@ impl Position {
             return (false, false);
         }
         let backrank = color.to_my_backrank();
-        let king_ok = *b.pieces(Piece::King) & *b.color_combined(color)
+        let king_ok = b.pieces(Piece::King) & *b.color_combined(color)
             == BitBoard::set(backrank, File::E);
-        let pieces = *b.pieces(Piece::Rook) & *b.color_combined(color);
+        let pieces = b.pieces(Piece::Rook) & *b.color_combined(color);
         let ks = rights.has_kingside()
             && king_ok
             && pieces & BitBoard::set(backrank, File::H) != BitBoard(0);
@@ -490,6 +492,152 @@ impl Position {
             && king_ok
             && pieces & BitBoard::set(backrank, File::A) != BitBoard(0);
         (ks, qs)
+    }
+}
+
+// --- repetition / transposition identity -------------------------------------
+//
+// python-chess 1.11 `Board._transposition_key()` — the identity behind
+// `can_claim_threefold_repetition` (the WP-C search's claim-draw semantics)
+// and the WP-B v2 repetition planes. Components, in order: the five piece
+// bitboards (both colors), both color occupancies, side to move, the cleaned
+// castling-rights bitboard, and the en-passant target square ONLY when a
+// fully legal en-passant capture exists for the side to move.
+
+/// python-chess `_transposition_key()` equivalent (see block comment above).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TranspositionKey {
+    pawns: u64,
+    knights: u64,
+    bishops: u64,
+    rooks: u64,
+    queens: u64,
+    kings: u64,
+    white: u64,
+    black: u64,
+    white_to_move: bool,
+    /// Clean castling rights: [W kingside, W queenside, B kingside, B queenside].
+    castling: [bool; 4],
+    /// Raw ep target square iff the side to move has a fully legal ep capture.
+    ep: Option<u8>,
+}
+
+impl TranspositionKey {
+    /// The key of the SAME placement with the OPPOSITE side to move — python
+    /// `flipped = board.copy(stack=False); flipped.turn = not board.turn`
+    /// (`training.encoder.repetition_counts` opp comparison).
+    ///
+    /// The en-passant component is recomputed and is ALWAYS `None` here: an
+    /// ep target's rank is fixed by the double push that set it (rank 2 for a
+    /// white push, rank 5 for a black push), and only the non-pushing side —
+    /// the CURRENT side to move — can ever have a capturer on the required
+    /// rank, so the flipped side never has a legal ep capture. Pinned
+    /// empirically against python-chess 1.11 in WP-F C2.
+    pub fn opponent_turn_key(&self) -> TranspositionKey {
+        let mut k = *self;
+        k.white_to_move = !k.white_to_move;
+        k.ep = None;
+        k
+    }
+}
+
+impl Position {
+    /// Fully legal en-passant capture available to the side to move: the raw
+    /// ep target square, else None (python-chess `has_legal_en_passant`).
+    /// The crate's movegen already applies full king-safety legality (the
+    /// classic horizontal ep-pin case included — perft-exact), so "some legal
+    /// move is a pawn diagonal onto the empty ep target" is exact.
+    pub fn legal_ep(&self) -> Option<u8> {
+        let ep = self.raw_ep?;
+        for m in MoveGen::new_legal(&self.board) {
+            if m.get_dest().to_index() == ep as usize
+                && self.board.piece_on(m.get_dest()).is_none()
+                && self.board.piece_on(m.get_source()) == Some(Piece::Pawn)
+                && m.get_source().to_index() % 8 != m.get_dest().to_index() % 8
+            {
+                return Some(ep);
+            }
+        }
+        None
+    }
+
+    /// Does the side to move have at least one legal move?
+    pub fn has_legal_move(&self) -> bool {
+        MoveGen::new_legal(&self.board).next().is_some()
+    }
+
+    /// Checkmate: side to move is in check with no legal move.
+    pub fn is_checkmate(&self) -> bool {
+        self.in_check() && !self.has_legal_move()
+    }
+
+    /// python-chess `is_zeroing(move)`: the move touches a pawn or captures
+    /// (pre-move view of the board).
+    pub fn is_zeroing(&self, m: &ChessMove) -> bool {
+        let touched =
+            BitBoard::from_square(m.get_source()) | BitBoard::from_square(m.get_dest());
+        let opp = *self.board.color_combined(!self.board.side_to_move());
+        touched & *self.board.pieces(Piece::Pawn) != BitBoard(0)
+            || touched & opp != BitBoard(0)
+    }
+
+    /// python-chess `_reduces_castling_rights(move)` (pre-move view): the move
+    /// touches a clean-castling-rights square or a king while that side still
+    /// holds any right. (The `~promoted` guard in python-chess only matters
+    /// for variants; unreachable here.)
+    pub fn reduces_castling_rights(&self, m: &ChessMove) -> bool {
+        let touched =
+            BitBoard::from_square(m.get_source()) | BitBoard::from_square(m.get_dest());
+        let (wks, wqs) = self.clean_castling_rights(Color::White);
+        let (bks, bqs) = self.clean_castling_rights(Color::Black);
+        let mut rights = BitBoard(0);
+        if wks {
+            rights |= BitBoard::from_square(Square::H1);
+        }
+        if wqs {
+            rights |= BitBoard::from_square(Square::A1);
+        }
+        if bks {
+            rights |= BitBoard::from_square(Square::H8);
+        }
+        if bqs {
+            rights |= BitBoard::from_square(Square::A8);
+        }
+        touched & rights != BitBoard(0)
+            || ((wks || wqs)
+                && touched & *self.board.pieces(Piece::King)
+                    & *self.board.color_combined(Color::White)
+                    != BitBoard(0))
+            || ((bks || bqs)
+                && touched & *self.board.pieces(Piece::King)
+                    & *self.board.color_combined(Color::Black)
+                    != BitBoard(0))
+    }
+
+    /// python-chess `is_irreversible(move)` (pre-move view): zeroing, reduces
+    /// castling rights, or the position cedes a legal en passant.
+    pub fn is_irreversible(&self, m: &ChessMove) -> bool {
+        self.is_zeroing(m) || self.reduces_castling_rights(m) || self.legal_ep().is_some()
+    }
+
+    /// python-chess `Board._transposition_key()` for this position.
+    pub fn transposition_key(&self) -> TranspositionKey {
+        let b = &self.board;
+        let (wks, wqs) = self.clean_castling_rights(Color::White);
+        let (bks, bqs) = self.clean_castling_rights(Color::Black);
+        TranspositionKey {
+            pawns: b.pieces(Piece::Pawn).0,
+            knights: b.pieces(Piece::Knight).0,
+            bishops: b.pieces(Piece::Bishop).0,
+            rooks: b.pieces(Piece::Rook).0,
+            queens: b.pieces(Piece::Queen).0,
+            kings: b.pieces(Piece::King).0,
+            white: b.color_combined(Color::White).0,
+            black: b.color_combined(Color::Black).0,
+            white_to_move: b.side_to_move() == Color::White,
+            castling: [wks, wqs, bks, bqs],
+            ep: self.legal_ep(),
+        }
     }
 }
 

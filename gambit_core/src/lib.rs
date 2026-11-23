@@ -17,7 +17,9 @@
 //! differential fuzzing gates.
 
 mod encoder;
+mod mcts;
 mod position;
+mod tree;
 
 use numpy::{ndarray::Array, IntoPyArray, PyArray1, PyArray2, PyArray3, PyArray4};
 use pyo3::exceptions::PyValueError;
@@ -242,6 +244,31 @@ fn outcome(fen: &str) -> PyResult<Option<&'static str>> {
     Ok(parse(fen)?.outcome())
 }
 
+/// `encode_batch_v2(fens, histories) -> (N, 104, 8, 8) float32` - bit-exact
+/// port of `training.encoder.encode_v2` over replayed histories (WP-B v2
+/// layout: 29-plane v1 prefix + 6 deep-history steps + repetition counts +
+/// side-to-move flag). Each `histories[i]` is the UCI move stack from the
+/// game root to `fens[i]`; rows of one game must be consecutive (see
+/// `encoder::encode_batch_v2_rows` for the replay/verification contract).
+#[pyfunction]
+fn encode_batch_v2<'py>(
+    py: Python<'py>,
+    fens: Vec<String>,
+    histories: Vec<Vec<String>>,
+) -> PyResult<Bound<'py, PyArray4<f32>>> {
+    let n = fens.len();
+    let rows: Vec<[f32; encoder::NUM_PLANES_V2 * 64]> = py
+        .detach(|| encoder::encode_batch_v2_rows(&fens, &histories))
+        .map_err(PyValueError::new_err)?;
+    let mut data = Vec::with_capacity(n * encoder::NUM_PLANES_V2 * 64);
+    for row in &rows {
+        data.extend_from_slice(row);
+    }
+    let arr = Array::from_shape_vec((n, encoder::NUM_PLANES_V2, 8, 8), data)
+        .expect("N*104*8*8 shape is exact");
+    Ok(arr.into_pyarray(py))
+}
+
 #[pymodule]
 fn gambit_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBoard>()?;
@@ -254,6 +281,7 @@ fn gambit_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(step_batch, m)?)?;
     m.add_function(wrap_pyfunction!(zobrist, m)?)?;
     m.add_function(wrap_pyfunction!(outcome, m)?)?;
+    m.add_function(wrap_pyfunction!(encode_batch_v2, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

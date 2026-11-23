@@ -63,9 +63,11 @@ def raw_fen(board: chess.Board) -> str:
     return " ".join(parts)
 
 
-def replay_history(board: chess.Board, moves: list[str]) -> list[chess.Board]:
-    """Most-recent-first history list (t-1, t-2, ...) for `board` from its UCI stack."""
-    replay = chess.Board(board.root().fen(en_passant="fen"))
+def replay_history(root_fen: str, moves: list[str]) -> list[chess.Board]:
+    """Most-recent-first history list (t-1, t-2, ...) for the position reached
+    by playing `moves` from `root_fen` (a FEN-constructed board has no move
+    stack, so the root must be passed explicitly)."""
+    replay = chess.Board(root_fen)
     chronological: list[chess.Board] = []
     for uci in moves:
         chronological.append(replay.copy())
@@ -337,17 +339,10 @@ class TestDifferentialFuzz:
         assert np.array_equal(gambit_core.legal_masks([fen])[0], legal_mask(board))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="WP-B rust mirror: gambit_core.encode_v2 lands with WP-F C4 "
-    "(branch feat/opt-f-rust-mcts); remove this marker when it does",
-)
 class TestEncoderV2RustMirror:
-    """Plane-for-plane rust mirror of `training.encoder.encode_v2` (WP-B).
-
-    xfails until WP-F C4 extends gambit_core/src/encoder.rs to the 104-plane
-    v2 layout — strict, so the suite turns red the moment the rust side lands
-    without this marker being removed.
+    """Plane-for-plane rust mirror of `training.encoder.encode_v2` (WP-B),
+    implemented by WP-F C4 in gambit_core/src/encoder.rs (>=100 positions,
+    strict array equality per row).
     """
 
     def test_encode_v2_plane_for_plane(self):
@@ -356,6 +351,7 @@ class TestEncoderV2RustMirror:
         rng = random.Random(20261122)
         fens: list[str] = []
         histories: list[list[str]] = []  # UCI move stacks (game history per fen)
+        roots: list[str] = []  # per-row game root (rows span 12 games)
         for game in range(12):
             start = WALK_STARTS[game % len(WALK_STARTS)]
             stack: list[str] = []
@@ -364,12 +360,13 @@ class TestEncoderV2RustMirror:
                     stack.append(uci)
                 fens.append(raw_fen(board))
                 histories.append(list(stack))
+                roots.append(start)
         assert len(fens) >= 100
         rust = gambit_core.encode_batch_v2(fens, histories)
         assert rust.shape == (len(fens), 104, 8, 8)
         for row, (fen, moves) in enumerate(zip(fens, histories)):
             board = chess.Board(fen)
-            history = replay_history(board, moves)
+            history = replay_history(roots[row], moves)
             expected = encode_v2(board, history)
             assert np.array_equal(rust[row], expected), f"v2 mirror divergence in {fen}"
 
