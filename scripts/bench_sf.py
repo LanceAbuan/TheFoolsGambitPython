@@ -35,13 +35,29 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Mirrors server/stockfish.py exactly (preset table + CONFIG_OPTIONS).
+# Mirrors server/stockfish.py presets plus extended rungs for the ladder.
+# Ordered weak -> strong. "max" = strongest SF we have (skill 20, deep but
+# one thread) — the anchor rung. The bot's Elo is only measurable where it
+# scores ~50% vs some rung, so the ladder must bracket the bot from below.
 SF_BINARY = Path("tools/stockfish.exe")
-PRESETS: dict[str, dict[str, int]] = {
-    "wandering": {"skill": 2, "depth": 1},
-    "curious": {"skill": 6, "depth": 4},
-    "enlightened": {"skill": 12, "depth": 12},
+# Node-limited rungs (fishtest-style): bounded per-move time, reproducible.
+# The server presets keep their depth semantics for humans; these rungs are
+# the bench's own reproducible ladder. Ordered weak -> strong; "max" anchors.
+RUNGS: dict[str, dict[str, int]] = {
+    "floor":       {"skill": 0,  "nodes": 100},
+    "wandering":   {"skill": 2,  "nodes": 300},
+    "s4":          {"skill": 4,  "nodes": 1_000},
+    "curious":     {"skill": 6,  "nodes": 5_000},
+    "s9":          {"skill": 9,  "nodes": 20_000},
+    "enlightened": {"skill": 12, "nodes": 80_000},
+    "s16":         {"skill": 16, "nodes": 300_000},
+    "max":         {"skill": 20, "nodes": 1_200_000},
 }
+PRESETS = RUNGS  # back-compat alias
+LADDER_ORDER = ["floor", "wandering", "s4", "curious", "s9", "enlightened", "s16", "max"]
+# Elo anchor assumption (documented, not measured): 1-thread 1.2M-node SF.
+ANCHOR_ELO = 3400.0
+CALIBRATION_PATH = Path("data/sf_calibration.json")
 SF_OPTIONS: dict[str, int] = {"Threads": 1, "Hash": 16}
 OPENING_PLIES = 6  # half-moves of seeded random play before the engines take over
 
@@ -100,7 +116,7 @@ def random_openings(count: int, seed: int) -> list[str]:
     return out
 
 
-def play_game(evaluator, opening_fen: str, nn_is_white: bool, engine, depth: int, sims: int, max_plies: int):
+def play_game(evaluator, opening_fen: str, nn_is_white: bool, engine, nodes: int, sims: int, max_plies: int):
     """One game: NN vs SF from `opening_fen`; mirrors ladder.play_match_game NN path."""
     import chess
     from training.selfplay import MCTSSearch, SearchConfig
@@ -116,7 +132,7 @@ def play_game(evaluator, opening_fen: str, nn_is_white: bool, engine, depth: int
         if nn_turn:
             move = search.search(board).chosen_move
         else:
-            move = engine.play(board, chess.engine.Limit(depth=depth)).move
+            move = engine.play(board, chess.engine.Limit(nodes=nodes)).move
         assert move is not None, "engine returned no move on a live position"
         board.push(move)
     result = board.result(claim_draw=True)
@@ -126,9 +142,12 @@ def play_game(evaluator, opening_fen: str, nn_is_white: bool, engine, depth: int
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Champion NN vs Stockfish presets benchmark")
+    parser = argparse.ArgumentParser(description="Champion NN vs Stockfish ladder benchmark")
+    parser.add_argument("--mode", default="bench", choices=["bench", "calibrate", "fit"],
+                        help="bench: NN vs rungs; calibrate: SF vs SF rung gaps; fit: Elo from results")
     parser.add_argument("--presets", default="wandering,curious,enlightened")
     parser.add_argument("--games-per-preset", type=int, default=12)
+    parser.add_argument("--games-per-pair", type=int, default=20, help="calibrate mode")
     parser.add_argument("--sims", type=int, default=128, help="NN simulations (gate uses 128)")
     parser.add_argument("--max-plies", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20261123)
@@ -139,6 +158,14 @@ def main() -> int:
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
 
+    if args.mode == "calibrate":
+        return run_calibrate(args)
+    if args.mode == "fit":
+        return run_fit(args)
+    return run_bench(args)
+
+
+def run_bench(args) -> int:
     import chess.engine
 
     ckpt = Path(args.checkpoint) if args.checkpoint else champion_checkpoint()
@@ -170,7 +197,7 @@ def main() -> int:
                 for nn_is_white in (True, False):
                     result, termination = play_game(
                         evaluator, opening_fen, nn_is_white, engine,
-                        preset["depth"], args.sims, args.max_plies,
+                        preset["nodes"], args.sims, args.max_plies,
                     )
                     if result == "1/2-1/2":
                         draws += 1
@@ -203,7 +230,7 @@ def main() -> int:
                 "max_plies": args.max_plies,
                 "preset": preset_name,
                 "skill": preset["skill"],
-                "depth": preset["depth"],
+                "nodes": preset["nodes"],
                 "games": played,
                 "wins": wins,
                 "draws": draws,
@@ -223,6 +250,124 @@ def main() -> int:
     finally:
         engine.quit()
         print(f"[bench] done in {round(time.time() - overall)}s -> {out_path}", flush=True)
+    return 0
+
+
+def _sf_move(engine, board, nodes):
+    import chess.engine
+
+    return engine.play(board, chess.engine.Limit(nodes=nodes)).move
+
+
+def sf_vs_sf(engines, white_rung, black_rung, opening_fen, max_plies):
+    """One SF-vs-SF game; result from white's perspective ('1-0'/'0-1'/'1/2-1/2')."""
+    import chess
+
+    board = chess.Board(fen=opening_fen)
+    for _ply in range(max_plies):
+        if board.is_game_over(claim_draw=True):
+            break
+        turn = white_rung if board.turn == chess.WHITE else black_rung
+        board.push(_sf_move(engines[turn], board, RUNGS[turn]["nodes"]))
+    result = board.result(claim_draw=True)
+    return "1/2-1/2" if result == "*" else result
+
+
+def elo_gap(score: float) -> float:
+    """Elo difference implied by a score in [0,1] (clamped away from 0/1)."""
+    import math
+
+    s = min(max(score, 0.02), 0.98)
+    return -400.0 * math.log10(1.0 / s - 1.0)
+
+
+def run_calibrate(args) -> int:
+    """Adjacent-rung SF-vs-SF matches -> per-rung Elo ratings anchored at the top."""
+    import chess.engine
+
+    if not SF_BINARY.is_file():
+        print(f"[cal] SF binary missing: {SF_BINARY}", file=sys.stderr)
+        return 1
+    engine = chess.engine.SimpleEngine.popen_uci(str(SF_BINARY))
+    pairs: list[dict] = []
+    try:
+        for lo, hi in zip(LADDER_ORDER, LADDER_ORDER[1:]):
+            n = args.games_per_pair + (args.games_per_pair % 2)
+            openings = random_openings(n // 2, args.seed + abs(hash(lo + ">" + hi)) % 1000)
+            wins_hi = draws = 0
+            for fen in openings:
+                for white, black in ((hi, lo), (lo, hi)):
+                    result = sf_vs_sf({white: engine, black: engine}, white, black, fen, args.max_plies)
+                    hi_won = (result == "1-0") == (white == hi)
+                    if result == "1/2-1/2":
+                        draws += 1
+                    elif hi_won:
+                        wins_hi += 1
+                    print(f"[cal] {hi} vs {lo}: {result}", flush=True)
+            played = wins_hi + draws + (n - wins_hi - draws)
+            score_hi = (wins_hi + 0.5 * draws) / played
+            gap = elo_gap(score_hi)  # hi above lo by `gap`
+            pairs.append({"lo": lo, "hi": hi, "games": played, "score_hi": round(score_hi, 4),
+                          "elo_gap": round(gap, 1)})
+            print(f"[cal] == {hi} - {lo}: score {score_hi:.3f} -> gap {gap:.0f}", flush=True)
+    finally:
+        engine.quit()
+
+    ratings: dict[str, float] = {LADDER_ORDER[-1]: ANCHOR_ELO}
+    for pair in reversed(pairs):
+        ratings[pair["lo"]] = ratings[pair["hi"]] - pair["elo_gap"]
+    payload = {
+        "kind": "sf_calibration", "ts": time.time(),
+        "iso": datetime.now(timezone.utc).isoformat(),
+        "anchor": {"rung": LADDER_ORDER[-1], "elo": ANCHOR_ELO},
+        "pairs": pairs, "ratings": {k: round(v, 1) for k, v in ratings.items()},
+    }
+    CALIBRATION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CALIBRATION_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"[cal] ratings: {payload['ratings']}", flush=True)
+    print(f"[cal] wrote {CALIBRATION_PATH}", flush=True)
+    return 0
+
+
+def run_fit(args) -> int:
+    """Fit the bot's Elo by MLE from sf_bench.jsonl results + ladder calibration."""
+    import math
+
+    cal = json.loads(CALIBRATION_PATH.read_text(encoding="utf-8"))
+    ratings = cal["ratings"]
+
+    games: list[tuple[float, float]] = []  # (score, opponent_rating)
+    for line in (ROOT / args.out).read_text(encoding="utf-8").splitlines():
+        rec = json.loads(line)
+        if rec.get("kind") != "sf_bench" or rec.get("preset") not in ratings:
+            continue
+        opp = ratings[rec["preset"]]
+        played = rec["games"]
+        if not played:
+            continue
+        games.append((rec["wins"] + 0.5 * rec["draws"], played, opp))
+
+    def neg_ll(r_bot: float) -> float:
+        ll = 0.0
+        for score_sum, n, opp in games:
+            expected = 1.0 / (1.0 + 10 ** ((opp - r_bot) / 400.0))
+            ll += score_sum * math.log(expected) + (n - score_sum) * math.log(1 - expected)
+        return -ll
+
+    r = 800.0
+    step = 50.0
+    for _ in range(60):
+        lo, hi = neg_ll(r - step), neg_ll(r + step)
+        if neg_ll(r) <= lo and neg_ll(r) <= hi:
+            break
+        r = r + step if hi < lo else r - step
+        step *= 0.98
+
+    print(f"[fit] games used: {len(games)} across rungs {sorted({g[2] for g in games})}")
+    print(f"[fit] fitted bot Elo: {r:.0f}  (anchor: {cal['anchor']['rung']} = {cal['anchor']['elo']})")
+    for score_sum, n, opp in games:
+        expected = 1.0 / (1.0 + 10 ** ((opp - r) / 400.0))
+        print(f"[fit]   vs opp {opp:.0f}: actual {score_sum}/{n} = {score_sum / n:.3f}, expected {expected:.3f}")
     return 0
 
 
