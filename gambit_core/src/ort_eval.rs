@@ -32,6 +32,10 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::encoder::{encode_planes_v2, encode_batch_v2_rows, NUM_PLANES_V2, POLICY_MOVES};
+
+/// The `(policy (N, 4672), value (N, 3))` pyarray pair `PyOrtModel::evaluate*`
+/// returns (factored for clippy::type_complexity).
+type PolicyValueArrays<'py> = (Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<f32>>);
 use crate::mcts::Evaluator;
 use crate::position::Position;
 
@@ -71,6 +75,11 @@ pub fn resolve_dylib() -> Option<PathBuf> {
         "libonnxruntime.dylib",
     ];
     for profile in profiles {
+        // The copied-dylib layout (WP-H H2): target/<profile>/onnxruntime.dll
+        let flat = root.join("target").join(profile.as_str()).join(names[0]);
+        if flat.is_file() {
+            return Some(flat);
+        }
         let build_dir = root.join("target").join(profile).join("build");
         let Ok(entries) = std::fs::read_dir(&build_dir) else {
             continue;
@@ -108,13 +117,36 @@ pub fn wdl_scalar(logits: &[f32; 3]) -> f32 {
 }
 
 fn wdl_to_scalar_batch(wdl: &[f32]) -> Vec<f32> {
-    wdl.chunks_exact(3)
+    wdl.as_chunks::<3>()
+        .0
+        .iter()
         .map(|c| wdl_scalar(&[c[0], c[1], c[2]]))
         .collect()
 }
 
 fn ort_err(context: &str, e: impl std::fmt::Display) -> String {
     format!("ort_eval {context}: {e}")
+}
+
+/// ONNX Runtime allows exactly ONE Environment per process; every
+/// `OrtModel::load` shares it (fresh SESSIONS are cheap and per-load, so H4
+/// weight hot-reload keeps working — only the API init + environment are
+/// process-global). The dylib is resolved once, on first use.
+fn shared_environment() -> Result<Environment, String> {
+    static ORT_ENVIRONMENT: std::sync::OnceLock<Result<Environment, String>> =
+        std::sync::OnceLock::new();
+    ORT_ENVIRONMENT
+        .get_or_init(|| {
+            let env_builder = match resolve_dylib() {
+                Some(path) => ort::init_from(&path).map_err(|e| ort_err("dylib load", e))?,
+                None => ort::init(),
+            };
+            env_builder
+                .with_name("gambit-core")
+                .build()
+                .map_err(|e| ort_err("environment", e))
+        })
+        .clone()
 }
 
 /// A loaded ONNX model + its execution-provider status.
@@ -130,21 +162,11 @@ impl OrtModel {
     /// a failed load/registration falls back to the CPU EP with a loud
     /// stderr note (the fallback is ALWAYS visible in the returned flag).
     pub fn load(model_path: &Path, prefer_cuda: bool) -> Result<OrtModel, String> {
-        // load-dynamic: load the dylib EXPLICITLY (resolved dylib path, or
-        // ort's default search when nothing is found) before any other ort
-        // call. `ORT_DYLIB_PATH` is respected inside `resolve_dylib`.
-        #[cfg(feature = "load-dynamic")]
-        let env_builder = match resolve_dylib() {
-            Some(path) => ort::init_from(&path).map_err(|e| ort_err("dylib load", e))?,
-            None => ort::init(),
-        };
-        #[cfg(not(feature = "load-dynamic"))]
-        let env_builder = ort::init();
-        let environment = env_builder
-            .with_name("gambit-core")
-            .build()
-            .map_err(|e| ort_err("environment", e))?;
-        let mut builder = Session::builder(&environment).map_err(|e| ort_err("builder", e))?;
+        // load-dynamic (always on for our `onnx` feature): the dylib + API
+        // init + environment are shared per process (see `shared_environment`);
+        // each load builds its own session on top.
+        let environment = shared_environment()?;
+        let builder = Session::builder(&environment).map_err(|e| ort_err("builder", e))?;
         let (builder, used_cuda) = configure_execution_providers(builder, prefer_cuda)?;
         let mut builder = builder
             .with_optimization_level(GraphOptimizationLevel::Level3)
@@ -342,7 +364,7 @@ impl PyOrtModel {
         &mut self,
         py: Python<'py>,
         planes: PyReadonlyArray4<f32>,
-    ) -> PyResult<(Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<f32>>)> {
+    ) -> PyResult<PolicyValueArrays<'py>> {
         let slice = planes
             .as_slice()
             .map_err(|_| PyValueError::new_err("planes must be C-contiguous"))?;
@@ -364,7 +386,7 @@ impl PyOrtModel {
         py: Python<'py>,
         fens: Vec<String>,
         histories: Vec<Vec<String>>,
-    ) -> PyResult<(Bound<'py, PyArray2<f32>>, Bound<'py, PyArray2<f32>>)> {
+    ) -> PyResult<PolicyValueArrays<'py>> {
         let (policy, value) = py
             .detach(|| self.inner.evaluate_v2_rows(&fens, &histories))
             .map_err(PyValueError::new_err)?;
@@ -385,7 +407,6 @@ pub fn ort_dylib_path() -> Option<String> {
 #[cfg(all(test, feature = "onnx"))]
 mod tests {
     use super::*;
-    use std::io::Read;
 
     /// Minimal .npz reader for the committed H1 fixture (np.savez writes
     /// ZIP_STORED members of raw little-endian .npy - no compression, no
@@ -444,8 +465,8 @@ mod tests {
             .collect();
         let data_start = 10 + header_len;
         let mut out = Vec::with_capacity((npy.len() - data_start) / 4);
-        for chunk in npy[data_start..].chunks_exact(4) {
-            out.push(f32::from_le_bytes(chunk.try_into().unwrap()));
+        for chunk in npy[data_start..].as_chunks::<4>().0 {
+            out.push(f32::from_le_bytes(*chunk));
         }
         (shape, out)
     }
