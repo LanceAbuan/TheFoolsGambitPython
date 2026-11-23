@@ -87,23 +87,9 @@ pub fn encode_planes(pos: &Position) -> [f32; NUM_PLANES * 64] {
     let flip = board.side_to_move() == Color::Black;
     let stm = board.side_to_move();
 
-    let write = |tensor: &mut [f32; NUM_PLANES * 64], plane: usize, sq_p: usize| {
-        let rank = sq_p / 8;
-        let file = sq_p % 8;
-        tensor[(plane * 8 + rank) * 8 + file] = 1.0;
-    };
-
     // Planes 0-11: current pieces. Piece index order P N B R Q K matches
     // training.encoder.PIECE_ORDER and the chess crate's Piece::to_index().
-    for piece in [Piece::Pawn, Piece::Knight, Piece::Bishop, Piece::Rook, Piece::Queen, Piece::King] {
-        let base = piece.to_index(); // Pawn=0 .. King=5
-        for sq in *board.pieces(piece) & *board.color_combined(stm) {
-            write(&mut tensor, base, to_perspective(sq.to_index(), flip));
-        }
-        for sq in *board.pieces(piece) & *board.color_combined(!stm) {
-            write(&mut tensor, 6 + base, to_perspective(sq.to_index(), flip));
-        }
-    }
+    write_piece_planes(pos, flip, stm, 0, &mut tensor);
 
     // Planes 12-23: history planes stay zero (no prev_board in this API).
 
@@ -117,11 +103,53 @@ pub fn encode_planes(pos: &Position) -> [f32; NUM_PLANES * 64] {
 
     // Plane 28: en-passant target square (mirrored like every other square).
     if let Some(ep) = pos.raw_ep() {
-        write(&mut tensor, 28, to_perspective(ep as usize, flip));
+        set_plane_square(&mut tensor, 28, to_perspective(ep as usize, flip));
     }
 
     tensor
 }
+
+#[inline]
+fn set_plane_square(tensor: &mut [f32], plane: usize, sq_p: usize) {
+    let rank = sq_p / 8;
+    let file = sq_p % 8;
+    tensor[(plane * 8 + rank) * 8 + file] = 1.0;
+}
+
+/// Write the 12 piece planes of `pos` at channel `offset`, classified by
+/// `our_color` into our (offset+0..6) and their (offset+6..12) blocks, in
+/// `flip` perspective. `our_color` is the CURRENT side to move — for history
+/// planes the source position may have the opposite mover, exactly like
+/// python `_piece_planes(board, flip, offset, tensor, our_color)`.
+fn write_piece_planes(pos: &Position, flip: bool, our_color: Color, offset: usize, tensor: &mut [f32]) {
+    let board = pos.board();
+    for piece in [Piece::Pawn, Piece::Knight, Piece::Bishop, Piece::Rook, Piece::Queen, Piece::King] {
+        let base = piece.to_index(); // Pawn=0 .. King=5
+        for sq in *board.pieces(piece) & *board.color_combined(our_color) {
+            set_plane_square(tensor, offset + base, to_perspective(sq.to_index(), flip));
+        }
+        for sq in *board.pieces(piece) & *board.color_combined(!our_color) {
+            set_plane_square(tensor, offset + 6 + base, to_perspective(sq.to_index(), flip));
+        }
+    }
+}
+
+// --- v2 encoder (WP-F C4): bit-exact port of `training.encoder.encode_v2` -----
+//
+// Authoritative WP-B layout (docs/OPTIMIZATION_PLAN.md §2): the v1 29 planes
+// are a strict prefix, then t-2..t-7 piece planes at 29-100 (block t-k at
+// 29 + 12*(k-2)), repetition-own 101, repetition-opp 102 (capped at 3,
+// normalized /3), side-to-move flag 103 (1.0 white — a global, never-mirrored
+// flag).
+//
+// History contract (`history[0]` = t-1, `history[1]` = t-2, ...):
+// - EMPTY history zeroes planes 12-23 AND 29-100 (v1 `prev_board=None`
+//   parity, ply-0 prefix rule).
+// - Non-empty history shorter than 7 pads missing deep slots with the
+//   standard initial position snapshot, written from the CURRENT side's
+//   perspective.
+// - Repetition counts run over the FULL history list (beyond the 7-step
+//   plane window), prior occurrences only (the current position is excluded).
 
 /// Queen-like plane for a (dr, df) delta in perspective coordinates.
 fn queen_like_plane(dr: i32, df: i32) -> usize {
@@ -178,6 +206,144 @@ pub fn encode_mask(pos: &Position) -> [f32; POLICY_MOVES] {
         mask[policy_index(pos, &m)] = 1.0;
     }
     mask
+}
+
+// --- v2 (WP-F C4) -------------------------------------------------------------
+
+pub const NUM_PLANES_V2: usize = 104;
+/// Deep-history window: t-2 .. t-7 (t0 and t-1 live in the v1 prefix).
+pub const V2_DEEP_HISTORY_STEPS: usize = 6;
+/// First deep-history channel (block t-k starts at 29 + 12*(k-2)).
+pub const V2_DEEP_HISTORY_OFFSET: usize = 29;
+pub const V2_REP_OWN_PLANE: usize = 101;
+pub const V2_REP_OPP_PLANE: usize = 102;
+pub const V2_SIDE_TO_MOVE_PLANE: usize = 103;
+/// Repetition counts saturate here, then normalize to 0-1 by /3.
+pub const V2_REP_CAP: f32 = 3.0;
+
+/// Bit-exact port of `training.encoder.encode_v2(board, history)`.
+///
+/// `history` is most-recent-first (`history[0]` = t-1, `history[1]` = t-2,
+/// ...) — the python function's `history` parameter, already materialized as
+/// positions. See the module block above for the layout and padding rules.
+pub fn encode_planes_v2(pos: &Position, history: &[Position]) -> [f32; NUM_PLANES_V2 * 64] {
+    let mut tensor = [0f32; NUM_PLANES_V2 * 64];
+    let board = pos.board();
+    let flip = board.side_to_move() == Color::Black;
+    let stm = board.side_to_move();
+
+    // Planes 0-28: bit-identical v1 prefix (t-1 from history[0], else zeros).
+    write_piece_planes(pos, flip, stm, 0, &mut tensor);
+    if let Some(prev) = history.first() {
+        write_piece_planes(prev, flip, stm, 12, &mut tensor);
+    }
+    let (our_ks, our_qs) = pos.clean_castling_rights(stm);
+    let (their_ks, their_qs) = pos.clean_castling_rights(!stm);
+    tensor[24 * 64] = our_ks as u8 as f32;
+    tensor[25 * 64] = our_qs as u8 as f32;
+    tensor[26 * 64] = their_ks as u8 as f32;
+    tensor[27 * 64] = their_qs as u8 as f32;
+    if let Some(ep) = pos.raw_ep() {
+        set_plane_square(&mut tensor, 28, to_perspective(ep as usize, flip));
+    }
+
+    // Planes 29-100: t-2..t-7 piece planes. Empty history -> all zero (v1
+    // parity); non-empty short history -> startpos-snapshot padding.
+    if !history.is_empty() {
+        let start = Position::starting();
+        for step in 0..V2_DEEP_HISTORY_STEPS {
+            let offset = V2_DEEP_HISTORY_OFFSET + step * 12;
+            match history.get(step + 1) {
+                Some(src) => write_piece_planes(src, flip, stm, offset, &mut tensor),
+                None => write_piece_planes(&start, flip, stm, offset, &mut tensor),
+            }
+        }
+    }
+
+    // Planes 101-102: repetition counts over the FULL history (prior
+    // occurrences only), capped at 3 and normalized to 0-1.
+    let cur_key = pos.transposition_key();
+    let opp_key = cur_key.opponent_turn_key();
+    let mut own = 0u32;
+    let mut opp = 0u32;
+    for prev in history {
+        let key = prev.transposition_key();
+        if key == cur_key {
+            own += 1;
+        } else if key == opp_key {
+            opp += 1;
+        }
+    }
+    tensor[V2_REP_OWN_PLANE * 64] = own.min(3) as f32 / V2_REP_CAP;
+    tensor[V2_REP_OPP_PLANE * 64] = opp.min(3) as f32 / V2_REP_CAP;
+
+    // Plane 103: side to move (global flag, not perspective-mirrored).
+    tensor[V2_SIDE_TO_MOVE_PLANE * 64] = u8::from(stm == Color::White) as f32;
+    tensor
+}
+
+/// Replay + encode a whole `(fen, uci-stack)` batch into (N, 104, 8, 8)
+/// blocks — the Rust side of the WP-B parity contract
+/// (`gambit_core.encode_batch_v2(fens, histories)`).
+///
+/// Each row carries the CURRENT position's FEN (raw en-passant field, i.e.
+/// python-chess `fen(en_passant="fen")`) and the full UCI move stack from the
+/// game root to this position. History positions are REPLAYED, because a
+/// position's past is not recoverable from the position alone (a captured
+/// piece's type is gone). Rows of one game must be consecutive and grow the
+/// stack by exactly one move; a row with an empty stack starts a new game and
+/// anchors the replay. Every row is verified — the replayed position must
+/// FEN-match the given FEN exactly (placement, turn, castling, raw ep,
+/// clocks) — and mismatches raise (ValueError on the python side).
+pub fn encode_batch_v2_rows(
+    fens: &[String],
+    stacks: &[Vec<String>],
+) -> Result<Vec<[f32; NUM_PLANES_V2 * 64]>, String> {
+    if fens.len() != stacks.len() {
+        return Err(format!(
+            "fens and histories must have the same length ({} != {})",
+            fens.len(),
+            stacks.len()
+        ));
+    }
+    let mut out = Vec::with_capacity(fens.len());
+    // Chronological replay of the current game: P_0..P_j with the move that
+    // produced each entry.
+    let mut replay: Vec<Position> = Vec::new();
+    for (row, (fen, stack)) in fens.iter().zip(stacks.iter()).enumerate() {
+        let bad = |msg: String| format!("encode_batch_v2 row {row}: {msg}");
+        let cur = Position::from_fen(fen).map_err(|e| bad(e))?;
+        if stack.is_empty() {
+            // New game anchor: the given FEN IS the root.
+            replay.clear();
+            replay.push(cur);
+        } else {
+            if replay.len() != stack.len() {
+                return Err(bad(format!(
+                    "history stack of {} moves does not continue the current game rows \
+                     (expected a row with an empty stack to anchor the game)",
+                    stack.len()
+                )));
+            }
+            let prev = replay[replay.len() - 1];
+            let next = prev
+                .make_move_uci(stack[stack.len() - 1].trim())
+                .map_err(|e| bad(e))?;
+            replay.push(next);
+        }
+        let replayed = replay[replay.len() - 1];
+        let replayed_fen = replayed.to_fen();
+        if replayed_fen != *fen {
+            return Err(bad(format!(
+                "history replay mismatch: replayed {replayed_fen} != given {fen}"
+            )));
+        }
+        // history = [P_{L-1}, ..., P_0] = python [t-1, t-2, ...].
+        let l = stack.len();
+        let history: Vec<Position> = replay[..l].iter().rev().copied().collect();
+        out.push(encode_planes_v2(&cur, &history));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
