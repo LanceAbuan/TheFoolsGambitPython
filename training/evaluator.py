@@ -35,6 +35,7 @@ import numpy as np
 import torch
 
 from .encoder import encode_batch
+from .model import value_head_scalar
 
 log = logging.getLogger(__name__)
 
@@ -171,9 +172,13 @@ def _model_forward(model: torch.nn.Module, device: torch.device | None) -> Forwa
         batch = torch.from_numpy(encode_batch(boards)).to(resolved)
         with torch.inference_mode():
             logits, values = model(batch)
+        # WP-C: a wdl value head returns (B, 3) logits; the queued evaluator
+        # fans out the derived scalar (p_win - p_loss) so the Evaluator
+        # protocol — and every MCTSSearch behind it — is unchanged.
+        scalar_values = value_head_scalar(values)
         return (
             logits.detach().cpu().numpy().astype(np.float32),
-            values.detach().cpu().numpy().astype(np.float32),
+            scalar_values.detach().cpu().numpy().astype(np.float32),
         )
 
     return forward

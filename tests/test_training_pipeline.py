@@ -318,3 +318,97 @@ class TestWPBEncoderStamping:
         assert stamped, "no iteration/arena journal events"
         # The smoke model is 29-plane: the honest stamp is v1.
         assert all(e["encoder_version"] == 1 for e in stamped)
+
+
+class TestWPCValueHead:
+    """WP-C: value_head config flag — checkpoint stamping + loader branching."""
+
+    WDL_TINY = ModelConfig(num_blocks=2, filters=32, value_head="wdl")
+
+    def test_checkpoint_metadata_stamps_value_head(self, tmp_path):
+        from training.pipeline import _save_checkpoint
+
+        scalar = GambitNet(MODEL_TINY)
+        ckpt = tmp_path / "scalar.pt"
+        _save_checkpoint(scalar, ckpt, "tag-scalar", "scratch", "run", 1, 1)
+        data = torch.load(ckpt, map_location="cpu", weights_only=False)
+        assert data["value_head"] == "scalar"
+        assert data["config"]["value_head"] == "scalar"
+
+        wdl = GambitNet(self.WDL_TINY)
+        ckpt2 = tmp_path / "wdl.pt"
+        _save_checkpoint(wdl, ckpt2, "tag-wdl", "scratch", "run", 2, 1)
+        data2 = torch.load(ckpt2, map_location="cpu", weights_only=False)
+        assert data2["value_head"] == "wdl"
+        assert data2["config"]["value_head"] == "wdl"
+
+    def test_champion_loader_branches_on_value_head(self, tmp_path):
+        """A wdl checkpoint rebuilds the 3-logit head; a pre-WP-C scalar
+        checkpoint (config dict WITHOUT the key) loads exactly as before."""
+        from training.pipeline import _load_champion, _save_checkpoint
+
+        device = torch.device("cpu")
+        wdl = GambitNet(self.WDL_TINY)
+        wdl_ckpt = tmp_path / "ckpt-000001-0001.pt"
+        _save_checkpoint(wdl, wdl_ckpt, "ckpt-000001-0001", "scratch", "run", 1, 1)
+        loaded = _load_champion(wdl_ckpt, device)
+        assert loaded is not None
+        model, tag, _elo = loaded
+        assert tag == "ckpt-000001-0001"
+        assert model.config.value_head == "wdl"
+        with torch.no_grad():
+            _policy, value = model(torch.randn(2, MODEL_TINY.in_channels, 8, 8))
+        assert value.shape == (2, 3)
+
+        # Pre-WP-C checkpoint: config dict lacks value_head entirely.
+        legacy_ckpt = tmp_path / "ckpt-000002-0002.pt"
+        torch.save(
+            {
+                "model_state": GambitNet(MODEL_TINY).state_dict(),
+                "config": {k: v for k, v in MODEL_TINY.to_dict().items() if k != "value_head"},
+                "tag": "ckpt-000002-0002",
+            },
+            legacy_ckpt,
+        )
+        loaded_legacy = _load_champion(legacy_ckpt, device)
+        assert loaded_legacy is not None
+        legacy_model = loaded_legacy[0]
+        assert legacy_model.config.value_head == "scalar"
+        with torch.no_grad():
+            _policy, scalar = legacy_model(torch.randn(2, MODEL_TINY.in_channels, 8, 8))
+        assert scalar.shape == (2,)
+
+    def test_wdl_model_trains_end_to_end(self, tmp_path):
+        """The optimize loop's wdl branch (cross-entropy, no MSE) runs the
+        full loop: checkpoints carry the wdl stamp, journal keeps value_loss."""
+        profile = TrainingProfile(
+            name="wdl-smoke",
+            model=self.WDL_TINY,
+            regime="scratch",
+            iterations=2,
+            games_per_iteration=2,
+            max_plies=6,
+            sims=2,
+            train_steps=2,
+            batch_size=8,
+            min_examples=4,
+            buffer_size=1000,
+            ladder=LadderConfig(arena=ArenaConfig(num_simulations=2, max_plies=6, games=2)),
+            seed=0,
+            snapshot_every_iteration=True,
+            parallel_games=1,
+        )
+        summary = run_training(profile, run_id="wdl-e2e", base_dir=tmp_path / "runs",
+                               data_dir=tmp_path / "data")
+        assert summary.iterations_completed == 2
+        ckpt = tmp_path / "runs" / "scratch" / "wdl-e2e" / "checkpoints" / f"{summary.checkpoints[0]}.pt"
+        data = torch.load(ckpt, map_location="cpu", weights_only=False)
+        assert data["value_head"] == "wdl"
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "data" / "train_log.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        iteration_events = [e for e in events if e["kind"] == "iteration"]
+        assert iteration_events
+        assert all(e["value_loss"] is not None for e in iteration_events)

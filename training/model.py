@@ -5,8 +5,10 @@ Kept importable for the legacy trainer/server; tainted by the §10 promotion
 bug (all promotions share one logit) — do not train new models with it.
 
 Model v2 (`GambitNet`, bottom of this file): AlphaZero-canonical 29-plane
-input, 73x64 = 4672 policy logits (real underpromotion planes), scalar value
-head, dataclass config, CPU + CUDA. This is the WP-C training model.
+input, 73x64 = 4672 policy logits (real underpromotion planes), dataclass
+config, CPU + CUDA. Value head is configurable (WP-C): "scalar" tanh by
+default, or "wdl" — 3 class logits whose softmax gives (p_win, p_draw,
+p_loss) from the side-to-move's perspective.
 
 Architecture (both): residual tower with batch norm, conv policy head, tanh
 value head.
@@ -14,6 +16,7 @@ value head.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import torch
 import torch.nn.functional as F
@@ -125,6 +128,12 @@ class ChessNet(nn.Module):
 
 NUM_POLICY_MOVES_V2 = 4672
 
+# WP-C: value-head layout. "scalar" is the pre-WP-C tanh head (every existing
+# checkpoint and test path); "wdl" is 3 logits (W, D, L) from the side-to-move's
+# perspective, trained with cross-entropy on the one-hot game result.
+ValueHeadKind = Literal["scalar", "wdl"]
+VALUE_HEAD_KINDS: tuple[str, ...] = ("scalar", "wdl")
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -137,18 +146,30 @@ class ModelConfig:
     policy_planes: int = 73
     value_channels: int = 8
     value_fc: int = 64
+    # WP-C: "scalar" (default) keeps the tanh value head bit-identical to the
+    # pre-WP-C model; "wdl" swaps the final linear for 3 class logits.
+    value_head: ValueHeadKind = "scalar"
 
     def __post_init__(self) -> None:
         if self.num_blocks < 1:
             raise ValueError("num_blocks must be >= 1")
         if self.filters < 1 or self.in_channels < 1:
             raise ValueError("filters and in_channels must be >= 1")
+        if self.value_head not in VALUE_HEAD_KINDS:
+            raise ValueError(
+                f"value_head must be one of {VALUE_HEAD_KINDS}, got {self.value_head!r}"
+            )
 
     @property
     def policy_moves(self) -> int:
         return self.policy_planes * 64
 
-    def to_dict(self) -> dict[str, int]:
+    @property
+    def value_outputs(self) -> int:
+        """Width of the value head's final linear: 3 for wdl, 1 for scalar."""
+        return 3 if self.value_head == "wdl" else 1
+
+    def to_dict(self) -> dict[str, object]:
         return {
             "in_channels": self.in_channels,
             "num_blocks": self.num_blocks,
@@ -157,11 +178,15 @@ class ModelConfig:
             "policy_planes": self.policy_planes,
             "value_channels": self.value_channels,
             "value_fc": self.value_fc,
+            # WP-C: stamped into checkpoints so the loader rebuilds the right
+            # head. Pre-WP-C checkpoints lack the key; `from_dict` defaults
+            # them to "scalar" exactly as before.
+            "value_head": self.value_head,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, int]) -> ModelConfig:
-        return cls(**data)
+    def from_dict(cls, data: dict[str, object]) -> ModelConfig:
+        return cls(**data)  # type: ignore[arg-type]
 
 
 # tiny: smoke/tests/CI — well under 1M params (~81k)
@@ -190,11 +215,17 @@ class ResidualBlockV2(nn.Module):
 
 
 class GambitNet(nn.Module):
-    """Model v2: 29-plane input, 73x64 policy head, scalar value head.
+    """Model v2: 29-plane input, 73x64 policy head, configurable value head.
 
     Policy logits are indexed in side-to-move perspective coordinates, exactly
     matching `training.encoder` (see encoder module docstring) — including real
     underpromotion planes, so the §10 promotion bug cannot reappear.
+
+    Value head (WP-C): `value_head="scalar"` (default) returns one tanh-bounded
+    value per position; `value_head="wdl"` returns 3 raw class logits
+    (W, D, L from the side-to-move's perspective). Search consumes the derived
+    scalar ``p_win − p_loss`` via `value_head_scalar` — the MCTS interface is
+    unchanged.
     """
 
     def __init__(self, config: ModelConfig = MODEL_TINY) -> None:
@@ -210,18 +241,22 @@ class GambitNet(nn.Module):
         )
         # Policy: 1x1 conv straight to 73 planes -> flatten to 4672 logits.
         self.policy_conv = nn.Conv2d(config.filters, config.policy_planes, 1, bias=True)
-        # Value: 1x1 conv -> MLP -> tanh scalar.
+        # Value: 1x1 conv -> MLP -> tanh scalar (or 3 W/D/L logits, WP-C).
         self.value_conv = nn.Conv2d(config.filters, config.value_channels, 1, bias=False)
         self.value_bn = nn.BatchNorm2d(config.value_channels)
         self.value_fc1 = nn.Linear(config.value_channels * 64, config.value_fc)
-        self.value_fc2 = nn.Linear(config.value_fc, 1)
+        self.value_fc2 = nn.Linear(config.value_fc, config.value_outputs)
 
     @property
     def device(self) -> torch.device:
         return next(self.parameters()).device
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """x: (B, C, 8, 8) -> (policy_logits (B, 4672), value (B,))."""
+        """x: (B, C, 8, 8) -> (policy_logits (B, 4672), value).
+
+        value is (B,) tanh scalars for `value_head="scalar"`, or (B, 3) raw
+        W/D/L logits for `value_head="wdl"` (side-to-move perspective).
+        """
         x = x.to(self.device)
         out = F.relu(self.input_bn(self.input_conv(x)))
         out = self.residual_tower(out)
@@ -232,11 +267,28 @@ class GambitNet(nn.Module):
         value = F.relu(self.value_bn(self.value_conv(out)))
         value = value.reshape(value.shape[0], -1)
         value = F.relu(self.value_fc1(value))
+        if self.config.value_head == "wdl":
+            return policy, self.value_fc2(value)
         value = torch.tanh(self.value_fc2(value)).squeeze(-1)
         return policy, value
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
+
+def value_head_scalar(values: torch.Tensor) -> torch.Tensor:
+    """Collapse a value-head output to the scalar MCTS consumes (WP-C).
+
+    scalar head: (B,) or (B, 1) tanh values -> (B,) unchanged. wdl head:
+    (B, 3) logits -> (B,) ``p_win − p_loss`` from the side-to-move's
+    perspective (softmax over the W/D/L logits). This is the ONLY place the
+    wdl->scalar derivation happens, so every evaluator that feeds
+    `MCTSSearch` keeps the exact pre-WP-C interface.
+    """
+    if values.dim() == 2 and values.shape[-1] == 3:
+        probs = torch.softmax(values, dim=-1)
+        return probs[..., 0] - probs[..., 2]
+    return values.reshape(values.shape[0], -1)[..., 0]
 
 
 def masked_policy_softmax(logits: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

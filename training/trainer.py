@@ -39,6 +39,36 @@ L2_REG = 1e-4
 LEARNING_RATE = 1e-3
 
 
+# ---------------------------------------------------------------------------
+# WP-C: W/D/L value-head loss. The scalar game result carried on every
+# self-play example ({1.0 win, 0.0 draw, -1.0 loss}, mover's perspective) maps
+# to a 3-way class index; the wdl head trains with cross-entropy on that
+# one-hot label (the MSE term is dropped for this head). The legacy Trainer
+# below stays scalar-only — these helpers serve the v2 pipeline's optimize
+# loop (training/pipeline.py) and the wdl unit tests.
+# ---------------------------------------------------------------------------
+
+
+def wdl_targets(values: torch.Tensor) -> torch.Tensor:
+    """Scalar game results -> W/D/L class indices (0=win, 1=draw, 2=loss).
+
+    `values`: (B,) floats from the mover's perspective. Exactly {-1, 0, 1} on
+    real self-play data; the thresholds tolerate float noise (fp16 buffer
+    round-trips) without ever mislabelling a draw as a decisive result.
+    """
+    targets = torch.ones(values.shape, dtype=torch.long, device=values.device)
+    return torch.where(
+        values > 0.5,
+        torch.zeros_like(targets),
+        torch.where(values < -0.5, torch.full_like(targets, 2), targets),
+    )
+
+
+def wdl_value_loss(pred_value_logits: torch.Tensor, values: torch.Tensor) -> torch.Tensor:
+    """Cross-entropy of (B, 3) W/D/L logits against scalar game results."""
+    return torch.nn.functional.cross_entropy(pred_value_logits, wdl_targets(values))
+
+
 def push_to_hf(model_path, metadata=None):
     if not HF_TOKEN:
         log.info("[HF] No token set - skipping push")
