@@ -115,6 +115,43 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 16 — 2026-11-24
+
+Sources: ONNX Runtime CUDA EP docs (1.27+ = CUDA 13 / cuDNN 9 by default,
+preload_dlls, cudnn_conv_use_max_workspace), onnxruntime-gpu 1.32 PyPI
+metadata, rembg #841 (silent CPU fallback), Nsight Systems mastery + PyTorch
+profiler decision tree, Ray "GPU starvation" data-ingest post.
+
+### Findings
+
+1. **The worker GPU path is one install away**: `onnxruntime-gpu` 1.27+ on
+   PyPI is built with CUDA 13.0 + cuDNN 9.x - exactly our torch 2.15+cu132
+   stack. Recipe: uninstall the CPU `onnxruntime` package (one runtime per
+   env), install `onnxruntime-gpu`, `import torch` before creating sessions
+   (or `onnxruntime.preload_dlls()`), then verify `session.get_providers()`
+   actually starts with `CUDAExecutionProvider` (creation is the only real
+   test - `get_available_providers()` lies).
+2. **Silent-fallback pitfall**: with mismatched CUDA/cuDNN the session lists
+   CUDA as available, fails to load `cublasLt64_13.dll`, and quietly runs on
+   CPU (rembg #841). Log requested vs actual EP at worker startup.
+3. Conv-heavy CUDA sessions want `cudnn_conv_use_max_workspace=1` (default
+   since 1.14; matters most for fp16 tensor-core algorithms).
+4. **Profiling decision tree**: steady-state step timing -> `torch.profiler`
+   -> if the host dominates, fix the input path; only then `nsys` (kernel
+   families); `ncu` last and scoped. Triage `nsys` GPU idle gaps: CPU busy =
+   starvation (for us: spool JSON/b64 decode = the WP12 case), both idle =
+   sync stall, cudaMalloc = allocator churn.
+5. Capture steady state only (`cudaProfilerStart` after warm-up) so cuDNN
+   autotune / compile does not pollute the trace.
+
+### Actionable queue additions
+- [ ] A60: CUDA EP switch - uninstall CPU ORT, install `onnxruntime-gpu`,
+      import torch first, verify session providers, enable max-workspace;
+      workers then use `prefer_cuda` (code path already exists)
+- [ ] A61: profiling playbook - nsys steady-state runs with gap triage;
+      `torch.profiler` before any kernel-level work
+- [ ] A62: workers log requested vs actual EP on hot-reload (no silent CPU)
+
 ## Cycle 15 — 2026-11-24
 
 Sources: "When, Where and Why to Average Weights?" (arXiv 2502.06761),
