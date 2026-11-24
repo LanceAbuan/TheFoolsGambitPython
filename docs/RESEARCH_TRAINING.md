@@ -120,6 +120,41 @@ A76/A78 folded into WP10/WP11 scope; A79 no action (BN fine).
 - SQLite/telemetry compression for long-run journals (ops)
 - ONNX fp16 export for play-server latency (with A60)
 
+## Cycle 31 — 2026-11-24
+
+Sources: "Reimagining Chess with AlphaZero" (opening-tree entropy, diverse
+self-play sampling), qwen-chess walkthrough ch8 (mode-collapse instrumentation:
+candidate mix + collapsed groups), engine-monoculture (collision entropy,
+effective lines), Chess DNA phase analysis (opening accuracy tracks skill;
+endgame accuracy is a decided-game illusion), phase-boundary conventions.
+
+### Findings
+
+1. **Opening diversity has a standard metric**: entropy over the first T plies
+   (H(T), effective lines = exp H); collision entropy is the robust estimator
+   at depth (unbiased, does not saturate). AlphaZero's variant studies had to
+   sample the first 20 plies proportionally to visit counts or self-play games
+   would be identical under fixed time controls.
+2. **Mode collapse is detectable by instrumentation, not vibes**: log the
+   candidate move-type mix and per-group variance; the qwen walkthrough caught
+   a wing-pawn fixation (51-66% of candidates) that the reward could not see.
+   For us the analogue is opening mix: one line of play = collapsed.
+3. **Phase accuracy is a trap**: opening accuracy climbs cleanly with skill
+   (70->84%), middlegame barely moves, and endgame accuracy is INFLATED for
+   weak players (decided games) - stronger players post more endgame-technique
+   mistakes because they reach contested endgames. Measure endgame strength by
+   mistake counts on contested positions, never raw accuracy.
+4. Phase boundaries (standard): opening = first 20 half-moves; endgame =
+   combined non-pawn material <= 26 points; else middlegame.
+
+### Actionable queue additions
+- [ ] A96: opening-diversity health metric - collision entropy over the first
+      12-20 plies of sampled self-play games (effective-lines), journaled;
+      alert if it collapses toward a single line
+- [ ] A97: phase-conditional SF-bench breakdown - outcomes split by phase
+      reached + endgame-technique mistake counts on contested positions
+      (report alongside the fitted Elo, never as raw phase accuracy)
+
 ## Cycle 30 — 2026-11-24
 
 Sources: RL live-monitor toolkits (rl-doctor detectors: entropy collapse with
