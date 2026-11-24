@@ -115,6 +115,42 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 17 — 2026-11-24
+
+Sources: AZ supplementary data (73×64 encoding), "Mastering Chess with a
+Transformer" (source-dest policy head + aux targets, arXiv 2409.12272),
+graph-chess paper (2410.23753), PyTorch mixed-precision guide, BFloat16 study
+(1905.12322), FP8/BF16 stability study (2405.18710), 16-bit training review.
+
+### Findings
+
+1. **Our 73×64 policy encoding is the AZ standard** and fine. Processor
+   alternatives worth one ablation at night-v3: (a) source→destination
+   factorized head (64×64 attention logits + promotion bias; Transformer
+   paper reports clean training without the 73-plane waste); (b) graph
+   encoding (only 1858 real edges). Keep 73×64 as the default.
+2. **Auxiliary heads accelerate convergence** (same paper: "several auxiliary
+   policy and value targets to increase convergence speed, following Go") -
+   independent confirmation for A41/A47/A54; add value-horizon aux targets
+   to the night-v3 scope.
+3. **TF32 is free on Ampere**: PyTorch enables TF32 for convolutions by
+   default but NOT matmuls - set `torch.backends.cuda.matmul.allow_tf32 =
+   True` for a cheap speedup with negligible accuracy loss. One-liner.
+4. **bf16 > fp16 for training**: bf16 has fp32's range (no grad scaler, no
+   BN-variance underflow); FP16 needs loss scaling and its Adam-eps quirks.
+   Keep fp32 master weights (AMP default) and BN stats in fp32.
+5. Stability caution: a controlled study saw ~10 % BF16 divergence at short
+   LLM runs vs TF32; conv chess nets are far less sensitive, but our WP5
+   health metrics are exactly the alarm to keep on if bf16 is enabled.
+
+### Actionable queue additions
+- [ ] A63: source→destination factorized policy head ablation (night-v3
+      experiment; 73×64 stays default)
+- [ ] A64: enable TF32 matmul in the pipeline (free Ampere speedup)
+- [ ] A65: bf16 autocast profile flag (fp32 master weights); A/B under the
+      health-metrics alarm before any default change
+- [ ] A66: aux value-horizon targets added to the night-v3 bundle scope
+
 ## Cycle 16 — 2026-11-24
 
 Sources: ONNX Runtime CUDA EP docs (1.27+ = CUDA 13 / cuDNN 9 by default,
