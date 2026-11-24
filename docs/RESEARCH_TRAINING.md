@@ -120,6 +120,39 @@ A76/A78 folded into WP10/WP11 scope; A79 no action (BN fine).
 - SQLite/telemetry compression for long-run journals (ops)
 - ONNX fp16 export for play-server latency (with A60)
 
+## Cycle 30 — 2026-11-24
+
+Sources: RL live-monitor toolkits (rl-doctor detectors: entropy collapse with
+projected arrival, robust-slope plateau, gradient pathology), Lc0 training-data
+adjudication/rescoring (DeepWiki), "Engineering Efficient Self-Play Chess"
+§4.2.5-4.2.6 (resignation calibration, ply-cap targets, late-game poisoning).
+
+### Findings
+
+1. **Robust statistics beat OLS for curve alerts**: Theil-Sen slopes +
+   Mann-Kendall significance survive outlier steps; conditional firing rules
+   (entropy falling while raw score rises = convergence, not collapse) are what
+   keep monitors from crying wolf.
+2. **Ply-cap targets matter**: the 2026 chess run compared target estimators at
+   capped positions - a dedicated FULL search at the actual cut position was
+   best (Brier 0.444 vs 0.491 material heuristic; fresh search beat adjacent
+   cheap-search values). We currently reuse the last in-game search value.
+3. **Never exclude late-game rows**: excluding the endgame tail to save compute
+   caused "late-game target poisoning" - conversion failures fed more capped
+   games, a self-reinforcing loop (27-32 % of games capped, 36 % rows inherited
+   cutoff targets). We admit all plies - already compliant.
+4. Lc0's resignation calibration (20 % never-resign continuation games,
+   false-resign UCB <= 2.5 %) is the principled way to tune soft resign; our
+   soft_resign flag is not yet calibrated that way.
+
+### Actionable queue additions
+- [ ] A93: capped-game target = dedicated full search at the cut position
+      (rust worker; replaces the reused in-game root value)
+- [ ] A94: soft-resign calibration - log hypothetical-trigger outcomes on
+      continuation games, require a low false-resign rate before enabling
+- [ ] A95: optional robust plateau flag (Theil-Sen + conditional rules) on
+      policy_ce/gate score in the health heartbeat
+
 ## Cycle 29 — 2026-11-24
 
 Sources: Lc0 issue #67 (full temperature setting: tau 0.25 sweet spot for
