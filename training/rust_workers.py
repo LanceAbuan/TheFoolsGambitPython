@@ -155,6 +155,7 @@ def game_record_from_rust(
                 "policy_b64": _b64_encode_f32(np.asarray(ex["policy"])),
                 "value": float(ex["value"]),
                 "policy_masked": bool(ex.get("policy_masked", False)),
+                "root_value": float(ex.get("root_value", 0.0)),
             }
             for ex in game["examples"]
         ],
@@ -196,7 +197,7 @@ def validate_game_record(record: dict[str, Any]) -> None:
         raise RecordError("game recorded zero plies")
     for i, ex in enumerate(examples):
         required = {"board_tensor_b64", "policy_b64", "value"}
-        allowed = required | {"policy_masked"}
+        allowed = required | {"policy_masked", "root_value"}
         if not isinstance(ex, dict) or not required <= set(ex) or not set(ex) <= allowed:
             raise RecordError(
                 f"examples[{i}] keys must be board_tensor_b64/policy_b64/value"
@@ -204,6 +205,10 @@ def validate_game_record(record: dict[str, Any]) -> None:
             )
         if "policy_masked" in ex and not isinstance(ex["policy_masked"], bool):
             raise RecordError(f"examples[{i}].policy_masked must be a bool")
+        if "root_value" in ex:
+            rv = ex["root_value"]
+            if not isinstance(rv, (int, float)) or not (-1.0 <= float(rv) <= 1.0):
+                raise RecordError(f"examples[{i}].root_value must be in [-1, 1]")
         value = ex["value"]
         if not isinstance(value, (int, float)) or float(value) not in (-1.0, 0.0, 1.0):
             raise RecordError(f"examples[{i}].value must be -1.0/0.0/1.0, got {value!r}")

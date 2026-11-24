@@ -69,6 +69,10 @@ pub struct SelfPlayParams {
     pub pcr_p_full: f64,
     /// WP2: simulations for the cheap (value-only) PCR searches.
     pub pcr_fast_sims: u32,
+    /// WP3: soft resignation — when the mover's estimate stays <5% for 5
+    /// consecutive plies, shrink the remaining per-ply search budget toward
+    /// `pcr_fast_sims`. Never resigns; keeps targets unbiased.
+    pub soft_resign: bool,
 }
 
 impl Default for SelfPlayParams {
@@ -85,6 +89,8 @@ impl Default for SelfPlayParams {
             // WP2: PCR off by default (old behavior bit-identical).
             pcr_p_full: 0.0,
             pcr_fast_sims: 100,
+            // WP3: soft resignation off by default.
+            soft_resign: false,
         }
     }
 }
@@ -102,6 +108,10 @@ pub struct SelfPlayExample {
     /// WP2: true when this row came from a cheap PCR search and must not
     /// contribute to the policy loss (policy is all zeros; value still trains).
     pub policy_masked: bool,
+    /// WP3: the search's own root value for this ply (mover perspective).
+    /// Completed games train on z (outcome); deblunder uses this to re-label
+    /// rows where a low-visit move diverged from the search's estimate.
+    pub root_value: f32,
 }
 
 /// One finished game — the rust mirror of python `SelfPlayResult`.
@@ -314,11 +324,16 @@ pub fn play_game(
     let mut rng = StdRng::seed_from_u64(params.seed);
     let mut history = GameHistory::empty();
     let mut cur = *opening_root;
-    let mut pending: Vec<([f32; NUM_PLANES_V2 * 64], Vec<f32>, bool, bool)> = Vec::new();
+    let mut pending: Vec<([f32; NUM_PLANES_V2 * 64], Vec<f32>, bool, bool, f32)> = Vec::new();
     let mut sans: Vec<String> = Vec::new();
     let mut ucis: Vec<String> = Vec::new();
     let mut fens: Vec<String> = Vec::new();
     let mut termination = "max-plies";
+    // WP3 soft resignation: consecutive plies where the mover is effectively
+    // lost; once triggered, the remaining per-ply budget shrinks toward the
+    // fast-search floor (no resignation: targets stay unbiased).
+    let mut losing_streak: u32 = 0;
+    let mut sim_scale: f64 = 1.0;
 
     for ply in 0..params.max_plies {
         if mcts::is_game_over_claim_draw(&cur, &history) {
@@ -332,6 +347,8 @@ pub fn play_game(
         // always run full, so opening targets stay high quality.
         let full = params.pcr_p_full <= 0.0 || ply < 8 || rng.gen::<f64>() < params.pcr_p_full;
         let sims = if full { params.num_simulations } else { params.pcr_fast_sims.max(1) };
+        // WP3: apply the soft-resignation budget scale (1.0 when idle).
+        let sims = ((sims as f64) * sim_scale).round().max(1.0) as u32;
 
         // Root-noise-on search with a fresh Dirichlet seed per ply drawn from
         // the single game stream (python passes one rng to the search).
@@ -345,6 +362,19 @@ pub fn play_game(
         };
         let result = mcts::search(&cur, &history, &cfg, evaluator);
         let legal_pairs = cur.legal_moves_python_order();
+
+        // WP3: update the soft-resignation streak from this ply's estimate.
+        if params.soft_resign {
+            let win_prob = ((result.root_value + 1.0) / 2.0).clamp(0.0, 1.0);
+            if win_prob < 0.05 {
+                losing_streak += 1;
+            } else {
+                losing_streak = 0;
+            }
+            if losing_streak >= 5 {
+                sim_scale = (win_prob / 0.05).clamp(0.1, 1.0);
+            }
+        }
 
         // Policy target: normalized visit counts (python
         // `policy = basis / total if total > 0 else np.zeros_like(basis)`).
@@ -368,6 +398,7 @@ pub fn play_game(
             policy,
             cur.side_to_move() == Color::White,
             !full,
+            result.root_value as f32,
         ));
 
         // Temperature schedule + visit-count sampling (python
@@ -395,15 +426,26 @@ pub fn play_game(
     }
 
     let ow = outcome_white(&cur);
+    // WP3: ply-capped games must NOT be labelled as draws. Use each ply's own
+    // search root value (soft-Z: the MCTS estimate from the mover's
+    // perspective) instead of the synthetic draw outcome. Completed games keep
+    // the game-outcome (z) target, bit-identical to before.
+    let capped = termination == "max-plies";
     let examples: Vec<SelfPlayExample> = pending
         .into_iter()
-        .map(|(planes, policy, white, masked)| {
-            let value = if white { ow } else { -ow };
+        .map(|(planes, policy, white, masked, root_value)| {
+            let value: f32 = if capped {
+                root_value
+            } else {
+                let z = if white { ow } else { -ow };
+                z as f32
+            };
             SelfPlayExample {
                 planes,
                 policy,
                 value: value as f32,
                 policy_masked: masked,
+                root_value,
             }
         })
         .collect();
@@ -558,6 +600,43 @@ mod tests {
 
     /// A capped game: draw result, 'max-plies' termination, one example per
     /// played ply, zero values, normalized policies, legal move chain.
+    #[test]
+    fn capped_games_use_search_values_not_draws() {
+        /// WP3 soft-Z: a ply-capped game must train on each ply's search
+        /// estimate, never the synthetic draw outcome.
+        struct ValueEvaluator {
+            v: f32,
+        }
+        impl Evaluator for ValueEvaluator {
+            fn evaluate(&mut self, batch: &[Position]) -> (Vec<f32>, Vec<f32>) {
+                (
+                    vec![0f32; batch.len() * POLICY_MOVES],
+                    vec![self.v; batch.len()],
+                )
+            }
+        }
+        let root = Position::starting();
+        let params = SelfPlayParams {
+            seed: 4,
+            num_simulations: 8,
+            max_plies: 6,
+            temperature: 0.0,
+            temperature_plies: 30,
+            ..SelfPlayParams::default()
+        };
+        let game = play_game(&mut ValueEvaluator { v: 0.3 }, &root, &params);
+        assert_eq!(game.termination, "max-plies");
+        assert_eq!(game.result, "1/2-1/2");
+        assert_eq!(game.examples.len(), 6);
+        for ex in &game.examples {
+            assert!(
+                ex.value.abs() > 0.05,
+                "capped rows must carry the search value, got {}",
+                ex.value
+            );
+        }
+    }
+
     #[test]
     fn playout_cap_randomization_masks_fast_rows() {
         let root = Position::starting();
