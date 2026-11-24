@@ -27,6 +27,7 @@ import { useWatchFeed, type JournalEntry, type LiveSlot } from '../lib/hooks/use
 import { games as fetchGames, type ArenaResult } from '../lib/api/http';
 import {
   chartPoints,
+  ckptExplain,
   clock,
   fmtWhen,
   pct,
@@ -145,7 +146,7 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
         {value}
       </Text>
       {hint ? (
-        <Text fz="xs" c="dimmed" lineClamp={1}>
+        <Text fz="xs" c="dimmed" lineClamp={2}>
           {hint}
         </Text>
       ) : null}
@@ -489,13 +490,13 @@ export function Watch() {
               <Stat
                 label="Champion"
                 value={champion ? shortCkpt(champion) : '—'}
-                hint="current title holder"
+                hint={champion ? ckptExplain(champion) : 'current title holder'}
               />
-              <Stat label="Estimated Elo" value={elo !== null ? String(elo) : '—'} hint="arena ladder" />
+              <Stat label="Estimated Elo" value={elo !== null ? String(elo) : '—'} hint="champion's rating — moves on promotion" />
               <Stat
                 label="Gate"
                 value={gate ? 'Title match' : 'Idle'}
-                hint={gateScore ? `last result ${gateScore}` : 'no gates yet'}
+                hint={gateScore ? `last result ${gateScore} (needs ≥0.55)` : 'no gates yet'}
               />
               <Stat
                 label="Self-play games"
@@ -514,6 +515,11 @@ export function Watch() {
                 hint="lower is better"
               />
             </SimpleGrid>
+            <Text fz="xs" c="dimmed" mt="md" lh={1.5}>
+              Checkpoint names encode progress — <span className="mono">1728·864</span> means the net
+              had trained 1,728 steps after playing 864 self-play games. The champion is whichever
+              checkpoint last won a title match; challengers replace it only by beating it at the gate.
+            </Text>
             {metricsError ? (
               <Text fz="xs" c="orange" mt="md">
                 Metrics REST fallback failed — showing the last socket snapshot.
@@ -561,6 +567,12 @@ export function Watch() {
                 {arena ? `${arena.length} matches` : arenaError ? 'unavailable' : 'loading'}
               </Text>
             </Group>
+
+            <Text fz="xs" c="dimmed" mb={10} lh={1.5}>
+              Gate matches: the newest checkpoint challenges the champion in a short match.
+              <b> 8W 2D 6L</b> = 8 wins, 2 draws, 6 losses. A strong enough score promotes the
+              challenger; otherwise the champion holds.
+            </Text>
 
             {arenaError ? (
               <Text fz="xs" c="dimmed">
