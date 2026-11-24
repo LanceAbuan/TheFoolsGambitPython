@@ -27,6 +27,16 @@ export function shortCkpt(tag: string | null | undefined): string {
   return m ? `${m[1]}·${m[2]}` : tag;
 }
 
+/** `ckpt-001728-0864` → "1,728 training steps · 864 self-play games". */
+export function ckptExplain(tag: string | null | undefined): string {
+  if (!tag) return '—';
+  const m = /^ckpt-0*(\d+)-0*(\d+)$/.exec(tag);
+  if (!m) return tag;
+  const steps = Number(m[1]).toLocaleString('en-US');
+  const games = Number(m[2]).toLocaleString('en-US');
+  return `${steps} training steps · ${games} self-play games`;
+}
+
 /** Checkpoint sequence number for sorting (`ckpt-000704-0352` → 704). */
 export function ckptOrdinal(tag: string): number {
   const m = /(\d+)/.exec(tag);
