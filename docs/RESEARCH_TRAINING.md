@@ -6,6 +6,47 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 4 — 2026-11-24
+
+Sources: Fishtest math (pentanomial + GSPRT), chessprogramming SPRT/Match
+Statistics, "Measuring Bot Strength" (gate design), NNUE docs (flip/rotate,
+horizontal mirroring), reckless-nnue (+14 Elo mirroring, only past 1.4B pos).
+
+### Findings
+
+1. **Our 16-game gate is statistically blind to real improvement**: detecting
+   a true 55% score needs ~785 games (95% conf, 80% power); 52% needs ~4,900.
+   A 16-game gate at 0.55 can only see ~massive jumps — and with draw-heavy
+   bots it almost never fires. This is *why* the Elo sits still: not a bug,
+   the gate's sample size. → Raising gate games (now affordable at 8-way
+   parallel) and/or gating every N iterations is the honest fix.
+2. **Two-stage gates** (screen cheap → confirm on FRESH openings with a
+   Wilson 95% lower bound > 0.5) cut false promotions from ~18% to <0.5%
+   while keeping most real gains. Better than one long match.
+3. **Pentanomial accounting**: paired color games on the same opening are
+   correlated; the trinomial model overestimates variance. Fishtest uses
+   pentanomial (LL/LD/WL+DD/WD/WW) — our gate already pairs colors, so the
+   stats should switch to pentanomial for correct error bars.
+4. **SPRT decides, it does not measure** — stopped tests read high (measured
+   +124 vs +102 fixed-N on identical walk). Any Elo magnitude we quote must
+   come from a fixed-N run; keep SPRT for go/no-go only.
+5. **Chess symmetry**: color-flip (vertical mirror + color swap + stm) is a
+   valid symmetry and standard augmentation (+14 Elo NNUE, but only past
+   ~1.4B positions). Our encoder is side-to-move-relative, so this symmetry
+   is **already structural** — no augmentation needed. Horizontal king
+   mirroring does not apply to the policy head; not worth it at our scale.
+
+### Actionable queue additions
+- [ ] A17: gate statistics overhaul — two-stage gate (screen 64 @ ≥0.52 →
+      confirm on fresh openings, Wilson lower bound > 0.5) + pentanomial
+      variance; keeps false promotions near zero and catches real gains
+- [ ] A18: gate compute budget — 64+ games per gate at 8-way parallel and/or
+      gate every N iterations (same games/hour, honest statistics)
+- [ ] A19: note in docs — the 0.55 single-stage 16-game gate was the "why no
+      promotions" answer; replace per A17
+- [ ] A20: record per-gate pentanomial counts + fixed-N point estimate in the
+      ledger (SPRT only for the decision)
+
 ## Cycle 3 — 2026-11-24
 
 Sources: "Engineering Efficient Self-Play Chess" (arXiv 2609.37447, 2026),
