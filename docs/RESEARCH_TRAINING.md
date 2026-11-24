@@ -115,6 +115,42 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 26 — 2026-11-24
+
+Sources: "Taming Stale Data" (off-policy RL for LLMs, 2025: staleness S_k must
+be controlled on the sampling side; version windows), hexchess-zero KataGo-
+style sublinear replay window, "Improved RL with Curriculum" (1903.12328:
+end-game-first curriculum), M2CTS phase-experts (2401.16852), Syzygy SFT slice
+(reachability caveat).
+
+### Findings
+
+1. **Version staleness must be bounded on the SAMPLING side** (optimization-
+   side clipping cannot fix stale data): the theory prescribes a version
+   window - only data from the most recent W policy versions. Our trainer
+   already drains per iteration (observed mixing [v768, v864] = one-version
+   spread), so we are inside the safe regime - but nothing BOUNDS it; a
+   slow/stalled worker could inject much older games.
+2. KataGo-style **sublinear replay windows** (grow with total volume, not
+   linearly) give "fresh early, diverse later" with sublinear cost - our
+   fixed 100k is a simple version of this; fine for now.
+3. **End-game-first curriculum** (discard early-game rows early, expand over
+   time) learns faster in the early phase (1903.12328) - a candidate
+   experiment for the next generation, not mid-run; hand-crafted profiles are
+   suboptimal and too-fast/too-slow both hurt.
+4. TB endgame data only pays where reachable: a supervised corpus with TB
+   rows gained little until general strength pushed games deep enough. Our
+   WP8 override applies to the spans that occur - correct by construction.
+5. M2CTS phase experts (+122 Elo supervised) - noted as a far-future
+   architecture idea, out of scope at 1.3M params.
+
+### Actionable queue additions
+- [ ] A86: staleness bound at drain - accept spool games only from the last
+      K weight versions (K=2), log rejected versions; prevents a slow worker
+      from injecting arbitrarily old policies
+- [ ] A87: end-game-first curriculum experiment (generation N+1): row-prefix
+      trimming schedule, measure vs baseline at matched compute
+
 ## Cycle 25 — 2026-11-24
 
 Sources: Ampere undervolt/power-limit guides (Chaos, igorslab, bigiron 24/7
