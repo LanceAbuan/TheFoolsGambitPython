@@ -115,6 +115,39 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 24 — 2026-11-24
+
+Sources: chessprogramming Opening Book / Polyglot, Lc0 mailing list on
+precomputed books, Chess SE (book gains: SF +50 Elo Cerebellum; 1500-1700
+engine "sometimes wins vs 2300" with a book), chessprogramming Time
+Management, "Finding the Time to Think" (2606.26463: state-dependent
+planning budgets beat fixed budgets).
+
+### Findings
+
+1. **Books help weak engines far more than strong ones** (the 1500-1700
+   engine with a book reaching 2300-level occasionally; SF gains only ~50).
+   Our bot (~900 absolute, weak) is in the high-return zone: a modest
+   curated opening book at PLAY time would avoid early blunders, reach
+   playable middlegames, and add variety vs human friends.
+2. **Books are for play, not training**: self-play must explore its own
+   openings (book use would bias exploration and flatten diversity). Lc0 lore
+   also notes precomputed neural books go stale every net version - so keep
+   ours small, human-derived (Lichess masters), and generated once.
+3. Polyglot `.bin` is the standard interoperable format (weighted random
+   selection); a JSON position→moves map is the simpler zero-dependency
+   alternative for a server-integrated book.
+4. **Time budgets**: fixed nodes/sims is fine for human play (128 sims ≈
+   1-3 s); the real-time RL study shows state-dependent compute allocation
+   beats fixed budgets (0.58 vs 0.43 expected score in Speed Hex) - a future
+   play-server nicety, not a training concern.
+
+### Actionable queue additions
+- [ ] A82: play-server opening book - small Lichess-masters-derived book
+      (Polyglot or JSON), weighted-random moves, PLAY ONLY (never self-play)
+- [ ] A83: play-server budget policy - keep fixed 128 sims now; TB probe
+      (A80) handles endgames; state-dependent budgeting is a later nicety
+
 ## Cycle 23 — 2026-11-24
 
 Sources: Lc0 classic search TB integration (root_probe/DTZ, in-search WDL
