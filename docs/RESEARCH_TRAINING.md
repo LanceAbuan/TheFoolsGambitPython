@@ -115,6 +115,38 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 22 — 2026-11-24
+
+Sources: Group Normalization (1803.08494, BN small-batch degradation),
+"Rethinking Batch in BatchNorm" (2105.07576: PreciseBN, RL moment staleness,
+ELF OpenGO), Unified Normalization study (NeurIPS 2021), weight-decay pieces
+(torchvision recipes, "Four Things..." 1906.03548, AdamW 1711.05101, d2l
+AdamW).
+
+### Findings
+
+1. **BatchNorm stays the right choice at our batch 512**; GN's advantage only
+   appears at batch 2-8 (BN error 34.7 % vs GN 24.1 % at batch 2). Our eval
+   paths (gates, export) use frozen running stats, so small-batch inference
+   is safe. Revisit GN only if training batch drops below ~32.
+2. **RL has a BN-specific hazard: moment staleness** during training
+   (ELF OpenGO used PreciseBN). Our EMA shadow covers ALL floating tensors -
+   including BN running stats - and gate champions are frozen snapshots, so
+   the exposure is low; noted for the record.
+3. **If AdamW is enabled (WP10), decay must be grouped**: decay conv/linear
+   weights only (2-D+), exempt BN gamma/beta and biases. With BN, decay acts
+   mainly through the effective learning rate - tune it WITH the LR, and
+   remember PyTorch's AdamW multiplies wd by the (scheduled) LR.
+4. Our current pipeline loss has no explicit L2/weight decay (WDL branch =
+   policy CE + value CE); the legacy trainer's all-parameter L2 does not
+   touch the v2 loop - so the WDL collapse is not a decay artifact.
+
+### Actionable queue additions
+- [ ] A78: parameter groups when AdamW lands - decay 2-D+ weights only;
+      BN gamma/beta and biases exempt; document the LR x wd interaction
+- [ ] A79: no normalization switch needed at batch 512; keep BN, monitor
+      running-stat freshness via EMA shadow (already covered)
+
 ## Cycle 21 — 2026-11-24
 
 Sources: Neural Collapse under class imbalance (2309.09725, 2401.02058),
