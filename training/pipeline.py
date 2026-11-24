@@ -232,6 +232,10 @@ NIGHT_V2_PROFILE = replace(
     # WP-F C5: the flag is wired end-to-end; the default stays python
     # (flipping is a separate, measured decision after the C6 gates).
     search_backend="python",
+    # WP-H flip (2026-11-24, user go): self-play games come from the Rust
+    # worker fleet via the spool (2.6x games/hr measured); the arena/gate
+    # stays on the python search path per the flip procedure.
+    selfplay_backend="rust_workers",
 )
 
 
