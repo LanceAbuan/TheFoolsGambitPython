@@ -120,6 +120,38 @@ A76/A78 folded into WP10/WP11 scope; A79 no action (BN fine).
 - SQLite/telemetry compression for long-run journals (ops)
 - ONNX fp16 export for play-server latency (with A60)
 
+## Cycle 29 — 2026-11-24
+
+Sources: Lc0 issue #67 (full temperature setting: tau 0.25 sweet spot for
+games vs humans), Blundermind bot reference (Maia temperature presets, 70%
+sampled / 30% top-move split), SQLite WAL docs + telemetry practice posts
+(batched ingest, autocheckpoint, TRUNCATE, retention/downsampling).
+
+### Findings
+
+1. **For playing humans, a small temperature (~0.25-0.5) is the sweet spot**:
+   tau->0 is strongest but robotic/deterministic (same game every time);
+   tau=1 blunders too often (6% blunder-pick vs 0.006% at 0.25). Mixing
+   presets (e.g. 70% sampled / 30% argmax) is common practice in human-facing
+   bots. Our play server currently plays argmax at 128 sims - strong but
+   predictable.
+2. With temperature applied to MCTS visits (N^(1/tau)), the top
+   nearly-equal moves keep their variety while low-visit (blunder) moves stay
+   effectively unreachable - cheap variety without strength loss.
+3. **SQLite telemetry is optional, not urgent**: WAL mode gives O(1)
+   append-only writes with concurrent readers, but needs bounded
+   autocheckpoint (~1000 pages), batched inserts (500 rows / 2 s), and a
+   retention/downsampling pass to keep disk sane. JSONL append-only is the
+   simpler correct form for our single-writer journal; migrate only if
+   multi-week analytics queries become painful.
+
+### Actionable queue additions
+- [ ] A91: play-server variety - small root temperature (0.3-0.5) or
+      "random move within a small eval window"; keeps near-full strength,
+      removes the robotic determinism for human opponents
+- [ ] A92: journal -> SQLite telemetry (WAL, batched inserts, retention)
+      only when analytics queries justify it - recorded as low priority
+
 ## Cycle 28 — 2026-11-24
 
 Sources: "Beyond Search-Imitation" §2 (entropy-adaptive temperature, WDL
