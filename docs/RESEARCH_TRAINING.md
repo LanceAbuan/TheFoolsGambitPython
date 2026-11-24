@@ -6,6 +6,46 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 3 — 2026-11-24
+
+Sources: "Engineering Efficient Self-Play Chess" (arXiv 2609.37447, 2026),
+KataGo Methods (policy-surprise), RGSC paper details, PER-for-Expert-Iteration
+(IEEE CoG 2020), ort-superserve / ort docs, onnxruntime issue #20494.
+
+### Findings
+
+1. **Policy-surprise sampling** (KataGo + the 2026 chess self-play paper):
+   sample positions by how much search's policy disagrees with the net's prior
+   — ~70 % priority + 30 % uniform floor, priority via *sampling frequency*
+   (loss weights stay 1.0). Big sample-efficiency lever, cheap to compute at
+   admission time from data we already store.
+2. **Sparse policy rows**: the 2026 paper stores only the top ≤60 actions per
+   position (records discarded visit mass). Ours stores the full 4672-float
+   vector (~18 KB/row) → 36× memory saving, letting the same RAM hold a far
+   larger, older replay window.
+3. **Capped games must NOT get draw targets**: the reference implementation
+   uses the *final search value estimate* as the outcome substitute for
+   ply-capped games. → **We currently record 1/2-1/2 for every 200-ply cap
+   (`game_outcome`) — a systematic value-label bias on long games. Worth fixing.**
+4. **Restart-state selection**: half of games start from archived self-play
+   states chosen for "meaningful unresolved alternatives" (search disagreed
+   with value, untried branches exist); 30 % uniform fallback; replay capacity
+   grows 600k → 20M rows with ~4 optimizer presentations per new row.
+5. **Orange flag for GPU inference**: multiple ONNX sessions *in one process*
+   don't scale throughput (ORT issue #20494 — rwlock on kernel launch); prefer
+   multiple worker PROCESSES (we already do) or the `ort-superserve` pattern
+   (session pool + dynamic batching actor). ort CUDA needs CUDA ≥13.2,
+   cuDNN ≥9.23 on PATH.
+
+### Actionable queue additions
+- [ ] A11: policy-surprise sampling in `buffer.sample` (70/30, admission-time
+      priority from stored visit targets vs net priors)
+- [ ] A12: sparse policy storage (top-60 actions) — 36× memory per row
+- [ ] A13: capped-game value target = final MCTS root value, not draw
+- [ ] A14: replay restart archive (RGSC-lite restarts, λ ≈ 0.3)
+- [ ] A15: replay capacity schedule (grow window with run age)
+- [ ] A16: shared GPU inference via ort-superserve pattern once workers go CUDA
+
 ## Cycle 2 — 2026-11-24
 
 Sources: Lc0 blog "AlphaZero paper & Lc0 v0.19.1" + issue #237 + #1480,
