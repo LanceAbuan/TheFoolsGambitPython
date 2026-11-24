@@ -48,6 +48,14 @@ class LadderConfig:
     markers_minutes: tuple[float, ...] = (5.0, 10.0, 15.0, 20.0)
     repeat_every_minutes: float = 20.0
     promote_win_rate: float = 0.55
+    # WP6: two-stage gate. screen_games > 0 replaces the arena match size
+    # with a cheaper screen; a candidate at/above screen_threshold then
+    # plays confirm_games on FRESH openings and promotes only when the
+    # combined Wilson lower bound beats confirm_lower_bound. 0 = legacy.
+    screen_games: int = 0
+    screen_threshold: float = 0.52
+    confirm_games: int = 0
+    confirm_lower_bound: float = 0.5
     base_elo: float = 800.0
     k_factor: float = 32.0
     # U9: SPRT [elo0, elo1] at alpha=beta (RESEARCH_NOTES §3) and the RD cap
@@ -70,6 +78,8 @@ class LadderConfig:
             raise ValueError("repeat_every_minutes must be positive")
         if not 0.5 < self.promote_win_rate <= 1.0:
             raise ValueError("promote_win_rate must be in (0.5, 1.0]")
+        if self.screen_games < 0 or self.confirm_games < 0:
+            raise ValueError("screen_games/confirm_games must be >= 0")
         if not 0.0 <= self.sprt_elo0 < self.sprt_elo1:
             raise ValueError("sprt_elo0 must be < sprt_elo1 (and non-negative)")
         if not 0.0 < self.sprt_alpha < 1.0 or not 0.0 < self.sprt_beta < 1.0:
@@ -96,6 +106,18 @@ def due_snapshot_minutes(
         for m in config.scheduled_minutes()
         if last_snapshot_minute < m <= elapsed_minutes
     ]
+
+
+def wilson_lower_bound(score: float, games: int, z: float = 1.96) -> float:
+    """95 % Wilson lower bound for a score in [0, 1] over `games` samples."""
+    if games <= 0:
+        return 0.0
+    p = min(max(score, 0.0), 1.0)
+    n = float(games)
+    denom = 1.0 + z * z / n
+    centre = p + z * z / (2.0 * n)
+    margin = z * ((p * (1.0 - p) / n + z * z / (4.0 * n * n)) ** 0.5)
+    return max(0.0, (centre - margin) / denom)
 
 
 def score_rate(wins: int, draws: int, games: int) -> float:

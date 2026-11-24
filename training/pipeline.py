@@ -1002,6 +1002,7 @@ def run_training(
                 # iteration number, so a resumed run reproduces the opening
                 # set of the gate it stopped at. Openings are mirrored across
                 # color pairs and logged in the gate record below.
+                gate_seed = gate_opening_seed(profile.seed, iteration)
                 arena_config = replace(
                     profile.ladder.arena,
                     sprt_early_stop=True,
@@ -1009,12 +1010,38 @@ def run_training(
                     sprt_elo1=profile.ladder.sprt_elo1,
                     sprt_alpha=profile.ladder.sprt_alpha,
                     sprt_beta=profile.ladder.sprt_beta,
-                    opening_seed=gate_opening_seed(profile.seed, iteration),
+                    opening_seed=gate_seed,
                 )
+                if profile.ladder.screen_games > 0:
+                    arena_config = replace(arena_config, games=profile.ladder.screen_games)
                 match: MatchResult = _arena_match(
                     eval_model if eval_model is not None else model,
                     champion_model, device, arena_config, tag, champion_tag or "unknown"
                 )
+                # WP6 stage 2: confirmation on FRESH openings (a different
+                # seed namespace) once the screen clears its threshold.
+                confirm_match = None
+                if (
+                    profile.ladder.confirm_games > 0
+                    and match.games > 0
+                    and match.win_rate >= profile.ladder.screen_threshold
+                ):
+                    confirm_config = replace(
+                        arena_config,
+                        games=profile.ladder.confirm_games,
+                        opening_seed=gate_seed + 10_000_000,
+                    )
+                    confirm_match = _arena_match(
+                        eval_model if eval_model is not None else model,
+                        champion_model, device, confirm_config, tag,
+                        champion_tag or "unknown",
+                    )
+                    arena_games_total += confirm_match.games
+                    log.info(
+                        "[GATE] %s confirmation: %dW-%dD-%dL of %d (fresh openings)",
+                        tag, confirm_match.wins, confirm_match.draws,
+                        confirm_match.losses, confirm_match.games,
+                    )
                 last_match = match
                 arena_games_total += match.games
                 _, champion_elo = update_elo(
@@ -1030,6 +1057,24 @@ def run_training(
                 decision = decide_promotion(match, candidate_glicko, profile.ladder)
                 last_decision = decision
                 promote = decision.promote
+                if confirm_match is not None:
+                    # WP6: combine both stages and demand a Wilson lower
+                    # bound above the configured floor.
+                    from .ladder import wilson_lower_bound
+
+                    games = match.games + confirm_match.games
+                    wins = match.wins + confirm_match.wins
+                    draws = match.draws + confirm_match.draws
+                    score = (wins + 0.5 * draws) / games if games else 0.0
+                    lb = wilson_lower_bound(score, games)
+                    promote = (
+                        score >= profile.ladder.promote_win_rate
+                        and lb > profile.ladder.confirm_lower_bound
+                    )
+                    log.info(
+                        "[GATE] %s combined score %.3f over %d games, Wilson LB %.3f -> %s",
+                        tag, score, games, lb, "promote" if promote else "hold",
+                    )
                 ledger.append(
                     LedgerEntry(
                         run_id=resolved_run_id,
