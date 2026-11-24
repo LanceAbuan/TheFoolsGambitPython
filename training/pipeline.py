@@ -30,6 +30,7 @@ import torch
 
 from .encoder import ENCODER_VERSION, NUM_PLANES, NUM_PLANES_V2
 from .ema import EmaWeights
+from .tablebase import TablebaseCorrector
 from .evaluator import QueuedNNEvaluator
 from .glicko import GlickoRating, expected_games_to_accept, match_honesty
 from .hf import upload_checkpoint
@@ -171,6 +172,9 @@ class TrainingProfile:
     lr_cosine: bool = False         # cosine decay base_lr -> floor over the run
     lr_floor_ratio: float = 0.01
     base_lr: float | None = None    # override the regime learning rate
+    # WP8: directory with Syzygy 3-4-5 WDL tables. When set, <=5-man rows
+    # get perfect tablebase value targets. None = disabled.
+    tb_path: str | None = None
 
     def __post_init__(self) -> None:
         """WP-H H5: validate the backend selector at construction time."""
@@ -564,6 +568,7 @@ def run_training(
         optimizer = torch.optim.Adam(model.parameters(), lr=initial_lr)
     # WP4: EMA shadow (created empty; state restored from the resume sidecar).
     ema = EmaWeights(model, profile.ema_decay) if profile.ema_decay > 0 else None
+    tb_corrector = TablebaseCorrector(profile.tb_path) if profile.tb_path else None
     if ema is not None:
         sidecars = sorted(paths.state.glob("ema-*.pt"))
         if sidecars:
@@ -786,7 +791,9 @@ def run_training(
                         versions,
                         current_weight_version,
                     )
-                games_this_iter = [record_to_selfplay_result(r) for r in spool_records]
+                games_this_iter = [
+                    record_to_selfplay_result(r, tb=tb_corrector) for r in spool_records
+                ]
             else:
                 games_this_iter = provider.collect(
                     evaluator,
