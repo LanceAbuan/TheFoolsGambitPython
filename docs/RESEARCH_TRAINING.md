@@ -115,6 +115,41 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 19 — 2026-11-24
+
+Sources: Tiny AlphaZero round log (2026), "Engineering Efficient Self-Play
+Chess" (2609.37447, 6.32M params -> 3,251 bench Elo in 2.5 days, 3.25M games),
+scaling laws for AZ (2210.00849), pbaer v3 teaching models (capacity
+saturation at 116k), Lc0 community notes (SL w/o policy ~200 Elo weaker).
+
+### Findings
+
+1. **At our 1.3M-param width we are data/search-bound, not capacity-bound**:
+   scaling laws say Elo ~ log(params) only at fixed compute, and larger nets
+   are more sample-efficient - but the pbaer teaching line shows tiny nets
+   saturate on supervised signal while self-play keep improving, and the
+   2026 engineering run hit 3,251 bench Elo with 6.3M params and a huge
+   data/search budget. Their late-plateau levers: MORE search in self-play,
+   MORE fresh games (lower replay reuse), larger variety window, then size.
+2. **Order of operations for us**: iteration count > inner epochs/sims
+   (cycle 18) and search-per-full-ply before width. Night-v3's SE/attention
+   at the SAME 10x128 width is the cheap capacity step; widening waits.
+3. **Human-position mixing helps as volume, not as teacher**: p2_ad's
+   human-only positions scored 0.03 lower than older self-play
+   position-for-position, yet the 31.9M mixed set produced the largest gain
+   (+0.0875). Self-play targets remain the stronger per-position signal
+   (SL-without-policy nets are ~200 Elo weaker per Lc0 lore).
+4. Matched-compute comparison is the only fair yardstick for these choices -
+   compare strength gained per wall-clock hour, never raw loss.
+
+### Actionable queue additions
+- [ ] A69: capacity audit before night-v3 - use WP5 train/holdout gap on
+      night-v2; expect no saturation yet (1.3M params, small compute)
+- [ ] A70: full-search sims 600 -> 800 on PCR full plies (p=0.25 makes it
+      affordable); A/B vs current at matched wall-clock
+- [ ] A71: future - human-position mixing as volume (Lichess Elite + SF
+      labels) once a labeling path exists; keep self-play targets primary
+
 ## Cycle 18 — 2026-11-24
 
 Sources: Net2Net (1511.05641), Net2Net growing-wiki (AutoGrow: RandomPad beats
