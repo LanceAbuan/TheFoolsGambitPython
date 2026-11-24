@@ -308,15 +308,33 @@ WP11. Keep `runs/scratch-backup-*` before any restart.
 
 ## 8. Task checklist
 
-- [ ] WP1 forced playouts + target pruning (+ search-constant audit)
-- [ ] WP2 playout cap randomization (pcr p=0.25, fast=100)
-- [ ] WP3 capped-game Q targets · soft resignation · deblunder pass
-- [ ] WP4 EMA weights (gate/bench/export on EMA)
-- [ ] WP5 health metrics + UI card
-- [ ] WP6 two-stage gate + pentanomial ledger
-- [ ] WP7 ORT threading + 8-worker fleet bench
-- [ ] WP8 Syzygy targets + endgame harness
-- [ ] WP9 puzzle benchmark baseline
-- [ ] WP10 optimizer package + A/B
-- [ ] WP11 next-gen bundle (encoder v3 + SE + MLH + attention flag) — one restart
-- [ ] WP12 subtree reuse · spool v2 · shared inference · Gumbel A/B
+DONE (merged, acceptance green - PR numbers):
+- [x] WP1 forced playouts + target pruning (#175) - audit: cpuct 1.5, Dirichlet 0.3/0.25, virtual loss 1.0 recorded
+- [x] WP2 playout cap randomization (#176) - schema v2, masked policy loss
+- [x] WP3 value-target hygiene (#177) - soft-Z caps, per-ply root_value, soft resign, deblunder script
+- [x] WP4 EMA weights (#178) - export/checkpoint/gate on EMA past iteration 2000, sidecar resume
+- [x] WP5 health metrics (#179) - policy CE, entropy, P UL, WDL accuracy journaled
+- [x] WP6 two-stage gate (#180) - screen + fresh-opening confirmation, Wilson LB
+- [x] WP7 ORT threading (#181) - intra-op 1, no spinning, fleet default 8 workers
+- [x] WP8 Syzygy module (#183) - TB value override wired, graceful without tables
+- [x] WP9 puzzle benchmark (#184) - Lichess-format scoring semantics
+- [x] WP10 optimizer package (#182) - AdamW fused, wd, clip, warmup, cosine
+
+DEFERRED (explicit reasons; ordered for the next session):
+- [ ] WP11 next-gen bundle (encoder v3 + SE + MLH + attention flag + warmstart_v3 + night-v3):
+      highest-effort package; needs python encoder + Rust mirror parity + warm-start KL proof +
+      a bundled generation restart. W1-W3 are now stable, so this is the next work package.
+      IMPORTANT: the Rust encoder mirror must land in the same PR set as the python encoder
+      (workers cannot run night-v3 without encode_planes_v3).
+- [ ] WP12 infra: subtree reuse (~60% retention in selfplay.rs) - next; spool v2 / Arrow IPC +
+      sparse policies - after worker scaling measurements; shared inference (ort-superserve) -
+      requires the CUDA ORT build first; Gumbel A/B - folded into a future experiment round.
+
+## 8b. Operational notes for the next session
+- The live run is `second-light-v2` (night-v2 profile, rust_workers). Enable the WP1/WP2/WP3
+  fleet flags at launch: `--forced-playouts --pcr-p-full 0.25 --pcr-fast-sims 100 --soft-resign`.
+- EMA + two-stage gate + TB + AdamW are profile-level: enable per run (ema_decay=0.999,
+  screen_games=64, tb_path=data/syzygy, optimizer_kind=adamw + lr_warmup_steps=500).
+- Syzygy tables: https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/ (~1 GB).
+- Puzzle DB: https://database.lichess.org/#puzzles -> data/puzzles.jsonl (WP9 format).
+
