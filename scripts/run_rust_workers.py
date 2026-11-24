@@ -34,7 +34,8 @@ POLL_SECONDS = 5.0
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="WP-H H4: run the rust self-play worker fleet.")
-    parser.add_argument("--workers", type=int, default=4, help="number of worker processes")
+    parser.add_argument("--workers", type=int, default=8,
+                        help="number of worker processes (WP7: one per physical core)")
     parser.add_argument("--models-dir", required=True, help="trainer-published model dir (latest.json)")
     parser.add_argument("--spool-dir", required=True, help="trainer spool dir")
     parser.add_argument("--sims", type=int, default=64)

@@ -168,9 +168,24 @@ impl OrtModel {
         let environment = shared_environment()?;
         let builder = Session::builder(&environment).map_err(|e| ort_err("builder", e))?;
         let (builder, used_cuda) = configure_execution_providers(builder, prefer_cuda)?;
-        let mut builder = builder
+        let builder = builder
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| ort_err("optimization level", e))?;
+        // WP7 (measured guidance for small models under concurrency): one
+        // compute thread per SESSION; parallelism belongs to the worker
+        // processes (one per physical core). ORT's default spawns a pool per
+        // physical core PER session, which oversubscribes the box.
+        let intra_threads: usize = std::env::var("GAMBIT_ORT_INTRA_THREADS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        let builder = builder
+            .with_intra_threads(intra_threads)
+            .map_err(|e| ort_err("intra threads", e))?;
+        let builder = builder
+            .with_config_entry("session.intra_op.allow_spinning", "0")
+            .map_err(|e| ort_err("spinning config", e))?;
+        let mut builder = builder;
         let session = builder
             .commit_from_file(model_path)
             .map_err(|e| ort_err(format!("commit {}", model_path.display()).as_str(), e))?;
