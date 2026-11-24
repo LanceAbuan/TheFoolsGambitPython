@@ -44,6 +44,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed-base", type=int, default=0, help="worker i uses seed_base + i*1e9")
     parser.add_argument("--opening-seed-base", type=int, default=0)
     parser.add_argument("--no-openings", action="store_true")
+    parser.add_argument("--forced-playouts", action="store_true",
+                        help="WP1: KataGo forced playouts + policy target pruning")
+    parser.add_argument("--fp-k", type=float, default=2.0, help="WP1: forced-playout scale k")
     parser.add_argument("--duration-seconds", type=float, default=0.0, help="0 = until Ctrl+C")
     parser.add_argument("--max-restarts", type=int, default=10, help="per-slot restart budget")
     parser.add_argument("--restart-backoff", type=float, default=5.0)
@@ -65,7 +68,9 @@ def worker_argv(args: argparse.Namespace, slot: int) -> list[str]:
         "--seed-base", str(args.seed_base + slot * 1_000_000_000),
         "--opening-seed-base", str(args.opening_seed_base + slot * 1_000_000_000),
         "--duration-seconds", str(args.duration_seconds),
-    ] + (["--no-openings"] if args.no_openings else [])
+    ] + (["--no-openings"] if args.no_openings else []) + (
+        ["--forced-playouts", "--fp-k", str(args.fp_k)] if args.forced_playouts else []
+    )
 
 
 def main() -> int:

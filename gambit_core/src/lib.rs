@@ -312,7 +312,7 @@ fn encode_batch_v2<'py>(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "onnx")]
 #[pyfunction]
-#[pyo3(signature = (model_path, seed = 0, sims = 64, max_plies = 200, temperature = 1.0, temperature_plies = 30, opening_seed = None, weight_version = 0))]
+#[pyo3(signature = (model_path, seed = 0, sims = 64, max_plies = 200, temperature = 1.0, temperature_plies = 30, opening_seed = None, weight_version = 0, forced_playouts = false, fp_k = 2.0))]
 fn selfplay_game<'py>(
     py: Python<'py>,
     model_path: &str,
@@ -323,6 +323,8 @@ fn selfplay_game<'py>(
     temperature_plies: u32,
     opening_seed: Option<u64>,
     weight_version: u64,
+    forced_playouts: bool,
+    fp_k: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
     let game = py
         .detach(|| -> Result<selfplay::SelfPlayGame, String> {
@@ -339,6 +341,8 @@ fn selfplay_game<'py>(
                 max_plies,
                 temperature,
                 temperature_plies,
+                forced_playouts,
+                fp_k,
             };
             Ok(selfplay::play_game(&mut evaluator, &root, &params))
         })
@@ -395,6 +399,12 @@ pub struct PySearchConfig {
     /// Seed for the root Dirichlet draw.
     #[pyo3(get, set)]
     pub seed: u64,
+    /// WP1: KataGo forced playouts + policy target pruning at the root.
+    #[pyo3(get, set)]
+    pub forced_playouts: bool,
+    /// WP1: forced-playout scale k in sqrt(k * P * sum(N)).
+    #[pyo3(get, set)]
+    pub fp_k: f64,
 }
 
 #[pymethods]
@@ -410,6 +420,8 @@ impl PySearchConfig {
         virtual_loss = 1.0,
         batch_size = 1,
         seed = 0,
+        forced_playouts = false,
+        fp_k = 2.0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -421,6 +433,8 @@ impl PySearchConfig {
         virtual_loss: f64,
         batch_size: usize,
         seed: u64,
+        forced_playouts: bool,
+        fp_k: f64,
     ) -> Self {
         PySearchConfig {
             cpuct,
@@ -431,6 +445,8 @@ impl PySearchConfig {
             virtual_loss,
             batch_size,
             seed,
+            forced_playouts,
+            fp_k,
         }
     }
 
@@ -460,6 +476,8 @@ impl From<&PySearchConfig> for RustSearchConfig {
             virtual_loss: cfg.virtual_loss,
             batch_size: cfg.batch_size,
             seed: cfg.seed,
+            forced_playouts: cfg.forced_playouts,
+            fp_k: cfg.fp_k,
         }
     }
 }
