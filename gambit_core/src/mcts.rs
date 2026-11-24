@@ -58,6 +58,12 @@ pub struct SearchConfig {
     pub batch_size: usize,
     /// Seed for the Dirichlet draw (python seeds via numpy's global rng).
     pub seed: u64,
+    /// WP1 (KataGo): force every root child to receive at least
+    /// `sqrt(fp_k * prior * visits)` playouts, and subtract that forced
+    /// share from the exported policy target. Off = canonical AlphaZero.
+    pub forced_playouts: bool,
+    /// Forced-playout scale k in `sqrt(k * P * sum(N))` (KataGo uses 2).
+    pub fp_k: f64,
 }
 
 impl Default for SearchConfig {
@@ -71,6 +77,8 @@ impl Default for SearchConfig {
             virtual_loss: 1.0,
             batch_size: 1,
             seed: 0,
+            forced_playouts: false,
+            fp_k: 2.0,
         }
     }
 }
@@ -104,8 +112,11 @@ pub trait Evaluator {
 /// Outcome of one root search — the python `MCTSResult` contract.
 #[derive(Clone, Debug)]
 pub struct SearchResult {
-    /// (4672,) f32 visit counts over the 73x64 policy encoding.
+    /// (4672,) f32 visit counts over the 73x64 policy encoding — the training
+    /// target (pruned when `forced_playouts` is on, WP1).
     pub visit_counts: Vec<f32>,
+    /// Raw (unpruned) visit counts, kept for parity tests and diagnostics.
+    pub visit_counts_raw: Vec<f32>,
     /// Root value from the root side-to-move's perspective
     /// (mean of backed-up values; 0.0 in the forced-move/terminal shortcuts,
     /// exactly like python).
@@ -391,6 +402,7 @@ pub fn search(
     if plain.is_empty() {
         return SearchResult {
             visit_counts: zeros(),
+            visit_counts_raw: zeros(),
             root_value: terminal_value(root),
             chosen_move: None,
             visited_root: false,
@@ -406,6 +418,7 @@ pub fn search(
         let tv = terminal_value(root);
         return SearchResult {
             visit_counts: zeros(),
+            visit_counts_raw: zeros(),
             root_value: tv,
             chosen_move: None,
             visited_root: false,
@@ -430,7 +443,8 @@ pub fn search(
         let mut counts = zeros();
         counts[legal_pairs[0].0] = cfg.num_simulations as f32;
         return SearchResult {
-            visit_counts: counts,
+            visit_counts: counts.clone(),
+            visit_counts_raw: counts,
             root_value: tree.node(tree.root()).value_mean(),
             chosen_move: Some(plain[0]),
             visited_root: true,
@@ -459,7 +473,11 @@ pub fn search(
                 if !descend {
                     break;
                 }
-                let child = select_child(&tree, node, cfg);
+                let child = if node == tree.root() && cfg.forced_playouts {
+                    select_child_forced(&tree, node, cfg)
+                } else {
+                    select_child(&tree, node, cfg)
+                };
                 tree.add_virtual_loss(child);
                 let mv = tree.node(child).mv.expect("non-root node has a move");
                 pos = pos.make(mv);
@@ -519,6 +537,7 @@ pub fn search(
     // child wins ties, matching python's `max`).
     let mut counts = zeros();
     let root_children = tree.node(tree.root()).children.clone();
+    let total_visits = tree.node(tree.root()).effective_visits().max(1) as f64;
     let mut best: Option<(u32, chess::ChessMove)> = None;
     for &c in &root_children {
         let child = tree.node(c);
@@ -532,8 +551,33 @@ pub fn search(
             best = Some((child.visit_count, mv));
         }
     }
+    let raw_counts = counts.clone();
+
+    // WP1 (KataGo): policy target pruning. The forced playouts above were
+    // exploration, not preference — subtract that share from every non-best
+    // child (never below 1; children reduced to <=1 visit are dropped).
+    if cfg.forced_playouts {
+        if let Some((_best_visits, best_mv)) = best {
+            let best_idx = policy_index(root, &best_mv);
+            for &c in &root_children {
+                let child = tree.node(c);
+                let mv = child.mv.expect("non-root node has a move");
+                let idx = policy_index(root, &mv);
+                if idx == best_idx {
+                    continue;
+                }
+                let quota =
+                    (cfg.fp_k * child.prior.clamp(0.0, 1.0) * total_visits).sqrt();
+                let excess = quota.min(child.visit_count as f64) as f32;
+                let kept = child.visit_count as f32 - excess;
+                counts[idx] = if kept <= 1.0 { 0.0 } else { kept };
+            }
+        }
+    }
+
     SearchResult {
         visit_counts: counts,
+        visit_counts_raw: raw_counts,
         root_value: tree.node(tree.root()).value_mean(),
         chosen_move: best.map(|(_, mv)| mv),
         visited_root: true,
@@ -542,8 +586,7 @@ pub fn search(
 
 /// PUCT child selection (python `_select_child`), over effective (virtual
 /// loss inclusive) statistics.
-fn select_child(tree: &Tree, node: u32, cfg: &SearchConfig) -> u32 {
-    let n = tree.node(node);
+fn select_child(tree: &Tree, node: u32, cfg: &SearchConfig) -> u32 {    let n = tree.node(node);
     let sqrt_parent = (n.effective_visits().max(1) as f64).sqrt();
     let mut best = None;
     let mut best_score = f64::NEG_INFINITY;
@@ -559,6 +602,42 @@ fn select_child(tree: &Tree, node: u32, cfg: &SearchConfig) -> u32 {
         }
     }
     best.expect("select_child called on a childless node")
+}
+
+/// Root selection with KataGo forced playouts (WP1): every root child below
+/// its quota `sqrt(k * P(c) * sum(N))` is forced (PUCT = +infinity) so that
+/// Dirichlet-noise moves receive a minimum share of visits regardless of an
+/// early negative evaluation. Among forced children the largest deficit wins.
+/// Only used at the root: deeper selections stay plain PUCT.
+fn select_child_forced(tree: &Tree, node: u32, cfg: &SearchConfig) -> u32 {
+    let n = tree.node(node);
+    let total = n.effective_visits().max(1) as f64;
+    let mut forced: Option<(u32, f64)> = None; // (child, deficit)
+    let mut best = None;
+    let mut best_score = f64::NEG_INFINITY;
+    for &c in &n.children {
+        let child = tree.node(c);
+        let visits = child.effective_visits() as f64;
+        let quota = (cfg.fp_k * child.prior.clamp(0.0, 1.0) * total).sqrt();
+        if visits < quota {
+            let deficit = quota - visits;
+            if forced.map_or(true, |(_, d)| deficit > d) {
+                forced = Some((c, deficit));
+            }
+            continue;
+        }
+        let exploit = -child.effective_value_mean(cfg.virtual_loss);
+        let explore = cfg.cpuct * child.prior * total.sqrt() / (1.0 + visits);
+        let score = exploit + explore;
+        if score > best_score {
+            best_score = score;
+            best = Some(c);
+        }
+    }
+    if let Some((c, _)) = forced {
+        return c;
+    }
+    best.unwrap_or_else(|| n.children[0])
 }
 
 /// Expand an unexpanded leaf with a fresh evaluation (no noise below the
@@ -723,6 +802,61 @@ mod tests {
         assert_eq!(total, 96.0);
         let max = result.visit_counts.iter().cloned().fold(f32::MIN, f32::max);
         assert!(max >= 48.0, "the mate should dominate: max={max}");
+    }
+
+    /// WP1: skewed priors + forced playouts — a low-prior move must receive a
+    /// minimum share of visits, and the exported target drops that forced
+    /// share (pruned sum < raw times).
+    struct SkewEvaluator {
+        hot_uci: &'static str,
+        root: Position,
+    }
+
+    impl Evaluator for SkewEvaluator {
+        fn evaluate(&mut self, batch: &[Position]) -> (Vec<f32>, Vec<f32>) {
+            let mut logits = vec![-6.0f32; batch.len() * POLICY_MOVES];
+            let mv = find_legal_uci(&self.root, self.hot_uci).expect("hot move is legal");
+            let idx = policy_index(&self.root, &mv);
+            for row in 0..batch.len() {
+                logits[row * POLICY_MOVES + idx] = 6.0;
+            }
+            (logits, vec![0.0f32; batch.len()])
+        }
+    }
+
+    #[test]
+    fn forced_playouts_export_pruned_target() {
+        const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let start = Position::from_fen(START).expect("startpos");
+        let base = SearchConfig {
+            num_simulations: 64,
+            seed: 3,
+            root_noise: false,
+            ..SearchConfig::default()
+        };
+        let mut ev_off = SkewEvaluator { hot_uci: "e2e4", root: start };
+        let off = search_uci(START, &[], &base, &mut ev_off);
+
+        let cfg_on = SearchConfig { forced_playouts: true, ..base };
+        let mut ev_on = SkewEvaluator { hot_uci: "e2e4", root: start };
+        let on = search_uci(START, &[], &cfg_on, &mut ev_on);
+
+        let raw_on: f32 = on.visit_counts_raw.iter().sum();
+        let pruned_on: f32 = on.visit_counts.iter().sum();
+        let off_total: f32 = off.visit_counts.iter().sum();
+        assert_eq!(raw_on, 64.0, "raw export keeps every simulation");
+        assert_eq!(off_total, 64.0);
+        assert!(
+            pruned_on < raw_on,
+            "forced share must be pruned from the target: pruned={pruned_on} raw={raw_on}"
+        );
+        let visited_on = on.visit_counts_raw.iter().filter(|c| **c >= 1.0).count();
+        let visited_off = off.visit_counts.iter().filter(|c| **c >= 1.0).count();
+        assert!(
+            visited_on > visited_off,
+            "forced playouts must visit more root moves: on={visited_on} off={visited_off}"
+        );
+        assert_eq!(on.chosen_move, off.chosen_move, "best move must not change");
     }
 
     #[test]

@@ -111,7 +111,21 @@ class TestMCTSSearch:
         legal = legal_move_map(board)
         nonzero = set(np.nonzero(result.visit_counts)[0])
         assert nonzero <= set(legal)
-        assert result.visit_counts.sum() == 16
+
+    def test_forced_playouts_prune_target(self):
+        """WP1: forced playouts visit more root moves, and the exported target
+        subtracts that forced share (pruned sum < raw times)."""
+        board = chess.Board()
+        off = MCTSSearch(
+            StubEvaluator(), SearchConfig(num_simulations=64, root_noise=False)
+        ).search(board)
+        on = MCTSSearch(
+            StubEvaluator(),
+            SearchConfig(num_simulations=64, root_noise=False, forced_playouts=True),
+        ).search(board)
+        assert float(off.visit_counts.sum()) == 64.0
+        assert float(on.visit_counts.sum()) < 64.0
+        assert on.chosen_move == off.chosen_move
 
     def test_root_noise_spreads_over_legal_moves_only(self):
         """Dirichlet priors: sum to ~1 across children, all children legal."""

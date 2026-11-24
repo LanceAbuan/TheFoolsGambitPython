@@ -130,6 +130,8 @@ class RustMCTSSearch:
             num_simulations=sims,
             batch_size=self.batch_size,
             seed=self._next_seed(),
+            forced_playouts=self.config.forced_playouts,
+            fp_k=self.config.fp_k,
         )
         start_fen, moves = _history_spec(board)
         # Keep the stacked board for the root evaluation callback (v2 encoder

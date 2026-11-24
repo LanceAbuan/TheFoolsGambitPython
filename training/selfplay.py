@@ -750,6 +750,10 @@ class SearchConfig:
     # gambit_core PUCT search via training.rust_search.RustMCTSSearch. The
     # default stays "python" until the C6 gates justify flipping it.
     search_backend: Literal["python", "rust"] = "python"
+    # WP1 (KataGo): forced playouts + policy target pruning at the root.
+    # Off = canonical AlphaZero (previous behavior bit-identical).
+    forced_playouts: bool = False
+    fp_k: float = 2.0
 
     def __post_init__(self) -> None:
         if self.search_backend not in ("python", "rust"):
@@ -1007,6 +1011,21 @@ class MCTSSearch:
         for child in root.children:
             visit_counts[encode_move(board, child.move)] = float(child.visit_count)
 
+        # WP1 (KataGo): policy target pruning — subtract the forced-playout
+        # share from non-best root children (never below 1; drop at <=1).
+        if self.config.forced_playouts and root.children:
+            best_child = max(root.children, key=lambda c: c.visit_count)
+            total = float(max(root.visit_count, 1))
+            for child in root.children:
+                if child is best_child:
+                    continue
+                quota = math.sqrt(
+                    self.config.fp_k * min(1.0, max(0.0, child.prior)) * total
+                )
+                excess = min(quota, float(child.visit_count))
+                kept = child.visit_count - excess
+                visit_counts[encode_move(board, child.move)] = 0.0 if kept <= 1.0 else kept
+
         best = max(root.children, key=lambda c: c.visit_count)
         return MCTSResult(visit_counts, root.value_mean, best.move, True)
 
@@ -1020,6 +1039,8 @@ class MCTSSearch:
         while node.expanded and node.children and not node.terminal:
             if force_root_child is not None and node is root:
                 node = force_root_child  # U1 gumbel: descend a halving candidate
+            elif node is root and self.config.forced_playouts:
+                node = self._select_child_forced(node)
             else:
                 node = self._select_child(node)
             board.push(node.move)
@@ -1042,6 +1063,37 @@ class MCTSSearch:
             n.visit_count += 1
             n.value_sum += value_back
             value_back = -value_back
+
+    def _select_child_forced(self, node: _Node) -> _Node:
+        """Root selection with KataGo forced playouts (WP1).
+
+        Any root child below its quota `sqrt(k * P * sum(N))` is forced so a
+        noise move gets a minimum share of visits; among forced children the
+        largest deficit wins. Plain PUCT everywhere else (and below the root).
+        """
+        total = float(max(node.visit_count, 1))
+        forced: _Node | None = None
+        forced_deficit = -1.0
+        best: _Node | None = None
+        best_score = -float("inf")
+        for child in node.children:
+            visits = float(child.visit_count)
+            quota = math.sqrt(self.config.fp_k * min(1.0, max(0.0, child.prior)) * total)
+            if visits < quota:
+                deficit = quota - visits
+                if deficit > forced_deficit:
+                    forced, forced_deficit = child, deficit
+                continue
+            exploit = -child.value_mean
+            explore = self.config.cpuct * child.prior * float(np.sqrt(total)) / (1.0 + visits)
+            score = exploit + explore
+            if score > best_score:
+                best_score = score
+                best = child
+        if forced is not None:
+            return forced
+        assert best is not None
+        return best
 
     def _select_child(self, node: _Node) -> _Node:
         """PUCT selection: Q(child, parent persp) + cpuct * P * sqrt(N)/(1+n)."""

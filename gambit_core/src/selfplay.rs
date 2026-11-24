@@ -60,6 +60,25 @@ pub struct SelfPlayParams {
     pub temperature: f64,
     /// Number of plies sampled at `temperature` (argmax afterwards).
     pub temperature_plies: u32,
+    /// WP1: KataGo forced playouts + policy target pruning at the root.
+    pub forced_playouts: bool,
+    /// WP1: forced-playout scale k in sqrt(k * P * sum(N)).
+    pub fp_k: f64,
+}
+
+impl Default for SelfPlayParams {
+    fn default() -> Self {
+        SelfPlayParams {
+            seed: 0,
+            num_simulations: 64,
+            max_plies: 200,
+            temperature: 1.0,
+            temperature_plies: 30,
+            // WP1: off by default = canonical AlphaZero (pre-WP1 behavior).
+            forced_playouts: false,
+            fp_k: 2.0,
+        }
+    }
 }
 
 /// One training example — the pipeline.py buffer.add record payload.
@@ -301,6 +320,8 @@ pub fn play_game(
         let cfg = SearchConfig {
             num_simulations: params.num_simulations,
             seed: rng.gen::<u64>(),
+            forced_playouts: params.forced_playouts,
+            fp_k: params.fp_k,
             ..SearchConfig::default()
         };
         let result = mcts::search(&cur, &history, &cfg, evaluator);
@@ -519,6 +540,7 @@ mod tests {
             max_plies: 3,
             temperature: 1.0,
             temperature_plies: 1,
+            ..SelfPlayParams::default()
         };
         let game = play_game(&mut evaluator, &root, &params);
         assert_eq!(game.termination, "max-plies");
@@ -560,6 +582,7 @@ mod tests {
             max_plies: 4,
             temperature: 0.0,
             temperature_plies: 30,
+            ..SelfPlayParams::default()
         };
         let game = play_game(&mut evaluator, &root, &params);
         assert_eq!(game.ucis, vec!["d1d8".to_string()]);

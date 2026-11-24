@@ -93,11 +93,13 @@ def _fake_record(**kwargs):
 
 
 def test_profile_default_backend_is_python():
-    """H5: the flag exists, defaults to python, and NOTHING flipped."""
+    """H5: the flag exists and defaults to python. (NIGHT_V2_PROFILE was
+    flipped to rust_workers by the 2026-11-24 user-approved flip, PR #152 -
+    the generic default stays python.)"""
     profile = TrainingProfile(name="t", model=NIGHT_V2_PROFILE.model)
     assert profile.selfplay_backend == "python"
     assert profile.spool_dir is None
-    assert NIGHT_V2_PROFILE.selfplay_backend == "python"
+    assert NIGHT_V2_PROFILE.selfplay_backend == "rust_workers"
 
 
 def test_profile_rejects_unknown_backend():
