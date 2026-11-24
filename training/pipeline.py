@@ -835,6 +835,42 @@ def run_training(
                 summary.final_loss = last_loss
                 log.info("[TRAIN] iter %d: loss %.4f", iteration, last_loss)
 
+            # WP5: training-health metrics on a fresh sampled batch:
+            # policy CE, policy entropy, P UL (CE vs uniform) and value
+            # accuracy. Cheap (one forward, no grads) and journaled so
+            # value-head overfitting / entropy collapse are visible early.
+            health: dict[str, object] | None = None
+            holdout = buffer.sample(256)
+            if holdout is not None and len(holdout[0]) >= 4:
+                h_t, h_p, h_v, h_m = holdout
+                model.eval()
+                with torch.no_grad():
+                    out_p, out_v = model(h_t.to(device))
+                    lp = torch.log_softmax(out_p, dim=-1)
+                    ce_rows = -(h_p.to(device) * lp).sum(dim=-1)
+                    mask = h_m.to(device)
+                    policy_ce = float((ce_rows * mask).sum() / mask.sum().clamp(min=1.0))
+                    probs = lp.exp()
+                    entropy = float(-(probs * lp).sum(dim=-1).mean())
+                    p_ul = float(-lp.mean())
+                    if profile.model.value_head == "wdl":
+                        tgt = wdl_targets(h_v.to(device)).argmax(dim=-1)
+                        value_acc = float((out_v.argmax(dim=-1) == tgt).float().mean())
+                    else:
+                        value_acc = None  # scalar head: no WDL accuracy
+                model.train()
+                health = {
+                    "policy_ce": policy_ce,
+                    "policy_entropy": entropy,
+                    "p_ul": p_ul,
+                    "value_acc": value_acc,
+                }
+                journal.append({"kind": "metrics", "iteration": iteration, **health})
+                log.info(
+                    "[METRICS] iter %d: policy_ce %.3f entropy %.2f p_ul %.3f value_acc %.2f",
+                    iteration, policy_ce, entropy, p_ul, value_acc,
+                )
+
             # WP4: one EMA eval copy per iteration - the export, the
             # checkpoint and the gate candidate all use it once the EMA
             # warmup window has passed (None -> live weights).
