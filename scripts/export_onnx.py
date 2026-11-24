@@ -10,9 +10,20 @@
   inputs + torch policy/value) for the Rust ort evaluator's validation.
 
 Usage: .venv/Scripts/python.exe scripts/export_onnx.py
+       .venv/Scripts/python.exe scripts/export_onnx.py --out <path>.onnx
+       .venv/Scripts/python.exe scripts/export_onnx.py --checkpoint <ckpt>.pt --out <path>.onnx
+
+WP-H H4: `--checkpoint` exports a TRAINED checkpoint (the pipeline's
+gate/iteration artifacts) instead of the seeded fresh init, and `--out`
+redirects the target (default models/gambitnet-v2.onnx, byte-identical
+default behavior). The H4 worker cadence is automatic -
+training.rust_workers.export_model_to_onnx runs this export per iteration
+from the trainer and publishes models/latest.json - so this CLI is the
+MANUAL/backfill path (e.g. re-exporting a champion for a soak run).
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -50,14 +61,22 @@ def probe_planes(n_rows: int, seed: int) -> np.ndarray:
     return np.stack(out).astype(np.float32)
 
 
-def main() -> int:
-    torch.manual_seed(20261123)
-    model = GambitNet(NIGHT_V2_PROFILE.model)
-    model.eval()
+def load_checkpoint_model(ckpt_path: Path) -> "GambitNet":
+    """Build a GambitNet from a pipeline checkpoint (config + state dict)."""
+    from training.model import ModelConfig
 
-    onnx_path = ROOT / "models" / "gambitnet-v2.onnx"
+    data = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    config = ModelConfig.from_dict(data["config"])
+    model = GambitNet(config)
+    model.load_state_dict(data["model_state"])
+    model.eval()
+    return model
+
+
+def export_model(model: "GambitNet", onnx_path: Path) -> None:
+    """Export a (v2-layout) GambitNet to ONNX opset 17, dynamic batch."""
     onnx_path.parent.mkdir(parents=True, exist_ok=True)
-    dummy = torch.zeros(1, NIGHT_V2_PROFILE.model.in_channels, 8, 8)
+    dummy = torch.zeros(1, int(model.config.in_channels), 8, 8)
     torch.onnx.export(
         model,
         dummy,
@@ -69,6 +88,43 @@ def main() -> int:
         dynamo=False,
     )
     print(f"[onnx] exported {onnx_path} ({onnx_path.stat().st_size / 1e6:.1f} MB)")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Export the v2 GambitNet to ONNX (WP-H H1/H4).")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=ROOT / "models" / "gambitnet-v2.onnx",
+        help="target .onnx path (default: models/gambitnet-v2.onnx)",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help="export a trained pipeline .pt checkpoint instead of the seeded fresh init",
+    )
+    args = parser.parse_args()
+
+    if args.checkpoint is not None:
+        model = load_checkpoint_model(args.checkpoint)
+        print(f"[onnx] loaded checkpoint {args.checkpoint}")
+    else:
+        torch.manual_seed(20261123)
+        model = GambitNet(NIGHT_V2_PROFILE.model)
+        model.eval()
+    onnx_path = args.out
+
+    # The parity probe encodes v2 (104-plane) positions; refuse anything
+    # else loudly instead of exporting an unverifiable model.
+    if int(model.config.in_channels) != int(NIGHT_V2_PROFILE.model.in_channels):
+        print(
+            f"[onnx] model is {model.config.in_channels}-plane; this exporter "
+            f"verifies the v2 {NIGHT_V2_PROFILE.model.in_channels}-plane layout only",
+            file=sys.stderr,
+        )
+        return 2
+    export_model(model, onnx_path)
 
     planes = probe_planes(1000, seed=20261123)
     x = torch.from_numpy(planes)
@@ -87,10 +143,13 @@ def main() -> int:
         print("[onnx] PARITY FAILED", file=sys.stderr)
         return 1
 
-    fixture = ROOT / "tests" / "fixtures" / "onnx_parity_v2.npz"
-    fixture.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(fixture, inputs=planes[:128], policy=t_policy[:128], value=t_value[:128])
-    print(f"[onnx] wrote fixture {fixture} (128 rows)")
+    if onnx_path == ROOT / "models" / "gambitnet-v2.onnx":
+        fixture = ROOT / "tests" / "fixtures" / "onnx_parity_v2.npz"
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(fixture, inputs=planes[:128], policy=t_policy[:128], value=t_value[:128])
+        print(f"[onnx] wrote fixture {fixture} (128 rows)")
+    else:
+        print("[onnx] custom --out: fixture untouched")
     print("[onnx] H1 GATE GREEN")
     return 0
 
