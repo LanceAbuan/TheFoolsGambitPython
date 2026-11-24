@@ -115,6 +115,39 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 23 — 2026-11-24
+
+Sources: Lc0 classic search TB integration (root_probe/DTZ, in-search WDL
+terminals), chessprogramming Syzygy (root vs search probing), "Best Policy
+Tracking in RL" (2610.34501: last vs train-best vs validation-best),
+Self-Play Algorithms framework (2006.04471: menagerie/curator), league/
+PFSP practice notes (stratified latest + rolling + archive).
+
+### Findings
+
+1. **Play-time tablebases are a cheap, perfect endgame upgrade**: Lc0 probes
+   WDL at every TB node (exact terminal) and filters root moves with DTZ when
+   available. We already ship `TablebaseCorrector` (WP8) - wiring a root WDL
+   probe into the PLAY server lets the bot convert/defend <=5-man positions
+   instantly and perfectly against human friends (no sims wasted), with an
+   optional online Syzygy (lichess API) fallback when tables are absent.
+2. DTZ-at-root is subtle (50-move tensors: a win may only be blessed); WDL
+   first, DTZ later - and only allow DTZ filtering in clearly winning paths.
+3. **Checkpoint selection**: latest vs train-best vs validation-best are
+   meaningfully different; our SPRT/Glicko gate already implements the
+   validation-based champion choice - serving the champion stays correct.
+4. **League play remains the big self-play gap**: stratified mixtures
+   (latest ~60-75 % + rolling recent + geometric archive) with PFSP
+   win-rate-weighted sampling mitigate cyclical overfitting; needs worker
+   support for multiple model pointers (one hot-reloaded opponent slot).
+
+### Actionable queue additions
+- [ ] A80: play-server TB integration - root WDL probe for <=5-man positions
+      (perfect endgame play vs humans); optional lichess API fallback
+- [ ] A81: league sampling v1 - workers alternate self vs a rotated past
+      checkpoint (25 % of games; stratified: latest/rolling/archive, PFSP
+      weighting later) - extends A27 with concrete sampling ratios
+
 ## Cycle 22 — 2026-11-24
 
 Sources: Group Normalization (1803.08494, BN small-batch degradation),
