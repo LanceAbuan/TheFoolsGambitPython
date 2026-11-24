@@ -115,7 +115,45 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
-## Cycle 13 (newest, brief) — 2026-11-24
+## Cycle 14 — 2026-11-24
+
+Sources: d2l batch-size chapter (McCandlish critical batch size), Malladi
+et al. 2022 (Adam SDE scaling), warmup-mechanisms paper (2406.09405),
+LiteLLM-stack notes; Nemesis (Lichess Elite training, 2026), AZ paper Table 2
+(human openings), AZ_db diversity paper (puzzle-start self-play).
+
+### Findings
+
+1. **Adam/AdamW scale with √b, not linearly**: SGD wants η∝b; adaptive
+   optimizers want η∝√b up to the critical batch size (b_crit ≈ gradient
+   noise scale). We doubled batch 256→512 but kept η=1e-3 — the rule says
+   ~1.41e-3; our LR may be *conservative on the batch axis* while Tiny-AZ
+   says it's *hot on the params axis*. Resolve with the planned A38 A/B.
+2. **Warmup**: max(1000, 2% of total) steps from scratch; only 100–500 steps
+   when starting from a checkpoint (our warm starts). If a run diverges early,
+   lengthen warmup before lowering the peak LR — our LRStepSchedule has **no
+   warmup**; fold one into the A28 optimizer package.
+3. **Human-opening seeding**: Nemesis (2026) trains on 3.8M Lichess-Elite
+   games and argues self-play from a random net "generates noisy positions
+   that slow early convergence" — plans a precomputed opening book from the
+   Elite DB. AZ independently rediscovered the 12 most popular human openings
+   and beat SF from each. → seed a fraction of self-play from a small curated
+   book (4–8 plies, popular positions) and measure early-game convergence.
+4. **Puzzle-start self-play works as a curriculum**: AZ_db started self-play
+   games from puzzle positions (solution withheld) and its solve rate rose
+   11.8% → 76.5% on the hard Challenge set — directly training tactical
+   solving via the normal RL loop.
+
+### Actionable queue additions
+- [ ] A55: fold √b LR rule into A38's A/B (batch 512 ↔ η 1e-3 vs ~1.4e-3)
+- [ ] A56: curated opening-book seeding (500–2,000 positions ≤8 plies from
+      masters/Elite) for a fraction of self-play games; measure convergence
+- [ ] A57: periodic puzzle-position self-play curriculum (start games from
+      benchmark positions; solutions withheld)
+- [ ] A58: 500-step warmup in the A28 optimizer package (short, checkpoint-
+      initialized); lengthen-before-lowering rule documented
+
+## Cycle 13 (brief) — 2026-11-24
 EMA of weights beat last iterate +65 Elo avg / +32 at 39k iters (Generals.io
 2026); Lc0 ships SWA nets. GambitNet 10×128 = Lc0 canonical ResNet minus
 Squeeze-and-Excitation; SE block standard in all modern Lc0 nets. Chess-mask
