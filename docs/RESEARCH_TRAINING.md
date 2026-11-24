@@ -6,6 +6,41 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 13 — 2026-11-24
+
+Sources: "Superhuman AI for Generals.io Using Self-Play RL" (arXiv
+2606.23348 — EMA ablation), "Grandmaster-Level Chess Without Search" (Polyak
+averaging), Lc0 network topology docs (SE blocks), SE reference code, "CNN
+with Specific Kernels for Computer Chess" (chess-mask filters).
+
+### Findings
+
+1. **Parameter EMA is free Elo**: in large-scale self-play RL, the EMA of
+   weights (decay 0.999) beat the last iterate by **65 Elo on average** and
+   still +32 Elo at 39k iterations; costs almost nothing. The chess
+   grandmaster-without-search paper also evaluates via Polyak averaging, and
+   Lc0 uses SWA for final networks. → We gate and bench the *current* weights;
+   an EMA (0.995–0.999) evaluated/benched/gated instead is a near-free win.
+2. **Squeeze-and-Excitation is the Lc0-standard block**: our GambitNet is
+   literally Lc0's canonical 10×128 ResNet *without* SE. Lc0's SE block:
+   GAP → FC(F/ratio) → ReLU → FC(2F) → split into γ/β → `sigmoid(γ)·x + β`,
+   then the residual add. Tiny parameter cost, standard in every modern Lc0
+   net (and the 195M "Leela-CNN" that beat Stockfish). → next-gen block.
+3. **Chess-mask kernels act as structured regularizers**: masking 5×5 kernels
+   to rook/bishop movement shapes improved validation accuracy/MSE for
+   Residual nets (biggest at 18×192); a cheap optional next-gen experiment.
+4. Implication for our progression: A33 (attention), A45 (planes), A52 (SE),
+   A47 (moves-left) are all *next-gen model* changes — bundle them into one
+   restart instead of drip-feeding restarts.
+
+### Actionable queue additions
+- [ ] A51: EMA weights (0.995–0.999) — evaluate/gate/bench the EMA; cheap
+      +30–65 Elo evidence from self-play RL
+- [ ] A52: SE block in each residual block (Lc0 topology) — next-gen model
+- [ ] A53: chess-movement-mask kernels (rook/bishop 5×5) — optional A/B
+- [ ] A54: bundle the next-gen model changes (A33+A45+A47+A52) into ONE
+      restart generation instead of separate restarts
+
 ## Cycle 12 — 2026-11-24
 
 Sources: Lc0 v0.25 moves-left head (PR #961, release notes), "Chess AI:
