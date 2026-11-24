@@ -115,6 +115,44 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 21 — 2026-11-24
+
+Sources: Neural Collapse under class imbalance (2309.09725, 2401.02058),
+CappyChess implementation notes (value-class rebalancing, head-init gain),
+Lc0 WDL+contempt blogs, Lc0 issue #1308 (temperature vs value), Lc0 TB
+rescoring (retroactive WDL for <=5-man spans).
+
+### Findings
+
+1. **Class-imbalanced CE collapses minority classes** (Neural Collapse
+   theory): classifier weights align to class means scaled by sqrt(n_k);
+   with a draw-heavy distribution the WDL head degenerates toward one class.
+   Our live value_acc = 0.00 across iterations 13-14 is the signature (likely
+   "always argmax=Win while targets are mostly draws") - needs a histogram
+   diagnostic before it is fixed blind.
+2. **Value-class rebalancing is the standard remedy**: CappyChess samples the
+   value loss by rebalancing to 1/3 W, 1/3 D, 1/3 L (default), with
+   `--no-value-balance` (Leela-style uniform) as the alternative. Target
+   class-prior bias init and a scaled-down head gain (0.01) at init are
+   complementary anti-collapse details.
+3. WDL calibration is separate from argmax collapse: Lc0's realistic-WDL
+   machinery (draw-rate reference ~58% startpos, rescale) fixes prediction
+   calibration, not class domination - do not conflate them.
+4. Temperature/exploration blunders shape value targets (issue #1308): the
+   value head needs to SEE bad positions; don't over-filter them.
+5. TB rescoring (Lc0, server-side) retroactively rewrites WDL for all
+   positions in a <=5-man span - matches our WP8 override; noted as
+   confirmation.
+
+### Actionable queue additions
+- [ ] A75: value-class handling - log target/argmax class histograms in WP5
+      metrics first (one line); then rebalanced value sampling (W/D/L 1/3) or
+      class-weighted value CE if collapse confirmed
+- [ ] A76: head-init hygiene - scale WDL output layer gain ~0.01 at init
+      (flat start), verify no L2/weight-decay on BN/bias params
+- [ ] A77: keep temperature-induced bad positions in training (no blunder
+      filtering) - value head needs them
+
 ## Cycle 20 — 2026-11-24
 
 Sources: AlphaZero PNAS (≤30 positions sampled per game; Dirichlet(0.3) 25 %),
