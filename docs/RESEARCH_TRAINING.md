@@ -6,6 +6,46 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 10 — 2026-11-24
+
+Sources: KataGo Methods (root policy temperature, aux soft policy target),
+KataGo paper §3.2 (forced playouts + policy target pruning, ablation table),
+KataGo PUCT/FPU parameters, Lichess-puzzle benchmark writeups (chess-bench,
+manoletre chess-puzzles-1k).
+
+### Findings
+
+1. **Forced playouts + policy target pruning** (KataGo §3.2): give every
+   root child a minimum n_forced = sqrt(k·P·ΣN) playouts (k=2, PUCT=∞ until
+   reached), then *subtract those forced playouts from the policy target*
+   (prune children left with 1 playout). Ablation: removing it costs ~4 %
+   Elo-equivalent (1276 vs 1329); it decouples the policy target from MCTS
+   dispersion and noise. We currently export **raw visit counts** → we take
+   noise-perturbed mass straight into training; this is the fix.
+2. **Root policy softmax temperature ≥1** (1.03 in KataGo; 1.25→1.1 in SAI):
+   a restoring force against PUCT's natural sharpening of near-equal moves;
+   cheap one-liner if our root prior has no such temperature.
+3. **Auxiliary soft policy head**: predict `policy^(1/T)` (T=4) as an extra
+   head, nominally 8× weighted — "greatly improves the speed of learning of
+   the policy"; helps after the early phase. Needs a model change (next gen).
+4. KataGo's search constants for reference: c_puct=1.1, FPU =
+   V(n) − 0.2·sqrt(ΣP_explored) (c_fpu=0 at root with noise),
+   Dirichlet α ≈ 0.03 scaled by legal-move count.
+5. **Puzzle benchmarks move before Elo does**: a Lichess-derived set (e.g.
+   ~500–1,000 puzzles, 50 themes × difficulty bands, move-by-move scoring
+   with Lichess replies) is a cheap tactical-accuracy metric — exactly the
+   kind of signal that shows a net improving while gates still draw.
+
+### Actionable queue additions
+- [ ] A40: forced playouts + policy target pruning in our search exports
+      (largest single search-side improvement left; applies to both python
+      and rust backends)
+- [ ] A41: auxiliary soft policy head (T=4, 8× weight) — next-gen model
+- [ ] A42: audit root search params vs KataGo refs (c_puct, FPU, root temp,
+      Dirichlet alpha scaling)
+- [ ] A43: Lichess puzzle benchmark harness (~500–1,000 puzzles,
+      move-by-move, Lichess replies) as the fast-moving tactical metric
+
 ## Cycle 9 — 2026-11-24
 
 Sources: "Tiny AlphaZero" (PolyLabs, 6.5M params, 2026, pre-registered
