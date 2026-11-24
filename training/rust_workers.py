@@ -279,7 +279,7 @@ def record_to_buffer_examples(record: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def record_to_selfplay_result(record: dict[str, Any]) -> "SelfPlayResult":
+def record_to_selfplay_result(record: dict[str, Any], tb: Any = None) -> "SelfPlayResult":
     """Spool record -> a ``SelfPlayResult`` the pipeline consumes unchanged.
 
     The PGN is rendered from the recorded SANs (python-chess importer, with
@@ -295,9 +295,12 @@ def record_to_selfplay_result(record: dict[str, Any]) -> "SelfPlayResult":
         game.headers["SetUp"] = "1"
     replay = chess.Board(record["opening_fen"])
     node = game
+    tb_values: list[float | None] = []
+    use_tb = tb is not None and getattr(tb, "enabled", False)
     for san in record["moves"]:
         move = replay.parse_san(san)
         node = node.add_variation(move)
+        tb_values.append(tb.value_for(replay) if use_tb else None)
         replay.push(move)
     game.headers["Result"] = record["result"]
     pgn = str(
@@ -310,10 +313,14 @@ def record_to_selfplay_result(record: dict[str, Any]) -> "SelfPlayResult":
             TrainingExample(
                 planes=ex["board_tensor"],
                 policy=ex["policy"],
-                value=ex["value"],
+                value=(
+                    tb_values[i]
+                    if i < len(tb_values) and tb_values[i] is not None
+                    else ex["value"]
+                ),
                 policy_mask=0.0 if ex.get("policy_masked") else 1.0,
             )
-            for ex in record["examples"]
+            for i, ex in enumerate(record["examples"])
         ],
         moves=list(record["moves"]),
         pgn=pgn,
