@@ -115,6 +115,35 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 15 — 2026-11-24
+
+Sources: "When, Where and Why to Average Weights?" (arXiv 2502.06761),
+SWA revisited (2201.00519), SeWA (2502.10119), PyTorch SWA blog, Lightning
+WeightAveraging docs.
+
+### Findings
+
+1. **Averaging horizon ≈ 1 % of the total training budget** is the broad
+   optimum (LAWA measured across workloads; EMA similar). Our EMA at
+   decay 0.999, updated every optimizer step (96 steps/iteration),
+   averages ~1 000 steps ≈ 10 iterations ≈ 1 % of a 1 000-iteration run -
+   the default is already on target; document it.
+2. **Sparse-update EMA wants ν ∈ [64,128] steps between updates with
+   β ≈ 0.9**; per-step updates pair with β ≈ 0.999. We update per step →
+   keep 0.999 (0.995 only if the window proves too long).
+3. **Averaging is a proxy for LR cooling**: its benefit shrinks when the LR
+   is fully annealed to zero. Our step-decay schedule (no full anneal)
+   keeps the EMA upside; if we move to cosine-to-zero, re-evaluate.
+4. SWA proper needs a high-constant LR phase (last 25 %) - not our setup;
+   **LAWA** (rolling window of the last ~20 checkpoints, updated every
+   64-128 steps) is the fallback if EMA proves hyperparameter-sensitive.
+5. EMA is more sensitive to its hyperparameters than LAWA - keep the decay
+   a profile knob and A/B it once at the night-v3 generation.
+
+### Actionable queue additions
+- [ ] A59: keep EMA decay 0.999 (horizon ≈ 1 % of budget); log the horizon;
+      consider LAWA (K≈20, update every 96 steps) as the fallback at night-v3
+
 ## Cycle 14 — 2026-11-24
 
 Sources: d2l batch-size chapter (McCandlish critical batch size), Malladi
