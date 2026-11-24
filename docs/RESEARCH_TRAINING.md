@@ -115,6 +115,41 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 20 — 2026-11-24
+
+Sources: AlphaZero PNAS (≤30 positions sampled per game; Dirichlet(0.3) 25 %),
+"Assessing Game Balance with AlphaZero" (0.12 samples/position), ChessCoach
+(800 sims + noise), "Engineering Efficient Self-Play Chess" §4.1 (PCR in
+CHESS measured net-negative), AZ supplementary (root noise every search).
+
+### Findings
+
+1. **AlphaZero samples ≤ ~30 positions per GAME** ("subsequent positions are
+   strongly correlated; including all may increase overfitting"). We admit
+   every ply (~100–150 rows/game) - adjacent-row redundancy is real and is
+   also a value-head overfitting vector. Simple knob: per-game subsample.
+2. **Dirichlet(0.3) at 25 % weight on the root, applied on every search**
+   (every ply) is the AZ-canonical setting - our implementation matches.
+3. **⚠ PCR DID NOT TRANSFER TO CHESS** (2026 engineering paper §4.1.2): their
+   fast/full scheme "discarded useful targets", cheap moves still consumed
+   42.9 % of nominal search work, the tail hurt batching (128 active trees
+   filling 86/320 batch slots), and the retained design searches EVERY
+   recorded move to a staged cap (300→800). Their value objective was
+   already learning, so extra finished games did not compensate for lost
+   policy-target density.
+4. Our run just launched with PCR p=0.25/fast=100 (WP2) - the contradiction
+   demands an A/B, not a blind rollback: same wall-clock, gate score + target
+   density, PCR-on vs PCR-off. Staged sim caps (300→400→600→800) are the
+   measured alternative worth adopting regardless.
+
+### Actionable queue additions
+- [ ] A72: per-game row subsample (≤30 rows/game, uniform over plies) -
+      cuts adjacent-position redundancy; A/B vs all-plies at matched compute
+- [ ] A73: PCR A/B in chess (on vs off, matched wall-clock, WP5 metrics +
+      gate scores); adopt staged sim caps (300→800) as the fallback design
+- [ ] A74: track presentations-per-row (~4 in the reference run) alongside
+      games/hr - reuse ratio is a first-class training knob
+
 ## Cycle 19 — 2026-11-24
 
 Sources: Tiny AlphaZero round log (2026), "Engineering Efficient Self-Play
