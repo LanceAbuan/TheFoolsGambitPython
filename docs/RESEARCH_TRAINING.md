@@ -6,6 +6,44 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 12 — 2026-11-24
+
+Sources: Lc0 v0.25 moves-left head (PR #961, release notes), "Chess AI:
+Competing Paradigms" (Entropy 2022), "Engineering Efficient Self-Play Chess"
+(arXiv 2609.37447 — tree reuse, parallel-leaf cost, graph-search negative
+result, 0.99 discount), AlphaZero tree-reuse description, MCGS paper.
+
+### Findings
+
+1. **Moves-left head (MLH)** predicts remaining game length in plies. Lc0
+   uses it to (a) make search prefer **faster wins / fewer shuffling moves**,
+   (b) bias self-play games away from shuffling, (c) time management.
+   → Directly attacks our draw-by-shuffling pattern: a net that knows when a
+   position is "going nowhere" can convert instead. Aux head, next-gen model.
+2. **Subtree reuse between moves is free compute**: AZ keeps the played
+   child's subtree as the new root (the 2026 engine retains 60 % of visits) —
+   20–40 % of per-move search is already done at move N+1. Our rust workers
+   rebuild the tree every move; this is the cheapest sims multiplier left.
+3. **Graph/transposition search is a measured dead end**: with exact chess
+   state identity (castling/ep/clock/history), only 0.02–0.18 % of evals were
+   saved and the search ran 8 % slower — don't archive A12-era graph ideas.
+4. **Per-tree parallel leaves cost strength**: ~6.4 Elo per doubling at 1,000
+   visits; at 100 visits 16-way parallelism lost ~235 Elo. Inter-game batching
+   is the free way to use the GPU; per-tree parallelism trades quality for
+   latency. Our rust search runs internal parallel sims — verify it isn't
+   paying a big tax at 600 sims.
+5. The 2026 engine also applies a **0.99 per-ply value discount** in backup —
+   cheap anti-shuffle pressure toward sooner favorable outcomes.
+
+### Actionable queue additions
+- [ ] A47: moves-left auxiliary head (predict plies remaining; use in search
+      preference + as a progress signal) — next-gen model
+- [ ] A48: subtree reuse across moves in rust selfplay (keep played child as
+      root, retain visits; target ~60 % retention)
+- [ ] A49: per-ply value discount (0.99) in search backup — A/B vs plain
+- [ ] A50: measure per-tree parallelism quality cost at 600 sims (1 vs N
+      leaves in flight); inter-game batching stays the default lever
+
 ## Cycle 11 — 2026-11-24
 
 Sources: ONNX Runtime threading docs, "CPU Inference Threading: The
