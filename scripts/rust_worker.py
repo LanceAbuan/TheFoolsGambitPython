@@ -59,6 +59,8 @@ def parse_args() -> argparse.Namespace:
                         help="WP2: playout cap randomization p_full (0=off, KataGo 0.25)")
     parser.add_argument("--pcr-fast-sims", type=int, default=100,
                         help="WP2: simulations for value-only PCR searches")
+    parser.add_argument("--soft-resign", action="store_true",
+                        help="WP3: shrink search budget when dead lost (no resignation)")
     parser.add_argument("--duration-seconds", type=float, default=0.0, help="0 = run until Ctrl+C")
     parser.add_argument("--poll-seconds", type=float, default=5.0, help="idle wait between pointer checks")
     return parser.parse_args()
@@ -161,6 +163,7 @@ def main() -> int:
                 fp_k=args.fp_k,
                 pcr_p_full=args.pcr_p_full,
                 pcr_fast_sims=args.pcr_fast_sims,
+                soft_resign=args.soft_resign,
             )
         except BaseException as exc:
             # pyo3's PanicException (rust panic inside selfplay_game)

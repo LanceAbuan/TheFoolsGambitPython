@@ -312,7 +312,7 @@ fn encode_batch_v2<'py>(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "onnx")]
 #[pyfunction]
-#[pyo3(signature = (model_path, seed = 0, sims = 64, max_plies = 200, temperature = 1.0, temperature_plies = 30, opening_seed = None, weight_version = 0, forced_playouts = false, fp_k = 2.0, pcr_p_full = 0.0, pcr_fast_sims = 100))]
+#[pyo3(signature = (model_path, seed = 0, sims = 64, max_plies = 200, temperature = 1.0, temperature_plies = 30, opening_seed = None, weight_version = 0, forced_playouts = false, fp_k = 2.0, pcr_p_full = 0.0, pcr_fast_sims = 100, soft_resign = false))]
 fn selfplay_game<'py>(
     py: Python<'py>,
     model_path: &str,
@@ -327,6 +327,7 @@ fn selfplay_game<'py>(
     fp_k: f64,
     pcr_p_full: f64,
     pcr_fast_sims: u32,
+    soft_resign: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
     let game = py
         .detach(|| -> Result<selfplay::SelfPlayGame, String> {
@@ -347,6 +348,7 @@ fn selfplay_game<'py>(
                 fp_k,
                 pcr_p_full,
                 pcr_fast_sims,
+                soft_resign,
             };
             Ok(selfplay::play_game(&mut evaluator, &root, &params))
         })
@@ -362,6 +364,7 @@ fn selfplay_game<'py>(
         record.set_item("policy", ex.policy.clone().into_pyarray(py))?;
         record.set_item("value", ex.value)?;
         record.set_item("policy_masked", ex.policy_masked)?;
+        record.set_item("root_value", ex.root_value)?;
         examples.append(record)?;
     }
     dict.set_item("examples", examples)?;
