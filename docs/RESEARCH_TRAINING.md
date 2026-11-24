@@ -120,6 +120,40 @@ A76/A78 folded into WP10/WP11 scope; A79 no action (BN fine).
 - SQLite/telemetry compression for long-run journals (ops)
 - ONNX fp16 export for play-server latency (with A60)
 
+## Cycle 28 — 2026-11-24
+
+Sources: "Beyond Search-Imitation" §2 (entropy-adaptive temperature, WDL
+entropy tau, sampled-vs-argmax ladders), its repo flags; ONNX Runtime fp16
+docs (convert_float_to_float16, mixed precision), ORT issue #13838
+(fp16 slower at batch 1 without tensor-core benefit), PyTorch fp16-ONNX
+discrepancy thread.
+
+### Findings
+
+1. **WDL-entropy temperature is a better exploration schedule than ply
+   cutoffs**: tau(s) = H(p_WDL) in [0, ln3] ~ [0, 1.1]; sample mu ∝ pi^(1/tau).
+   Decided positions (near-one-hot WDL) -> tau->0 -> greedy finish (stops
+   wasting rollouts and teaching stochastic noise); contested/draw-heavy
+   positions (tau ~0.9) -> mu ~ pi (exploration preserved where the signal is
+   richest).
+2. Every adaptive-temperature arm outranked its fixed tau=1 twin; adaptive
+   temperature alone gained +9.8 Elo (before any KL regularizer), and
+   sharpening the base lifted its sampled Elo by +361 (entropy 1.69 -> 0.39).
+3. The sampled-vs-argmax span (670 vs 30 Elo) shows how much of sampled
+   strength is just policy concentration - our current "temp 1.0 for 30
+   plies then argmax" is a crude proxy for the same idea.
+4. **fp16 ONNX is NOT a free win at our batch sizes**: gains need tensor
+   cores AND batch >= 8; at batch 1 fp16 was measurably SLOWER than fp32 in
+   ORT issue #13838 (cast/kernel overhead), and CPU EP fp16 just casts to
+   fp32. Relevant only if worker eval batches grow; skip for the play server.
+
+### Actionable queue additions
+- [ ] A89: WDL-entropy temperature in self-play (flag-gated rust selfplay):
+      tau = H(WDL of the mover), replace the ply-30 cutoff; measure draw rate
+      and gate strength vs the current schedule
+- [ ] A90: fp16 ONNX only if measured batch >= 8 (workers, not play server);
+      otherwise stay fp32 - recorded as likely-no-gain
+
 ## Cycle 27 (newest, brief) — 2026-11-24
 Argmax accuracy is only optimal for equal-cost 0-1 decisions; probability quality
 needs proper scoring rules — Brier score (bounded, decomposes into calibration +
