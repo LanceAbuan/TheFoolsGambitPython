@@ -115,6 +115,44 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 18 — 2026-11-24
+
+Sources: Net2Net (1511.05641), Net2Net growing-wiki (AutoGrow: RandomPad beats
+Net2Net on ResNets), "Towards a More Complete Theory of Function Preserving
+Transforms" (2410.11038, RandomPadWiden student 70.2 vs NetMorph 69.8),
+"Analysis of Hyper-Parameters for Small Games" (2003.05988), MiniZero
+hyperparameters, size-scaling studies (ESANN 2022, 2210.00849).
+
+### Findings
+
+1. **Net2WiderNet** = replicate channels/units by random mapping and DIVIDE
+   the outgoing weights by the replication factor (+ small noise so replicas
+   diverge); conv nets do it at channel level. **Net2DeeperNet** = insert
+   identity layers (needs idempotent activations like ReLU; BN identity init
+   needs data statistics).
+2. **For ResNets, RandomPad beats classic Net2Net** (AutoGrow / 2410.11038):
+   simply zero-padding new channels matches or beats function-preserving
+   replication. Our v3 is architecture-ADDITIVE (SE + MLH + encoder planes),
+   so zero-init of the new parts is effectively RandomPad - the cheap and
+   often-better route; skip manual function-preserving surgery.
+3. Warm-start advantage is **budget-dependent**: with short post-surgery
+   budgets a cold-widen can win; warm-start wins once the teacher is well
+   converged and the resume budget is long. Keep a cold-start A/B control.
+4. **Outer self-play iterations subsume the inner knobs** (2003.05988): within
+   a fixed budget, maximize iterations; LOWER games/epochs/sims per iteration.
+   Too many inner epochs overfit and can reduce strength.
+5. Reference shapes: MiniZero = 2000 games/iter, 200 steps/iter, 40k-game
+   buffer, 300 iterations; we run 32 games / 96 steps over 1000 iterations -
+   same shape, far smaller per-iteration.
+
+### Actionable queue additions
+- [ ] A67: WP11 warm start via additive zero-init (encoder planes 0, SE near
+      identity via large positive gamma bias, new heads fresh); cold-start
+      control run for the A/B
+- [ ] A68: iteration-size A/B - more outer iterations with fewer inner steps
+      (e.g. games 32->16, steps 96->64) vs current; compare gate score per
+      wall-clock hour
+
 ## Cycle 17 — 2026-11-24
 
 Sources: AZ supplementary data (73×64 encoding), "Mastering Chess with a
