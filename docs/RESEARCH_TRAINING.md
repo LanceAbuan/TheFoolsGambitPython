@@ -115,6 +115,35 @@ above; A15 capacity schedule → revisit next gen; A39 → A36.
 - league/opponent-modeling depth (past-checkpoint sampling rates)
 - profiling workflow for the trainer (py-spy/nsys) under rust_workers
 
+## Cycle 25 — 2026-11-24
+
+Sources: Ampere undervolt/power-limit guides (Chaos, igorslab, bigiron 24/7
+inference), 24/7 local-agent undervolt write-up (2026, RTX 3090 sweep),
+"Optimal power limit for deep learning on RTX 3090" (qwertyforce),
+power/energy studies (Zeus 2208.06102, AI training power measurements).
+
+### Findings
+
+1. **A ~280 W power cap on the 3080 is nearly free performance-wise and big
+   on heat**: stock is 320 W; thermal throttling starts ~81 °C; measured
+   sweeps put 275-300 W at ~95 %+ of stock training throughput with ~20 %
+   less power (LLM-style decode loses almost nothing; CNN training ~5 %).
+   For an unattended 24/7 box, 280 W (or 250 W if noise/heat matter more) is
+   the recommended operating point - and our training step is far from
+   GPU-bound, so the loss is even smaller.
+2. `nvidia-smi -pl 280` is the robust cross-platform lever (admin); a true
+   voltage-curve undervolt needs Afterburner on Windows, not required.
+3. Energy studies agree: the energy-optimal power limit sits BELOW the max
+   (3-32 % energy savings) and batch-size choice compounds it (Zeus).
+4. Nothing here changes training math - it is a hardware-safety/efficiency
+   setting for long unattended runs.
+
+### Actionable queue additions
+- [ ] A84: set the 3080 power limit to ~280 W for 24/7 training
+      (`nvidia-smi -pl 280`, admin; reversible with `-pl 320`); expect ~no
+      throughput loss on this small net, much cooler VRMs/fans
+- [ ] A85: surface GPU temp/power in the health heartbeat (ops telemetry)
+
 ## Cycle 24 — 2026-11-24
 
 Sources: chessprogramming Opening Book / Polyglot, Lc0 mailing list on
