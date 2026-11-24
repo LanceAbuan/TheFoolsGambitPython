@@ -6,6 +6,50 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 6 — 2026-11-24
+
+Sources: KataGo paper Appendix D + methods (soft resignation, game
+randomization), KataGo playsettings, "Reproducing AlphaZero on Tablut"
+(arXiv 2604.05476, 2026), ARENA AZ course (full-run hyperparameter sweep),
+AlphaGateau optimization study (IEA/AIE 2026), d2l LR-schedule chapter.
+
+### Findings
+
+1. **Soft resignation** (KataGo): never resign, but when the losing side's
+   MCTS winrate < 5% for 5 turns, cap visits to λn+(1−λ)N (λ=p/0.05) and
+   record samples with prob 0.1+0.9λ. Cheaper than full play, no biased
+   resignations. → A cleaner answer to our 200-ply "cap = draw label" bias
+   than A13 alone.
+2. **Opening initialization**: first r moves sampled from the raw policy
+   (~exponential, mean 0.04·area ≈ 2–3 moves for chess), temperature decays
+   smoothly 0.8 → 0.2 (halflife ≈ board width) — equivalent to AZ's 30-ply
+   cutoff but smoother; 2.5–5% of games additionally branch into unusual
+   openings for coverage.
+3. **Opponent diversification**: the 2026 Tablut AZ reproduction played
+   **25% of games vs randomly sampled past checkpoints** (plus C4 aug and a
+   doubled replay) — that's what mitigated catastrophic forgetting; every
+   other trick was secondary.
+4. **Optimizer package** (Tablut + AlphaGateau, both 2026): AdamW (decoupled
+   wd 1e-4) + warmup (500 steps) + cosine decay to ~1e-5, grad-clip 1.0;
+   AlphaGateau's ablation: loss 2.49 → 1.67 and small Elo gain from exactly
+   this package on a chess net. ARENA sweep: **all practical gains came from
+   fresher self-play data** — capacity/loss/regularization were inert.
+5. AZ original used momentum SGD 0.2 with 4 hard drops; WSD
+   (warmup-stable-decay) beats cosine at fixed budget; we run Adam 1e-3 +
+   step-halving — worth a measured upgrade to the 2026 package.
+
+### Actionable queue additions
+- [ ] A25: soft-resign / play-to-completion with visit scaling and sample
+      downweighting (replaces hard-cap draw labels; pairs with A13)
+- [ ] A26: policy-proportional opening init + smooth temperature decay
+      (0.8→0.2, halflife ≈ 8 plies) — A/B vs the 30-ply hard cut
+- [ ] A27: 25% of games vs sampled past checkpoints (worker code change;
+      anti-forgetting, medium-term)
+- [ ] A28: optimizer upgrade — AdamW(wd 1e-4) + 500-step warmup + cosine/WSD
+      + grad-clip 1.0 (measure per-step loss trajectory before adopting)
+- [ ] A29: confirmed: keep the replay window small/fresh (100k) — freshness
+      beats size in the ARENA sweep
+
 ## Cycle 5 — 2026-11-24
 
 Sources: Gumbel AlphaZero (Danihelka et al., ICLR 2022 + ARENA course notes),
