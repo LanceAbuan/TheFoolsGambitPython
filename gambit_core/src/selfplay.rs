@@ -64,6 +64,11 @@ pub struct SelfPlayParams {
     pub forced_playouts: bool,
     /// WP1: forced-playout scale k in sqrt(k * P * sum(N)).
     pub fp_k: f64,
+    /// WP2: probability a ply runs the FULL search (KataGo PCR, 0.25).
+    /// <= 0 disables PCR entirely (old behavior bit-identical).
+    pub pcr_p_full: f64,
+    /// WP2: simulations for the cheap (value-only) PCR searches.
+    pub pcr_fast_sims: u32,
 }
 
 impl Default for SelfPlayParams {
@@ -77,6 +82,9 @@ impl Default for SelfPlayParams {
             // WP1: off by default = canonical AlphaZero (pre-WP1 behavior).
             forced_playouts: false,
             fp_k: 2.0,
+            // WP2: PCR off by default (old behavior bit-identical).
+            pcr_p_full: 0.0,
+            pcr_fast_sims: 100,
         }
     }
 }
@@ -91,6 +99,9 @@ pub struct SelfPlayExample {
     pub policy: Vec<f32>,
     /// Game outcome from the MOVER's perspective: -1.0 / 0.0 / +1.0.
     pub value: f32,
+    /// WP2: true when this row came from a cheap PCR search and must not
+    /// contribute to the policy loss (policy is all zeros; value still trains).
+    pub policy_masked: bool,
 }
 
 /// One finished game — the rust mirror of python `SelfPlayResult`.
@@ -303,7 +314,7 @@ pub fn play_game(
     let mut rng = StdRng::seed_from_u64(params.seed);
     let mut history = GameHistory::empty();
     let mut cur = *opening_root;
-    let mut pending: Vec<([f32; NUM_PLANES_V2 * 64], Vec<f32>, bool)> = Vec::new();
+    let mut pending: Vec<([f32; NUM_PLANES_V2 * 64], Vec<f32>, bool, bool)> = Vec::new();
     let mut sans: Vec<String> = Vec::new();
     let mut ucis: Vec<String> = Vec::new();
     let mut fens: Vec<String> = Vec::new();
@@ -315,10 +326,18 @@ pub fn play_game(
             break;
         }
 
+        // WP2 (KataGo playout cap randomization): most plies run a cheap
+        // value-only search; a fraction (pcr_p_full) run the full search and
+        // record the policy target. PCR off (<=0) and the first 8 plies
+        // always run full, so opening targets stay high quality.
+        let full = params.pcr_p_full <= 0.0 || ply < 8 || rng.gen::<f64>() < params.pcr_p_full;
+        let sims = if full { params.num_simulations } else { params.pcr_fast_sims.max(1) };
+
         // Root-noise-on search with a fresh Dirichlet seed per ply drawn from
         // the single game stream (python passes one rng to the search).
         let cfg = SearchConfig {
-            num_simulations: params.num_simulations,
+            num_simulations: sims,
+            root_noise: full,
             seed: rng.gen::<u64>(),
             forced_playouts: params.forced_playouts,
             fp_k: params.fp_k,
@@ -329,8 +348,11 @@ pub fn play_game(
 
         // Policy target: normalized visit counts (python
         // `policy = basis / total if total > 0 else np.zeros_like(basis)`).
+        // Fast PCR rows are masked out of the policy loss -> zeros.
         let total: f32 = result.visit_counts.iter().sum();
-        let policy: Vec<f32> = if total > 0.0 {
+        let policy: Vec<f32> = if !full {
+            vec![0.0; POLICY_MOVES]
+        } else if total > 0.0 {
             result.visit_counts.iter().map(|c| c / total).collect()
         } else {
             vec![0.0; POLICY_MOVES]
@@ -345,6 +367,7 @@ pub fn play_game(
             encode_planes_v2(&cur, &hist7),
             policy,
             cur.side_to_move() == Color::White,
+            !full,
         ));
 
         // Temperature schedule + visit-count sampling (python
@@ -374,9 +397,14 @@ pub fn play_game(
     let ow = outcome_white(&cur);
     let examples: Vec<SelfPlayExample> = pending
         .into_iter()
-        .map(|(planes, policy, white)| {
+        .map(|(planes, policy, white, masked)| {
             let value = if white { ow } else { -ow };
-            SelfPlayExample { planes, policy, value: value as f32 }
+            SelfPlayExample {
+                planes,
+                policy,
+                value: value as f32,
+                policy_masked: masked,
+            }
         })
         .collect();
 
@@ -530,6 +558,33 @@ mod tests {
 
     /// A capped game: draw result, 'max-plies' termination, one example per
     /// played ply, zero values, normalized policies, legal move chain.
+    #[test]
+    fn playout_cap_randomization_masks_fast_rows() {
+        let root = Position::starting();
+        let params = SelfPlayParams {
+            seed: 9,
+            num_simulations: 8,
+            max_plies: 24,
+            temperature: 0.0,
+            temperature_plies: 30,
+            pcr_p_full: 0.5,
+            ..SelfPlayParams::default()
+        };
+        let game = play_game(&mut StubEvaluator { bias: None }, &root, &params);
+        assert_eq!(game.examples.len(), 24);
+        // Opening guard: the first 8 plies always run the full search.
+        assert!(game.examples[..8].iter().all(|e| !e.policy_masked));
+        let masked = game.examples.iter().filter(|e| e.policy_masked).count();
+        assert!(masked > 0, "PCR p_full=0.5 should produce fast rows");
+        for ex in game.examples.iter().filter(|e| e.policy_masked) {
+            assert!(ex.policy.iter().all(|c| *c == 0.0), "fast rows carry no policy");
+        }
+        // PCR disabled (default): every row trains the policy.
+        let off = SelfPlayParams { seed: 9, max_plies: 24, num_simulations: 8, ..SelfPlayParams::default() };
+        let game_off = play_game(&mut StubEvaluator { bias: None }, &root, &off);
+        assert!(game_off.examples.iter().all(|e| !e.policy_masked));
+    }
+
     #[test]
     fn play_game_draws_at_ply_cap() {
         let mut evaluator = StubEvaluator { bias: None };

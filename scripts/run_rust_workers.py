@@ -47,6 +47,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--forced-playouts", action="store_true",
                         help="WP1: KataGo forced playouts + policy target pruning")
     parser.add_argument("--fp-k", type=float, default=2.0, help="WP1: forced-playout scale k")
+    parser.add_argument("--pcr-p-full", type=float, default=0.0,
+                        help="WP2: playout cap randomization p_full (0=off, KataGo 0.25)")
+    parser.add_argument("--pcr-fast-sims", type=int, default=100,
+                        help="WP2: simulations for value-only PCR searches")
     parser.add_argument("--duration-seconds", type=float, default=0.0, help="0 = until Ctrl+C")
     parser.add_argument("--max-restarts", type=int, default=10, help="per-slot restart budget")
     parser.add_argument("--restart-backoff", type=float, default=5.0)
@@ -70,6 +74,10 @@ def worker_argv(args: argparse.Namespace, slot: int) -> list[str]:
         "--duration-seconds", str(args.duration_seconds),
     ] + (["--no-openings"] if args.no_openings else []) + (
         ["--forced-playouts", "--fp-k", str(args.fp_k)] if args.forced_playouts else []
+    ) + (
+        ["--pcr-p-full", str(args.pcr_p_full), "--pcr-fast-sims", str(args.pcr_fast_sims)]
+        if args.pcr_p_full > 0
+        else []
     )
 
 

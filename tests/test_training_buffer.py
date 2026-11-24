@@ -64,7 +64,7 @@ class TestTrainingBuffer:
         self.buffer.add(examples)
         batch = self.buffer.sample(64)
         assert batch is not None
-        tensors, policies, values = batch
+        tensors, policies, values, masks = batch
         assert tensors.shape[0] == 64
         assert policies.shape[0] == 64
         assert len(values) == 64
@@ -75,24 +75,34 @@ class TestTrainingBuffer:
         self.buffer.add([self._make_example() for _ in range(10)])
         batch = self.buffer.sample(64)
         assert batch is not None
-        tensors, _, _ = batch
+        tensors, _, _, _ = batch
         assert tensors.shape[0] == 10
 
     def test_sample_returns_none_when_empty(self):
         assert self.buffer.sample(64) is None
 
+    def test_sample_returns_policy_mask(self):
+        """WP2: PCR fast rows carry policy_mask=0.0; others default 1.0."""
+        masked = self._make_example()
+        masked["policy_mask"] = 0.0
+        self.buffer.add([masked, self._make_example()])
+        batch = self.buffer.sample(2)
+        assert batch is not None
+        _, _, _, masks = batch
+        assert sorted(masks.tolist()) == [0.0, 1.0]
+
     def test_sample_values_correct_for_win(self):
         examples = [self._make_example(value=1.0) for _ in range(64)]
         self.buffer.add(examples)
         batch = self.buffer.sample(64)
-        _, _, values = batch
+        _, _, values, _ = batch
         assert all(v == 1.0 for v in values.tolist())
 
     def test_sample_values_correct_for_loss(self):
         examples = [self._make_example(value=-1.0) for _ in range(64)]
         self.buffer.add(examples)
         batch = self.buffer.sample(64)
-        _, _, values = batch
+        _, _, values, _ = batch
         assert all(v == -1.0 for v in values.tolist())
 
     def test_clear(self):
@@ -104,7 +114,7 @@ class TestTrainingBuffer:
         examples = [self._make_example() for _ in range(100)]
         self.buffer.add(examples)
         batch = self.buffer.sample(32)
-        tensors, _, _ = batch
+        tensors, _, _, _ = batch
         assert tensors.shape[0] == 32
 
     def test_default_max_size(self):

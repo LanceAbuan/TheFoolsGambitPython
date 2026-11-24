@@ -67,7 +67,8 @@ if TYPE_CHECKING:  # heavy torch/chess imports stay lazy (worker CLI imports fas
 log = logging.getLogger(__name__)
 
 # --- schema constants -------------------------------------------------------
-SPOOL_SCHEMA_ID = "gambit.selfplay.v1"
+SPOOL_SCHEMA_ID = "gambit.selfplay.v2"  # WP2: examples carry policy_masked
+SPOOL_SCHEMA_IDS = {"gambit.selfplay.v1", "gambit.selfplay.v2"}
 SPOOL_ENCODING = "f32.le.b64"
 
 # pipeline.py buffer.add record payload: (104, 8, 8) f32 planes + (4672,) f32
@@ -153,6 +154,7 @@ def game_record_from_rust(
                 "board_tensor_b64": _b64_encode_f32(np.asarray(ex["board_tensor"])),
                 "policy_b64": _b64_encode_f32(np.asarray(ex["policy"])),
                 "value": float(ex["value"]),
+                "policy_masked": bool(ex.get("policy_masked", False)),
             }
             for ex in game["examples"]
         ],
@@ -167,9 +169,10 @@ def validate_game_record(record: dict[str, Any]) -> None:
     """
     if not isinstance(record, dict):
         raise RecordError("record must be a JSON object")
-    if record.get("schema") != SPOOL_SCHEMA_ID:
+    if record.get("schema") not in SPOOL_SCHEMA_IDS:
         raise RecordError(
-            f"unsupported schema {record.get('schema')!r} (expected {SPOOL_SCHEMA_ID!r})"
+            f"unsupported schema {record.get('schema')!r} "
+            f"(expected one of {sorted(SPOOL_SCHEMA_IDS)})"
         )
     if record.get("encoding") != SPOOL_ENCODING:
         raise RecordError(f"unsupported encoding {record.get('encoding')!r}")
@@ -192,10 +195,15 @@ def validate_game_record(record: dict[str, Any]) -> None:
     if record["ply_count"] == 0:
         raise RecordError("game recorded zero plies")
     for i, ex in enumerate(examples):
-        if not isinstance(ex, dict) or set(ex) != {"board_tensor_b64", "policy_b64", "value"}:
+        required = {"board_tensor_b64", "policy_b64", "value"}
+        allowed = required | {"policy_masked"}
+        if not isinstance(ex, dict) or not required <= set(ex) or not set(ex) <= allowed:
             raise RecordError(
-                f"examples[{i}] keys must be exactly board_tensor_b64/policy_b64/value"
+                f"examples[{i}] keys must be board_tensor_b64/policy_b64/value"
+                " (+optional policy_masked)"
             )
+        if "policy_masked" in ex and not isinstance(ex["policy_masked"], bool):
+            raise RecordError(f"examples[{i}].policy_masked must be a bool")
         value = ex["value"]
         if not isinstance(value, (int, float)) or float(value) not in (-1.0, 0.0, 1.0):
             raise RecordError(f"examples[{i}].value must be -1.0/0.0/1.0, got {value!r}")
@@ -294,7 +302,12 @@ def record_to_selfplay_result(record: dict[str, Any]) -> "SelfPlayResult":
         # TrainingExample objects - the exact thing the python self-play
         # path returns, so pipeline.py's buffer.add loop is untouched.
         examples=[
-            TrainingExample(planes=ex["board_tensor"], policy=ex["policy"], value=ex["value"])
+            TrainingExample(
+                planes=ex["board_tensor"],
+                policy=ex["policy"],
+                value=ex["value"],
+                policy_mask=0.0 if ex.get("policy_masked") else 1.0,
+            )
             for ex in record["examples"]
         ],
         moves=list(record["moves"]),

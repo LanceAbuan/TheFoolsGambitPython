@@ -1388,6 +1388,9 @@ class TrainingExample:
     planes: np.ndarray  # (29, 8, 8)
     policy: np.ndarray  # (4672,) visit distribution
     value: float
+    # WP2: 1.0 = contribute to the policy loss; 0.0 = value-only row (PCR fast
+    # search). Additive default keeps every pre-WP2 construction unchanged.
+    policy_mask: float = 1.0
 
 
 @dataclass(frozen=True)
