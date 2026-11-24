@@ -1,531 +1,123 @@
-# Training Research Log (autonomous loop)
-
-Purpose: continuous, incremental research on training/server optimization for
-Fool's Gambit. Each cycle: read this file, research **new** topics (websearch /
-webfetch), append findings + actionable items, commit. Cycles are listed
-**newest first**. Focus = training quality, sample efficiency, throughput.
-Never touch the live training run.
-
-## Cycle 13 — 2026-11-24
-
-Sources: "Superhuman AI for Generals.io Using Self-Play RL" (arXiv
-2606.23348 — EMA ablation), "Grandmaster-Level Chess Without Search" (Polyak
-averaging), Lc0 network topology docs (SE blocks), SE reference code, "CNN
-with Specific Kernels for Computer Chess" (chess-mask filters).
-
-### Findings
-
-1. **Parameter EMA is free Elo**: in large-scale self-play RL, the EMA of
-   weights (decay 0.999) beat the last iterate by **65 Elo on average** and
-   still +32 Elo at 39k iterations; costs almost nothing. The chess
-   grandmaster-without-search paper also evaluates via Polyak averaging, and
-   Lc0 uses SWA for final networks. → We gate and bench the *current* weights;
-   an EMA (0.995–0.999) evaluated/benched/gated instead is a near-free win.
-2. **Squeeze-and-Excitation is the Lc0-standard block**: our GambitNet is
-   literally Lc0's canonical 10×128 ResNet *without* SE. Lc0's SE block:
-   GAP → FC(F/ratio) → ReLU → FC(2F) → split into γ/β → `sigmoid(γ)·x + β`,
-   then the residual add. Tiny parameter cost, standard in every modern Lc0
-   net (and the 195M "Leela-CNN" that beat Stockfish). → next-gen block.
-3. **Chess-mask kernels act as structured regularizers**: masking 5×5 kernels
-   to rook/bishop movement shapes improved validation accuracy/MSE for
-   Residual nets (biggest at 18×192); a cheap optional next-gen experiment.
-4. Implication for our progression: A33 (attention), A45 (planes), A52 (SE),
-   A47 (moves-left) are all *next-gen model* changes — bundle them into one
-   restart instead of drip-feeding restarts.
-
-### Actionable queue additions
-- [ ] A51: EMA weights (0.995–0.999) — evaluate/gate/bench the EMA; cheap
-      +30–65 Elo evidence from self-play RL
-- [ ] A52: SE block in each residual block (Lc0 topology) — next-gen model
-- [ ] A53: chess-movement-mask kernels (rook/bishop 5×5) — optional A/B
-- [ ] A54: bundle the next-gen model changes (A33+A45+A47+A52) into ONE
-      restart generation instead of separate restarts
-
-## Cycle 12 — 2026-11-24
-
-Sources: Lc0 v0.25 moves-left head (PR #961, release notes), "Chess AI:
-Competing Paradigms" (Entropy 2022), "Engineering Efficient Self-Play Chess"
-(arXiv 2609.37447 — tree reuse, parallel-leaf cost, graph-search negative
-result, 0.99 discount), AlphaZero tree-reuse description, MCGS paper.
-
-### Findings
-
-1. **Moves-left head (MLH)** predicts remaining game length in plies. Lc0
-   uses it to (a) make search prefer **faster wins / fewer shuffling moves**,
-   (b) bias self-play games away from shuffling, (c) time management.
-   → Directly attacks our draw-by-shuffling pattern: a net that knows when a
-   position is "going nowhere" can convert instead. Aux head, next-gen model.
-2. **Subtree reuse between moves is free compute**: AZ keeps the played
-   child's subtree as the new root (the 2026 engine retains 60 % of visits) —
-   20–40 % of per-move search is already done at move N+1. Our rust workers
-   rebuild the tree every move; this is the cheapest sims multiplier left.
-3. **Graph/transposition search is a measured dead end**: with exact chess
-   state identity (castling/ep/clock/history), only 0.02–0.18 % of evals were
-   saved and the search ran 8 % slower — don't archive A12-era graph ideas.
-4. **Per-tree parallel leaves cost strength**: ~6.4 Elo per doubling at 1,000
-   visits; at 100 visits 16-way parallelism lost ~235 Elo. Inter-game batching
-   is the free way to use the GPU; per-tree parallelism trades quality for
-   latency. Our rust search runs internal parallel sims — verify it isn't
-   paying a big tax at 600 sims.
-5. The 2026 engine also applies a **0.99 per-ply value discount** in backup —
-   cheap anti-shuffle pressure toward sooner favorable outcomes.
-
-### Actionable queue additions
-- [ ] A47: moves-left auxiliary head (predict plies remaining; use in search
-      preference + as a progress signal) — next-gen model
-- [ ] A48: subtree reuse across moves in rust selfplay (keep played child as
-      root, retain visits; target ~60 % retention)
-- [ ] A49: per-ply value discount (0.99) in search backup — A/B vs plain
-- [ ] A50: measure per-tree parallelism quality cost at 600 sims (1 vs N
-      leaves in flight); inter-game batching stays the default lever
-
-## Cycle 11 — 2026-11-24
-
-Sources: ONNX Runtime threading docs, "CPU Inference Threading: The
-Default Grabs Every Core and Still Loses" (2026 measured), ORT issue #14260,
-AlphaVile / "Representation Matters" (arXiv 2304.14918), Chessformer
-Appendix E (history ablation), pbaer v2 planes, Goodhart's Gambit (history
-over-reliance).
-
-### Findings
-
-1. **Our 4-worker oversubscription has a known fix.** ORT's default
-   `intra_op_num_threads=0` gives **one thread per physical core per
-   session** — N processes × 16 threads each = the slowdown our H4 bench saw
-   (4 procs 1.29× vs 1 proc 2.60×). Measured policy for small models under
-   concurrency: **1 thread per session, one session (process) per physical
-   core** → 1.7× total throughput vs one default-threaded session. Also
-   `allow_spinning=0` for non-latency-critical work (spinning burns cores).
-2. **Input planes are worth more than architecture**: AlphaVile showed
-   **+96.7 Elo from representation alone** (adding material-difference /
-   material-count / checker / grouped-mask planes; dropping the color plane)
-   — "improved representation outperforms switching to transformers".
-3. **Our encoder v2 is missing standard planes**: no halfmove clock
-   (50-move rule awareness — AlphaVile and pbaer both include it), no
-   material-difference planes. Repetition planes ✓, history 8 plies ✓
-   (Chessformer: n=0→7 big gain, 7→31 none).
-4. **History over-reliance is real** (Goodhart's Gambit): one model's policy
-   changed drastically when history was removed (35 % same top move);
-   Chessformer handles it by randomly masking history ~5 % during training.
-   → cheap robustness trick for us.
-
-### Actionable queue additions
-- [ ] A44: worker thread budget — `intra_op_num_threads=1–2` per worker,
-      `allow_spinning=0`, workers = physical cores (~8); measure
-      games/hr (expect the 1.7× concurrency pattern)
-- [ ] A45: encoder v3 planes — halfmove clock (normalized broadcast),
-      material difference (5 planes), game-phase/fullmove; + random history
-      masking 5 % during training
-- [ ] A46: worker-fleet matrix (1/2/4/8 workers × 1/2/4 threads) benchmark
-
-## Cycle 10 — 2026-11-24
-
-Sources: KataGo Methods (root policy temperature, aux soft policy target),
-KataGo paper §3.2 (forced playouts + policy target pruning, ablation table),
-KataGo PUCT/FPU parameters, Lichess-puzzle benchmark writeups (chess-bench,
-manoletre chess-puzzles-1k).
-
-### Findings
-
-1. **Forced playouts + policy target pruning** (KataGo §3.2): give every
-   root child a minimum n_forced = sqrt(k·P·ΣN) playouts (k=2, PUCT=∞ until
-   reached), then *subtract those forced playouts from the policy target*
-   (prune children left with 1 playout). Ablation: removing it costs ~4 %
-   Elo-equivalent (1276 vs 1329); it decouples the policy target from MCTS
-   dispersion and noise. We currently export **raw visit counts** → we take
-   noise-perturbed mass straight into training; this is the fix.
-2. **Root policy softmax temperature ≥1** (1.03 in KataGo; 1.25→1.1 in SAI):
-   a restoring force against PUCT's natural sharpening of near-equal moves;
-   cheap one-liner if our root prior has no such temperature.
-3. **Auxiliary soft policy head**: predict `policy^(1/T)` (T=4) as an extra
-   head, nominally 8× weighted — "greatly improves the speed of learning of
-   the policy"; helps after the early phase. Needs a model change (next gen).
-4. KataGo's search constants for reference: c_puct=1.1, FPU =
-   V(n) − 0.2·sqrt(ΣP_explored) (c_fpu=0 at root with noise),
-   Dirichlet α ≈ 0.03 scaled by legal-move count.
-5. **Puzzle benchmarks move before Elo does**: a Lichess-derived set (e.g.
-   ~500–1,000 puzzles, 50 themes × difficulty bands, move-by-move scoring
-   with Lichess replies) is a cheap tactical-accuracy metric — exactly the
-   kind of signal that shows a net improving while gates still draw.
-
-### Actionable queue additions
-- [ ] A40: forced playouts + policy target pruning in our search exports
-      (largest single search-side improvement left; applies to both python
-      and rust backends)
-- [ ] A41: auxiliary soft policy head (T=4, 8× weight) — next-gen model
-- [ ] A42: audit root search params vs KataGo refs (c_puct, FPU, root temp,
-      Dirichlet alpha scaling)
-- [ ] A43: Lichess puzzle benchmark harness (~500–1,000 puzzles,
-      move-by-move, Lichess replies) as the fast-moving tactical metric
-
-## Cycle 9 — 2026-11-24
-
-Sources: "Tiny AlphaZero" (PolyLabs, 6.5M params, 2026, pre-registered
-rounds), lczero-training tfprocess (metrics), Dubslow's Test-10 overfitting
-analysis, Leela-Zero #1480 (value_loss_weight).
-
-### Findings
-
-1. **Mixing 25 % Stockfish-labelled positions into each batch helped**
-   (+0.05 score vs SF-skill-5, controlled); **doubling to 50 % hurt**
-   (−0.044 while tracking the teacher's moves). A quarter is the sweet spot.
-   → Our own `sf-distill` machinery already exists; a 25 % mix is a concrete,
-   evidence-backed accelerator at our scale.
-2. **Learning rate: much lower than ours was better** — 2e-4→2e-5 (+0.117),
-   then 2e-6 (+0.075 more). At 1.3M params our constant-then-halving 1e-3 is
-   plausibly hot; a 3e-4-vs-1e-3 A/B is cheap and evidence-aligned.
-3. **Search coverage gap**: 66 % of their losing blunders "were never seen by
-   the search" at 48 sims — sims count is not the lever they expected
-   (128 vs 48 twice showed no effect). Ties to our A21: spend budget on
-   games, not per-move sims.
-4. **Value head overfits first** (Lc0 Train-10 analysis): train/test
-   divergence starts early; symptom = loss spike-then-plunge on each new
-   window; official fix = lower sampling rate (≈1×/position, not ~12×) and
-   value_loss_weight 0.25. Our exposure: 49k samples/iter over a 100k
-   buffer ≈ 0.5×/iter — acceptable, but worth monitoring.
-5. **Metrics Lc0 actually watches**: policy loss, value CE+MSE, **policy
-   entropy**, **policy-uniform loss (P UL)**, value accuracy, train/test
-   divergence. We only journal loss — adding entropy + a held-out split is
-   the cheapest early-warning system we lack.
-6. A GPU-stack bug silently halved value-head gradients for many rounds
-   before being found — verify gradient magnitudes / loss scale sanity once.
-
-### Actionable queue additions
-- [ ] A35: 25% Stockfish-labelled batch mix via the sf-distill path
-      (teacher depth ~12, multi-PV → policy targets); A/B vs pure self-play
-- [ ] A36: training-health metrics — policy entropy, value accuracy,
-      train/test divergence on a held-out slice, P UL; surface in journal/UI
-- [ ] A37: one-time sanity check of gradient norms per head (the
-      half-gradient bug class) + confirm VALUE_WEIGHT/POLICY_WEIGHT split
-- [ ] A38: LR A/B — 3e-4 vs current 1e-3 at 1.3M params (Tiny-AZ evidence)
-
-## Cycle 8 — 2026-11-24
-
-Sources: Chessformer (arXiv 2605.19091, 2026), pbaer/neural-chess v3,
-"Distilling Stockfish with One Billion Positions" (2026), Lc0 WDL contempt
-blogs + v0.30 rescale, Lc0 issue #237 (temperature & drawn endgames).
-
-### Findings
-
-1. **Deblunder rescorer** (Lc0's training-data post-processing): after a game,
-   positions where the played move was an actively-induced blunder are
-   re-labelled with corrected targets. Together with soft-Z this is Lc0's
-   standard fix for "the average training row for a drawn position teaches a
-   blunder". → Direct complement to A13/A25 for our draw-heavy self-play.
-2. **Attention tower evidence (2026)**: Chessformer (square-token transformer
-   + geometric attention bias) adds **+100 Elo to Lc0** at comparable params;
-   pbaer v3 (pure square-token attention, no conv stem) beats a 2×-larger CNN
-   by ~+150 Elo at 18M params. But a 79M-param distillation pilot found
-   **hybrid ResNet→Transformer beats both** pure CNN and pure ViT — convs
-   supply the board inductive bias, attention the whole-board reasoning.
-3. **Attention mainly improves the policy**; the value head at matched data
-   is a near-tie with CNN — which matches our current pain (value learning),
-   so a swap alone would not fix our draw problem.
-4. **Draw-rate context**: modern Lc0 nets draw ~58 % from startpos; higher
-   draw rates at low strength are normal. Their temperature findings confirm
-   our setup: temp-1.0 late-game blunders drawn positions (perpetual-check
-   case: 36 % correct draws) — we already decay to 0 after 30 plies ✓.
-5. **Scale caveat**: transformers are data-hungry; pbaer needs 100M positions
-   and Chessformer 191M params. At our ~1.3M-param budget the safe version is
-   a **small hybrid** (existing conv tower + a few attention/pooling blocks),
-   validated in a short run, not a full swap.
-
-### Actionable queue additions
-- [ ] A32: deblunder post-processing — re-label rows where the played move's
-      Q dropped vs the position's search value (Lc0 scheme; with A13/A25)
-- [ ] A33: next-gen hybrid tower — conv tower + 2–4 square-token attention
-      blocks with 2D relative-position bias; small-scale A/B before believing
-- [ ] A34: track self-play draw rate as a health signal (Lc0 reference ~58 %
-      from startpos); flat draw rate + flat gates = weak conversion
-
-## Cycle 7 — 2026-11-24
-
-Sources: Seer (McMonigle) TB-trained WDL net, ICGA 2021 "On the Road to
-Perfection?" (Lc0 vs tablebases), chessprogramming Syzygy, Apache Arrow IPC
-docs, arrow-ipc-bench, SPDL SharedMemoryArena case study (Meta), pymizu.
-
-### Findings
-
-1. **Syzygy labels are a cheap, perfect data source**: Seer trained a *small*
-   net on several million ≤6-man TB-labelled positions and was effectively
-   perfect in ≤5-man endgames. python-chess ships syzygy support; 3-4-5 WDL
-   is ~1 GB from Lichess's mirror.
-   → Three uses for us: (a) TB-correct the value target on any ≤5-man self-play
-   position (removes endgame noise from game outcomes), (b) sample TB
-   positions as perfect-label replay rows, (c) an endgame-accuracy eval
-   harness vs TB.
-2. **Endgames are a known AZ weakness worth measuring**: the ICGA study found
-   Lc0 mistake rates in 3-4 piece endgames; search corrects many but not all.
-   Our 200-ply caps/draw-heavy games likely hide endgame blunders — TB eval
-   would expose them honestly.
-3. **Our spool format will be the next throughput wall**: 9 MB/game of JSON +
-   base64 f32 costs real CPU per game at both ends. Zero-copy options measured
-   (arrow-ipc-bench): plasma export 14.5 GB/s, shared memory 8.7 GB/s, TCP
-   4.3 GB/s; memory-mapped Arrow reads allocate nothing.
-   → SPDL's SharedMemorySegmentPool pattern (producer writes once, consumer
-   gets a zero-copy view) is the clean upgrade, and Arrow + sparse-policy
-   columns also lands A12 naturally.
-
-### Actionable queue additions
-- [ ] A30: Syzygy integration — TB-corrected value targets for ≤5-man rows +
-      sampled perfect-label replay + endgame-accuracy harness (needs the
-      3-4-5 WDL download; python-chess has the reader built in)
-- [ ] A31: spool v2 — Arrow IPC memory-mapped per-game records (or a
-      shared-memory arena) replacing JSONL+b64; prerequisite for >~100
-      games/hr and for sparse policy storage (A12)
-
-## Cycle 6 — 2026-11-24
-
-Sources: KataGo paper Appendix D + methods (soft resignation, game
-randomization), KataGo playsettings, "Reproducing AlphaZero on Tablut"
-(arXiv 2604.05476, 2026), ARENA AZ course (full-run hyperparameter sweep),
-AlphaGateau optimization study (IEA/AIE 2026), d2l LR-schedule chapter.
-
-### Findings
-
-1. **Soft resignation** (KataGo): never resign, but when the losing side's
-   MCTS winrate < 5% for 5 turns, cap visits to λn+(1−λ)N (λ=p/0.05) and
-   record samples with prob 0.1+0.9λ. Cheaper than full play, no biased
-   resignations. → A cleaner answer to our 200-ply "cap = draw label" bias
-   than A13 alone.
-2. **Opening initialization**: first r moves sampled from the raw policy
-   (~exponential, mean 0.04·area ≈ 2–3 moves for chess), temperature decays
-   smoothly 0.8 → 0.2 (halflife ≈ board width) — equivalent to AZ's 30-ply
-   cutoff but smoother; 2.5–5% of games additionally branch into unusual
-   openings for coverage.
-3. **Opponent diversification**: the 2026 Tablut AZ reproduction played
-   **25% of games vs randomly sampled past checkpoints** (plus C4 aug and a
-   doubled replay) — that's what mitigated catastrophic forgetting; every
-   other trick was secondary.
-4. **Optimizer package** (Tablut + AlphaGateau, both 2026): AdamW (decoupled
-   wd 1e-4) + warmup (500 steps) + cosine decay to ~1e-5, grad-clip 1.0;
-   AlphaGateau's ablation: loss 2.49 → 1.67 and small Elo gain from exactly
-   this package on a chess net. ARENA sweep: **all practical gains came from
-   fresher self-play data** — capacity/loss/regularization were inert.
-5. AZ original used momentum SGD 0.2 with 4 hard drops; WSD
-   (warmup-stable-decay) beats cosine at fixed budget; we run Adam 1e-3 +
-   step-halving — worth a measured upgrade to the 2026 package.
-
-### Actionable queue additions
-- [ ] A25: soft-resign / play-to-completion with visit scaling and sample
-      downweighting (replaces hard-cap draw labels; pairs with A13)
-- [ ] A26: policy-proportional opening init + smooth temperature decay
-      (0.8→0.2, halflife ≈ 8 plies) — A/B vs the 30-ply hard cut
-- [ ] A27: 25% of games vs sampled past checkpoints (worker code change;
-      anti-forgetting, medium-term)
-- [ ] A28: optimizer upgrade — AdamW(wd 1e-4) + 500-step warmup + cosine/WSD
-      + grad-clip 1.0 (measure per-step loss trajectory before adopting)
-- [ ] A29: confirmed: keep the replay window small/fresh (100k) — freshness
-      beats size in the ARENA sweep
-
-## Cycle 5 — 2026-11-24
-
-Sources: Gumbel AlphaZero (Danihelka et al., ICLR 2022 + ARENA course notes),
-MiniZero (arXiv 2310.11305), KataGo Methods (Playout Cap Randomization,
-Policy Surprise Weighting, short-term value targets), "Value targets in
-off-policy AlphaZero" (A0GB / soft-Z, 2021), "Lessons from AlphaZero pt4".
-
-### Findings
-
-1. **Playout Cap Randomization (KataGo) is the single biggest untapped lever
-   for us**: per MOVE, with p≈0.25 run the full sim budget (keep the policy
-   target); otherwise run a fast search (~100 sims) that only contributes
-   value training (policy target masked). At 600-sim games this cuts average
-   cost to ~0.37× → **~2.7× more distinct games AND 2.7× more value samples
-   per wall-clock hour**. Directly attacks both our throughput and our
-   value-head learning problem.
-2. **Gumbel AlphaZero**: root Gumbel-top-k + sequential halving + improved
-   policy target `softmax(logits + σ(completedQ))` — *guarantees* policy
-   improvement per step; at low sims Gumbel-4 ≈ PUCT-16. We already ship a
-   gumbel search option (`test_training_gumbel_search`) — cheap A/B at 600
-   sims, but at high sims PUCT≈Gumbel (MiniZero), so lower priority.
-3. **Value target: q (root MCTS value) beats/blends with z (game outcome)**:
-   z is a single noisy sample (one bad move later poisons every label); q is
-   a continuous average of the search's estimate. Averaging q+z or starting
-   with z and linearly falling off to q measurably cut Connect-4 error.
-   KataGo's version: auxiliary short-term value targets = λ-averaged future
-   MCTS values (λ ≈ 6/16/50-turn horizons) as extra heads.
-4. **Policy surprise weighting detail** (KataGo g170 onward, one of its
-   larger wins): redistribute frequency weights — half uniform, half
-   proportional to KL(prior ‖ target) — and write rows `floor(w)` times
-   (+1 stochastically). This is the concrete implementation of A11.
-
-### Actionable queue additions
-- [ ] A21: playout cap randomization — p_full=0.25, fast_sims≈100,
-      policy-masked fast rows (throughput + value-signal multiplier)
-- [ ] A22: gumbel-root A/B for self-play once A21 lands (cheap, code exists)
-- [ ] A23: value target blend — root-Q / outcome mix (start 50/50, or z→q
-      falloff); long-term: auxiliary λ-horizon value heads
-- [ ] A24: policy-surprise frequency weighting (half-uniform, half-KL,
-      floor(w)+stochastic — KataGo's exact scheme)
-
-## Cycle 4 — 2026-11-24
-
-Sources: Fishtest math (pentanomial + GSPRT), chessprogramming SPRT/Match
-Statistics, "Measuring Bot Strength" (gate design), NNUE docs (flip/rotate,
-horizontal mirroring), reckless-nnue (+14 Elo mirroring, only past 1.4B pos).
-
-### Findings
-
-1. **Our 16-game gate is statistically blind to real improvement**: detecting
-   a true 55% score needs ~785 games (95% conf, 80% power); 52% needs ~4,900.
-   A 16-game gate at 0.55 can only see ~massive jumps — and with draw-heavy
-   bots it almost never fires. This is *why* the Elo sits still: not a bug,
-   the gate's sample size. → Raising gate games (now affordable at 8-way
-   parallel) and/or gating every N iterations is the honest fix.
-2. **Two-stage gates** (screen cheap → confirm on FRESH openings with a
-   Wilson 95% lower bound > 0.5) cut false promotions from ~18% to <0.5%
-   while keeping most real gains. Better than one long match.
-3. **Pentanomial accounting**: paired color games on the same opening are
-   correlated; the trinomial model overestimates variance. Fishtest uses
-   pentanomial (LL/LD/WL+DD/WD/WW) — our gate already pairs colors, so the
-   stats should switch to pentanomial for correct error bars.
-4. **SPRT decides, it does not measure** — stopped tests read high (measured
-   +124 vs +102 fixed-N on identical walk). Any Elo magnitude we quote must
-   come from a fixed-N run; keep SPRT for go/no-go only.
-5. **Chess symmetry**: color-flip (vertical mirror + color swap + stm) is a
-   valid symmetry and standard augmentation (+14 Elo NNUE, but only past
-   ~1.4B positions). Our encoder is side-to-move-relative, so this symmetry
-   is **already structural** — no augmentation needed. Horizontal king
-   mirroring does not apply to the policy head; not worth it at our scale.
-
-### Actionable queue additions
-- [ ] A17: gate statistics overhaul — two-stage gate (screen 64 @ ≥0.52 →
-      confirm on fresh openings, Wilson lower bound > 0.5) + pentanomial
-      variance; keeps false promotions near zero and catches real gains
-- [ ] A18: gate compute budget — 64+ games per gate at 8-way parallel and/or
-      gate every N iterations (same games/hour, honest statistics)
-- [ ] A19: note in docs — the 0.55 single-stage 16-game gate was the "why no
-      promotions" answer; replace per A17
-- [ ] A20: record per-gate pentanomial counts + fixed-N point estimate in the
-      ledger (SPRT only for the decision)
-
-## Cycle 3 — 2026-11-24
-
-Sources: "Engineering Efficient Self-Play Chess" (arXiv 2609.37447, 2026),
-KataGo Methods (policy-surprise), RGSC paper details, PER-for-Expert-Iteration
-(IEEE CoG 2020), ort-superserve / ort docs, onnxruntime issue #20494.
-
-### Findings
-
-1. **Policy-surprise sampling** (KataGo + the 2026 chess self-play paper):
-   sample positions by how much search's policy disagrees with the net's prior
-   — ~70 % priority + 30 % uniform floor, priority via *sampling frequency*
-   (loss weights stay 1.0). Big sample-efficiency lever, cheap to compute at
-   admission time from data we already store.
-2. **Sparse policy rows**: the 2026 paper stores only the top ≤60 actions per
-   position (records discarded visit mass). Ours stores the full 4672-float
-   vector (~18 KB/row) → 36× memory saving, letting the same RAM hold a far
-   larger, older replay window.
-3. **Capped games must NOT get draw targets**: the reference implementation
-   uses the *final search value estimate* as the outcome substitute for
-   ply-capped games. → **We currently record 1/2-1/2 for every 200-ply cap
-   (`game_outcome`) — a systematic value-label bias on long games. Worth fixing.**
-4. **Restart-state selection**: half of games start from archived self-play
-   states chosen for "meaningful unresolved alternatives" (search disagreed
-   with value, untried branches exist); 30 % uniform fallback; replay capacity
-   grows 600k → 20M rows with ~4 optimizer presentations per new row.
-5. **Orange flag for GPU inference**: multiple ONNX sessions *in one process*
-   don't scale throughput (ORT issue #20494 — rwlock on kernel launch); prefer
-   multiple worker PROCESSES (we already do) or the `ort-superserve` pattern
-   (session pool + dynamic batching actor). ort CUDA needs CUDA ≥13.2,
-   cuDNN ≥9.23 on PATH.
-
-### Actionable queue additions
-- [ ] A11: policy-surprise sampling in `buffer.sample` (70/30, admission-time
-      priority from stored visit targets vs net priors)
-- [ ] A12: sparse policy storage (top-60 actions) — 36× memory per row
-- [ ] A13: capped-game value target = final MCTS root value, not draw
-- [ ] A14: replay restart archive (RGSC-lite restarts, λ ≈ 0.3)
-- [ ] A15: replay capacity schedule (grow window with run age)
-- [ ] A16: shared GPU inference via ort-superserve pattern once workers go CUDA
-
-## Cycle 2 — 2026-11-24
-
-Sources: Lc0 blog "AlphaZero paper & Lc0 v0.19.1" + issue #237 + #1480,
-lc0 training docs, torch.compile docs + Geometric mode study (2026),
-libreyolo CUDA-graph benchmarks (2026), PyTorch 2.15 docs.
-
-### Findings
-
-1. **Temperature only for the first ~30 plies** — the corrected AZ pseudocode
-   sets temperature→0 after 15 moves; Lc0 found constant temperature blundered
-   drawn endgames (perpetual-check draws fed as losses). → **We already do
-   this** (`temperature_plies=30`, then 0). Good; keep.
-2. **FPU = -1 "unvisited is lost"** (absolute) and **Cpuct 2.4 + growing term
-   (base 19652)** are the real AZ values, not Lc0's parent-estimate/constant.
-   → Verify our SearchConfig cpuct/fpu match the paper; cheap A/B.
-3. **Value head overfits first** — Lc0 recovered from a strength regression by
-   dropping `value_loss_weight` 1.0 → 0.25 (and later restored it). Policy
-   overfits ~never (target is a distribution). → Tune VALUE_WEIGHT down if
-   value loss improves while strength regresses; data-balancing (A2) is the
-   principled version.
-4. **Replay window in AZ = last ~1M games** (Lc0 used 500k). Our buffer is
-   100k *examples* (~1k games) — fine early, but the recency window may matter
-   as the run matures; revisit when buffer cycles < ~1 day.
-5. **torch.compile is a big lever**: 2.3× on a toy train loop; 2026 study across
-   41 workloads says `max-autotune-no-cudagraphs` or `default` beat
-   `max-autotune`; `reduce-overhead` (CUDA graphs) wins for **small batches**
-   where launch overhead dominates — exactly a 10×128 conv net at batch 512.
-6. **AMP (fp16 autocast + GradScaler)**: 1.5–5.5× step speedup typical;
-   ~115 ms/step today for 96 steps — worth trying once training step matters.
-7. **Server-side**: fused AdamW, channels-last, and capturing the whole
-   train_step in a CUDA graph (libreyolo measured 1.1–3.6× on the step, bigger
-   on small batches); on Windows launch overhead is the worst of all platforms.
-
-### Actionable queue additions
-- [ ] A7: verify Cpuct/FPU against AZ paper values (config A/B, gated)
-- [ ] A8: torch.compile(mode="reduce-overhead") on the train step + AMP —
-      measure step time; enable only if stable with checkpoint load/save
-- [ ] A9: fused AdamW (`torch.optim.AdamW(fused=True)`) — one-liner
-- [ ] A10: buffer recency window review once iterations are <20 min
-
-
-
-Sources: ameye.dev chess-engine notes, KataGo Methods + David Wu interview,
-RGSC (arXiv 2602.20809), Uncertainty-guided exploration (NeurIPS '25).
-
-### Findings
-
-1. **Regret-Guided Search Control (RGSC)** — harvesting high-regret states
-   (where the net's eval diverged most from the actual outcome) as *starting
-   positions* for extra self-play gives +77 Elo vs AlphaZero in Go/Othello/Hex.
-   → Our bot draws ~everything vs itself; drawn-but-tense positions are
-   exactly the high-regret states worth re-playing. This is a sample-efficiency
-   multiplier that works on top of our existing loop.
-2. **KataGo data balancing** (Wu interview): value/policy imbalance is real —
-   value gets one label per game while policy gets per-move signal. Fix:
-   subsample policy rows for training while playing more games overall; give
-   the value head proportionally more data. → Directly applicable: our policy
-   loss dominates (≈2.5 vs value ≈0.19); we currently train every ply equally.
-3. **Whole-board aggregation** (KataGo's first architectural win): AlphaZero's
-   pure local convs need many layers for information to cross the board. A
-   global-average-pool → FC branch (or light attention) added to the tower
-   helped KataGo "a lot". → Our 10×128 GambitNet is pure local convs.
-4. **Uncertainty-guided exploration** (NeurIPS '25): branch from high
-   uncertainty positions (Label Change Rate metric), ensemble value labels
-   across variants → +58% sample efficiency early (9×9 Go). Cognate of RGSC.
-5. **Transformers now beat convs in KataGo v1.17+** (stronger + more
-   efficient). Future-generation direction, not now.
-6. **Classic engine perf** (ameye): bitboards + magic bitboards + perft are
-   the standard movegen recipe. Our Rust movegen is already perft-verified;
-   only worth revisiting if profiling shows movegen as a bottleneck (today
-   inference dominates).
-
-### Actionable queue (prioritized)
-- [ ] A1: high-regret / high-uncertainty opening harvesting for self-play
-      (RGSC-lite: replay drawn games from mid-game positions, or sample opening
-      FENs from the buffer's worst-eval positions)
-- [ ] A2: policy-row subsampling (train value on all plies, policy on a subset)
-- [ ] A3: global-pooling block in GambitNet (next-gen net)
-- [ ] A4: auxiliary heads (material count / phase) to densify value learning
-- [ ] A5: playout-cap randomization (already spec'd as U2, unused)
-- [ ] A6: transformer tower experiment (future generation)
-
-### Next-cycle topics (queued)
-- torch.compile / AMP / CUDA graphs for the 10×128 training step
-- ONNX Runtime GPU EP for workers (CUDA 13 build) + shared inference process
-- replay buffer sampling strategy (recency weighting, prioritized replay) in AlphaZero variants
-- Leela Chess Zero training tricks (temperature schedules, FPU, symmetry aug)
-- chess-specific data augmentation (vertical flip / color swap symmetry)
-- gating statistics: SPRT ladders, Glicko vs BayesElo, thresholds at 16 games
+# Training Research Log — distilled (cycles 1–13 folded)
+
+Continuous research on training/server optimization for Fool's Gambit.
+Autonomous loop: research → append → consolidate every 6 h. **Cycles 1–13 are
+folded into the distillate below; newest cycle kept in brief at the bottom.**
+Never touch the live training run from this loop.
+
+## Distilled knowledge
+
+**Targets & data quality**
+- Value targets: blend root-Q with game outcome (soft-Z / z→q falloff); TB-correct
+  ≤5-man rows; capped games use final search value (never fake draws); post-game
+  deblunder pass re-labels induced blunders. (Lc0/KataGo/2026 refs)
+- Policy targets: prune forced playouts from the visit distribution (~4% Elo-eq);
+  aux soft-policy head `policy^(1/4)` at 8× weight; sparse top-60 rows (36× memory).
+- Sampling: replay **freshness > size** (100k window fine); ~1×/position per window
+  (avoid overfit; value head overfits first); 25% Stockfish-labelled batch mix
+  (+0.05 score; 50% hurts); policy-surprise frequency weighting (half uniform,
+  half KL).
+- Search control: replay drawn/high-regret states (RGSC +47–89 Elo; uncertainty
+  branching +58% early sample efficiency); 25% games vs sampled past checkpoints
+  (anti-forgetting); varied openings +0.24; policy-proportional opening init with
+  smooth temp decay 0.8→0.2.
+- Termination: never hard-draw ply caps; soft resignation (visit scaling +
+  sample downweighting when win prob <5% for 5 turns).
+- Symmetry: color-flip already structural in our stm encoder; horizontal mirroring
+  not worth it below ~1.4B positions.
+
+**Search & engine**
+- Playout cap randomization: p=0.25 full + 100-sim value-only rows → ~2.7× games
+  and value samples per hour.
+- Subtree reuse across moves (retain ~60% of visits) — cheap 20–40% compute saving.
+- Root search recipe: forced playouts `sqrt(k·P·ΣN)` k=2 + target pruning;
+  prior softmax temp ≥1 (1.03); c_puct≈1.1; FPU = V−0.2·√ΣP.
+- Per-tree parallel leaves cost ~6.4 Elo/doubling (≈235 at 100 sims) — batch
+  across games instead; 0.99 per-ply value discount as anti-shuffle pressure.
+- Graph/transposition search with exact chess identity: net-negative
+  (0.02–0.18% evals saved, 8% slower) — do not pursue.
+- Gumbel AZ: guaranteed policy improvement; Gumbel-4 ≈ PUCT-16 at low sims
+  (at high sims PUCT≈Gumbel). Moves-left head: prefer faster wins, avoid shuffling.
+
+**Optimization & training loop**
+- AdamW (wd 1e-4) + warmup + cosine/WSD + grad-clip 1.0 (chess-net loss 2.49→1.67
+  in one study); at small scale lower LR wins (2e-4→2e-6 evidence); our 1e-3 is hot.
+- EMA weights (0.995–0.999) beat the live iterate by 30–65 Elo in self-play RL —
+  gate/bench the EMA. Polyak/SWA is Lc0 standard.
+- Buffer continuity across rounds removes performance dips; sims 128 vs 48 showed
+  no effect at small scale — spend budget on games, not per-move sims.
+- Metrics: policy entropy, P UL (CE vs uniform), value accuracy, train/test
+  divergence; value-overfit alarm; verify per-head gradient norms once.
+
+**Architecture (next-gen bundle)**
+- 10×128 is Lc0's canonical ResNet *minus* Squeeze-and-Excitation; SE blocks are
+  standard (GAP→FC→ReLU→FC(2F)→sigmoid(γ)x+β).
+- Input planes beat architecture: +96.7 Elo from representation (halfmove clock,
+  material-difference planes, grouped masks). Our encoder v2 lacks the halfmove
+  clock. History 8 plies is right (0→7 big, 7→31 none); mask history 5% in training.
+- Hybrid conv→attention beats pure CNN and pure ViT (+100–150 Elo at 18M+ params;
+  attention mainly improves policy). Chess-mask kernels as structured regularizer.
+
+**Evaluation & ops**
+- 16-game 0.55 gates are statistically blind (~785 games needed for a true 55%);
+  two-stage gate (screen 64 @ ≥0.52 → confirm on fresh openings, Wilson LB>0.5);
+  pentanomial variance for paired colors; SPRT decides, fixed-N measures.
+- Lichess puzzle benchmark (move-by-move, ~500–1000 puzzles) moves before Elo.
+  Draw rate ~58% from startpos is normal for strong nets — track it as health.
+- ORT threading: 1 thread/session, 1 process per physical core, allow_spinning=0
+  (1.7× measured concurrency win). ORT CUDA needs CUDA ≥13.2 / cuDNN ≥9.23;
+  multiple sessions per process do not scale.
+- Spool v2: JSONL+b64 (9 MB/game) will wall; memory-mapped Arrow IPC or shared
+  memory gives zero-copy reads and sparse policy columns.
+- Syzygy 3-4-5 WDL (~1 GB) = perfect endgame labels for targets and eval.
+
+## Actionable queue (re-prioritized 2026-11-24 07:20)
+
+Live state: v2 run at iter 9 (loss 2.51, buffer 34.7k), **first promotion landed**
+(ckpt-000864-0269, 3W-12D-1L) — gate cadence and promotions work.
+
+**Tier 1 — next builds (biggest measured impact)**
+- [ ] A21 playout cap randomization (2.7× games/value samples)
+- [ ] A51 EMA weights + gate/bench on EMA (free 30–65 Elo)
+- [ ] A40 forced playouts + policy target pruning (~4% Elo-eq, search-side)
+- [ ] A44 worker threading: intra_op=1, allow_spinning=0, workers=physical cores
+- [ ] A17+A18+A20 two-stage gate + 64-game budget + pentanomial ledger rows
+
+**Tier 2 — data quality (cheap, compounding)**
+- [ ] A13+A25 capped-game search-value targets + soft resignation
+- [ ] A32 deblunder re-label pass
+- [ ] A35 25% Stockfish-labelled batch mix (sf-distill path exists)
+- [ ] A11+A24 policy-surprise sampling (half-uniform, half-KL)
+- [ ] A12 sparse top-60 policy storage
+- [ ] A48 subtree reuse; A49 0.99 discount; A43 Lichess puzzle harness
+- [ ] A30 Syzygy targets + endgame eval (needs 1 GB WDL download)
+
+**Tier 3 — next generation (one restart, bundle: A54)**
+- [ ] A54 = A33 hybrid attention tower + A45 encoder v3 planes (halfmove clock,
+      material diff, 5% history masking) + A47 moves-left head + A52 SE blocks
+      (+ optional A53 chess-mask kernels); plus A28 optimizer package + A38 LR A/B
+- [ ] A36 health metrics + A37 gradient sanity before the new-gen run
+
+**Tier 4 — throughput/infra (after worker scaling)**
+- [ ] A31 spool v2 (Arrow IPC / shared memory), A16 shared GPU inference
+      (ort-superserve pattern), A22 Gumbel A/B, A46 worker-fleet matrix,
+      A50 per-tree parallelism measurement, A26 opening init, A27 past-checkpoint
+      opponents, A14 restart archive, A34 draw-rate metric
+
+Superseded/folded: A19→A17; A41→A54; A42→A40; A29 confirmed; A1–A10 absorbed
+above; A15 capacity schedule → revisit next gen; A39 → A36.
+
+## Next-cycle topics (un-researched)
+- batch-size ↔ LR scaling laws for small conv nets (match our 512/1e-3)
+- SWA/EMA window timing (which checkpoints to average, when)
+- CUDA EP end-to-end worker benchmark (onnxruntime-gpu build on the 3080)
+- opening-book seeding from human master games (Lichess elite) vs policy init
+- league/opponent-modeling depth (past-checkpoint sampling rates)
+- profiling workflow for the trainer (py-spy/nsys) under rust_workers
+
+## Cycle 13 (newest, brief) — 2026-11-24
+EMA of weights beat last iterate +65 Elo avg / +32 at 39k iters (Generals.io
+2026); Lc0 ships SWA nets. GambitNet 10×128 = Lc0 canonical ResNet minus
+Squeeze-and-Excitation; SE block standard in all modern Lc0 nets. Chess-mask
+5×5 kernels (rook/bishop) act as structured regularizers. → A51 EMA, A52 SE,
+A53 masks, A54 bundle next-gen into one restart.
