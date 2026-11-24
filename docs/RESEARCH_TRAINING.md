@@ -6,6 +6,45 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 8 — 2026-11-24
+
+Sources: Chessformer (arXiv 2605.19091, 2026), pbaer/neural-chess v3,
+"Distilling Stockfish with One Billion Positions" (2026), Lc0 WDL contempt
+blogs + v0.30 rescale, Lc0 issue #237 (temperature & drawn endgames).
+
+### Findings
+
+1. **Deblunder rescorer** (Lc0's training-data post-processing): after a game,
+   positions where the played move was an actively-induced blunder are
+   re-labelled with corrected targets. Together with soft-Z this is Lc0's
+   standard fix for "the average training row for a drawn position teaches a
+   blunder". → Direct complement to A13/A25 for our draw-heavy self-play.
+2. **Attention tower evidence (2026)**: Chessformer (square-token transformer
+   + geometric attention bias) adds **+100 Elo to Lc0** at comparable params;
+   pbaer v3 (pure square-token attention, no conv stem) beats a 2×-larger CNN
+   by ~+150 Elo at 18M params. But a 79M-param distillation pilot found
+   **hybrid ResNet→Transformer beats both** pure CNN and pure ViT — convs
+   supply the board inductive bias, attention the whole-board reasoning.
+3. **Attention mainly improves the policy**; the value head at matched data
+   is a near-tie with CNN — which matches our current pain (value learning),
+   so a swap alone would not fix our draw problem.
+4. **Draw-rate context**: modern Lc0 nets draw ~58 % from startpos; higher
+   draw rates at low strength are normal. Their temperature findings confirm
+   our setup: temp-1.0 late-game blunders drawn positions (perpetual-check
+   case: 36 % correct draws) — we already decay to 0 after 30 plies ✓.
+5. **Scale caveat**: transformers are data-hungry; pbaer needs 100M positions
+   and Chessformer 191M params. At our ~1.3M-param budget the safe version is
+   a **small hybrid** (existing conv tower + a few attention/pooling blocks),
+   validated in a short run, not a full swap.
+
+### Actionable queue additions
+- [ ] A32: deblunder post-processing — re-label rows where the played move's
+      Q dropped vs the position's search value (Lc0 scheme; with A13/A25)
+- [ ] A33: next-gen hybrid tower — conv tower + 2–4 square-token attention
+      blocks with 2D relative-position bias; small-scale A/B before believing
+- [ ] A34: track self-play draw rate as a health signal (Lc0 reference ~58 %
+      from startpos); flat draw rate + flat gates = weak conversion
+
 ## Cycle 7 — 2026-11-24
 
 Sources: Seer (McMonigle) TB-trained WDL net, ICGA 2021 "On the Road to
