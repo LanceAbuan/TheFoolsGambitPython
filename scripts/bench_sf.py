@@ -45,6 +45,9 @@ SF_BINARY = Path("tools/stockfish.exe")
 # The server presets keep their depth semantics for humans; these rungs are
 # the bench's own reproducible ladder. Ordered weak -> strong; "max" anchors.
 RUNGS: dict[str, dict[str, int]] = {
+    "random":      {"skill": 0,  "nodes": 0},      # pure random legal mover (~anchor-relative floor)
+    "s0n10":       {"skill": 0,  "nodes": 10},
+    "s0n30":       {"skill": 0,  "nodes": 30},
     "floor":       {"skill": 0,  "nodes": 100},
     "wandering":   {"skill": 2,  "nodes": 300},
     "s4":          {"skill": 4,  "nodes": 1_000},
@@ -55,7 +58,7 @@ RUNGS: dict[str, dict[str, int]] = {
     "max":         {"skill": 20, "nodes": 1_200_000},
 }
 PRESETS = RUNGS  # back-compat alias
-LADDER_ORDER = ["floor", "wandering", "s4", "curious", "s9", "enlightened", "s16", "max"]
+LADDER_ORDER = ["random", "s0n10", "s0n30", "floor", "wandering", "s4", "curious", "s9", "enlightened", "s16", "max"]
 # Elo anchor assumption (documented, not measured): 1-thread 1.2M-node SF.
 ANCHOR_ELO = 3400.0
 CALIBRATION_PATH = Path("data/sf_calibration.json")
@@ -172,6 +175,8 @@ def main() -> int:
     parser.add_argument("--presets", default="wandering,curious,enlightened")
     parser.add_argument("--games-per-preset", type=int, default=12)
     parser.add_argument("--games-per-pair", type=int, default=20, help="calibrate mode")
+    parser.add_argument("--pairs", default=None,
+                        help="calibrate mode: subset as 'lo..hi,lo..hi' - extends an existing ladder")
     parser.add_argument("--sims", type=int, default=128, help="NN simulations (gate uses 128)")
     parser.add_argument("--max-plies", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20261123)
@@ -286,6 +291,10 @@ def run_bench(args) -> int:
 def _sf_move(engine, board, nodes):
     import chess.engine
 
+    if nodes == 0:  # "random" rung: uniform legal mover, no engine
+        import random
+
+        return random.choice(list(board.legal_moves))
     return engine.play(board, chess.engine.Limit(nodes=nodes)).move
 
 
@@ -321,9 +330,14 @@ def run_calibrate(args) -> int:
         return 1
     engine = chess.engine.SimpleEngine.popen_uci(str(SF_BINARY))
     engine.configure({**SF_OPTIONS})
+    pair_specs = (
+        [tuple(p.split("..")) for p in args.pairs.split(",") if ".." in p]
+        if args.pairs
+        else list(itertools.pairwise(LADDER_ORDER))
+    )
     pairs: list[dict] = []
     try:
-        for lo, hi in itertools.pairwise(LADDER_ORDER):
+        for lo, hi in pair_specs:
             n = args.games_per_pair + (args.games_per_pair % 2)
             openings = random_openings(n // 2, args.seed + abs(hash(lo + ">" + hi)) % 1000)
             wins_hi = draws = 0
@@ -345,14 +359,32 @@ def run_calibrate(args) -> int:
     finally:
         engine.quit()
 
-    ratings: dict[str, float] = {LADDER_ORDER[-1]: ANCHOR_ELO}
-    for pair in reversed(pairs):
-        ratings[pair["lo"]] = ratings[pair["hi"]] - pair["elo_gap"]
+    if args.pairs:
+        # Subset recalibration: extend an EXISTING ladder downward from the
+        # known rating of the hi rung of each pair (no full re-run).
+        if not CALIBRATION_PATH.is_file():
+            print("[cal] --pairs needs an existing calibration to extend", file=sys.stderr)
+            return 1
+        old = json.loads(CALIBRATION_PATH.read_text(encoding="utf-8"))
+        ratings = dict(old["ratings"])
+        for pair in reversed(pairs):
+            if pair["hi"] not in ratings:
+                print(f"[cal] --pairs: unknown hi rung {pair['hi']}", file=sys.stderr)
+                return 1
+            ratings[pair["lo"]] = ratings[pair["hi"]] - pair["elo_gap"]
+        merged_pairs = old.get("pairs", []) + pairs
+        anchor = old.get("anchor", {"rung": LADDER_ORDER[-1], "elo": ANCHOR_ELO})
+    else:
+        ratings = {LADDER_ORDER[-1]: ANCHOR_ELO}
+        for pair in reversed(pairs):
+            ratings[pair["lo"]] = ratings[pair["hi"]] - pair["elo_gap"]
+        merged_pairs = pairs
+        anchor = {"rung": LADDER_ORDER[-1], "elo": ANCHOR_ELO}
     payload = {
         "kind": "sf_calibration", "ts": time.time(),
         "iso": datetime.now(UTC).isoformat(),
-        "anchor": {"rung": LADDER_ORDER[-1], "elo": ANCHOR_ELO},
-        "pairs": pairs, "ratings": {k: round(v, 1) for k, v in ratings.items()},
+        "anchor": anchor,
+        "pairs": merged_pairs, "ratings": {k: round(v, 1) for k, v in ratings.items()},
     }
     CALIBRATION_PATH.parent.mkdir(parents=True, exist_ok=True)
     CALIBRATION_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
