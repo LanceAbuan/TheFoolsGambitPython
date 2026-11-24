@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -287,10 +288,19 @@ class Arena:
         return sample_gate_openings(games, self.config.opening_seed)
 
     def run(self, candidate_tag: str, champion_tag: str) -> Iterator[tuple[str, str, str]]:
-        """Play the match game by game; yields (result, candidate_color, termination)."""
+        """Play the match game by game; yields (result, candidate_color, termination).
+
+        With `config.parallel > 1` the games run concurrently and are yielded
+        in completion order. SPRT early stopping (disabled by default) stops
+        consuming the iterator, so with parallelism a few already-in-flight
+        games finish unobserved — the played set is a prefix-in-spirit, never
+        a different decision rule.
+        """
         games = self.config.games + (self.config.games % 2)  # balance colors
         openings = self._opening_fens(games)
-        for game_index in range(games):
+        parallel = max(1, min(self.config.parallel, games))
+
+        def play_one(game_index: int) -> tuple[str, str, str]:
             candidate_is_white = game_index % 2 == 0
             if candidate_is_white:
                 white_eval, black_eval = self.candidate_evaluator, self.champion_evaluator
@@ -304,7 +314,17 @@ class Arena:
                 self.config.max_plies,
                 opening_fen=opening_fen,
             )
-            yield result, ("white" if candidate_is_white else "black"), termination
+            return result, ("white" if candidate_is_white else "black"), termination
+
+        if parallel == 1:
+            for game_index in range(games):
+                yield play_one(game_index)
+            return
+
+        with ThreadPoolExecutor(max_workers=parallel) as pool:
+            futures = [pool.submit(play_one, i) for i in range(games)]
+            for future in as_completed(futures):
+                yield future.result()
 
     def match(
         self, candidate_tag: str, champion_tag: str, *, stop_on_sprt: bool | None = None
