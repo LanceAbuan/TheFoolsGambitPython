@@ -159,7 +159,7 @@ def play_game(evaluator, opening_fen: str, nn_is_white: bool, engine, nodes: int
         if nn_turn:
             move = search.search(board).chosen_move
         else:
-            move = engine.play(board, chess.engine.Limit(nodes=nodes)).move
+            move = _sf_move(engine, board, nodes)  # nodes==0 -> random legal mover
         assert move is not None, "engine returned no move on a live position"
         board.push(move)
     result = board.result(claim_draw=True)
