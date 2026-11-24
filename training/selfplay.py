@@ -1601,6 +1601,11 @@ class ArenaConfig:
     num_simulations: int = 128  # reduced vs training's 400-800
     max_plies: int = 200
     games: int = 16  # forced even below, so colors are balanced
+    # Gate throughput: games played concurrently. 1 = the original sequential
+    # match. Games are independent (per-game openings, balanced colors), and
+    # the evaluators are stateless per call, so parallel > 1 only yields
+    # games in completion order — the decision math is unchanged.
+    parallel: int = 1
     sprt_early_stop: bool = False
     sprt_elo0: float = 0.0
     sprt_elo1: float = 10.0

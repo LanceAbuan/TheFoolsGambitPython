@@ -236,6 +236,10 @@ NIGHT_V2_PROFILE = replace(
     # worker fleet via the spool (2.6x games/hr measured); the arena/gate
     # stays on the python search path per the flip procedure.
     selfplay_backend="rust_workers",
+    # Gate throughput (2026-11-24): the 16 title games are independent -
+    # run them 8-way concurrently. The sequential match cost ~45-60 min per
+    # iteration; parallel cuts it to minutes. Decision math is unchanged.
+    ladder=replace(NIGHT_PROFILE.ladder, arena=replace(NIGHT_PROFILE.ladder.arena, parallel=8)),
 )
 
 
