@@ -6,6 +6,47 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 5 — 2026-11-24
+
+Sources: Gumbel AlphaZero (Danihelka et al., ICLR 2022 + ARENA course notes),
+MiniZero (arXiv 2310.11305), KataGo Methods (Playout Cap Randomization,
+Policy Surprise Weighting, short-term value targets), "Value targets in
+off-policy AlphaZero" (A0GB / soft-Z, 2021), "Lessons from AlphaZero pt4".
+
+### Findings
+
+1. **Playout Cap Randomization (KataGo) is the single biggest untapped lever
+   for us**: per MOVE, with p≈0.25 run the full sim budget (keep the policy
+   target); otherwise run a fast search (~100 sims) that only contributes
+   value training (policy target masked). At 600-sim games this cuts average
+   cost to ~0.37× → **~2.7× more distinct games AND 2.7× more value samples
+   per wall-clock hour**. Directly attacks both our throughput and our
+   value-head learning problem.
+2. **Gumbel AlphaZero**: root Gumbel-top-k + sequential halving + improved
+   policy target `softmax(logits + σ(completedQ))` — *guarantees* policy
+   improvement per step; at low sims Gumbel-4 ≈ PUCT-16. We already ship a
+   gumbel search option (`test_training_gumbel_search`) — cheap A/B at 600
+   sims, but at high sims PUCT≈Gumbel (MiniZero), so lower priority.
+3. **Value target: q (root MCTS value) beats/blends with z (game outcome)**:
+   z is a single noisy sample (one bad move later poisons every label); q is
+   a continuous average of the search's estimate. Averaging q+z or starting
+   with z and linearly falling off to q measurably cut Connect-4 error.
+   KataGo's version: auxiliary short-term value targets = λ-averaged future
+   MCTS values (λ ≈ 6/16/50-turn horizons) as extra heads.
+4. **Policy surprise weighting detail** (KataGo g170 onward, one of its
+   larger wins): redistribute frequency weights — half uniform, half
+   proportional to KL(prior ‖ target) — and write rows `floor(w)` times
+   (+1 stochastically). This is the concrete implementation of A11.
+
+### Actionable queue additions
+- [ ] A21: playout cap randomization — p_full=0.25, fast_sims≈100,
+      policy-masked fast rows (throughput + value-signal multiplier)
+- [ ] A22: gumbel-root A/B for self-play once A21 lands (cheap, code exists)
+- [ ] A23: value target blend — root-Q / outcome mix (start 50/50, or z→q
+      falloff); long-term: auxiliary λ-horizon value heads
+- [ ] A24: policy-surprise frequency weighting (half-uniform, half-KL,
+      floor(w)+stochastic — KataGo's exact scheme)
+
 ## Cycle 4 — 2026-11-24
 
 Sources: Fishtest math (pentanomial + GSPRT), chessprogramming SPRT/Match
