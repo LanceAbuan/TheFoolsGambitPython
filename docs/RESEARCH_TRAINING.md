@@ -6,6 +6,47 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 9 — 2026-11-24
+
+Sources: "Tiny AlphaZero" (PolyLabs, 6.5M params, 2026, pre-registered
+rounds), lczero-training tfprocess (metrics), Dubslow's Test-10 overfitting
+analysis, Leela-Zero #1480 (value_loss_weight).
+
+### Findings
+
+1. **Mixing 25 % Stockfish-labelled positions into each batch helped**
+   (+0.05 score vs SF-skill-5, controlled); **doubling to 50 % hurt**
+   (−0.044 while tracking the teacher's moves). A quarter is the sweet spot.
+   → Our own `sf-distill` machinery already exists; a 25 % mix is a concrete,
+   evidence-backed accelerator at our scale.
+2. **Learning rate: much lower than ours was better** — 2e-4→2e-5 (+0.117),
+   then 2e-6 (+0.075 more). At 1.3M params our constant-then-halving 1e-3 is
+   plausibly hot; a 3e-4-vs-1e-3 A/B is cheap and evidence-aligned.
+3. **Search coverage gap**: 66 % of their losing blunders "were never seen by
+   the search" at 48 sims — sims count is not the lever they expected
+   (128 vs 48 twice showed no effect). Ties to our A21: spend budget on
+   games, not per-move sims.
+4. **Value head overfits first** (Lc0 Train-10 analysis): train/test
+   divergence starts early; symptom = loss spike-then-plunge on each new
+   window; official fix = lower sampling rate (≈1×/position, not ~12×) and
+   value_loss_weight 0.25. Our exposure: 49k samples/iter over a 100k
+   buffer ≈ 0.5×/iter — acceptable, but worth monitoring.
+5. **Metrics Lc0 actually watches**: policy loss, value CE+MSE, **policy
+   entropy**, **policy-uniform loss (P UL)**, value accuracy, train/test
+   divergence. We only journal loss — adding entropy + a held-out split is
+   the cheapest early-warning system we lack.
+6. A GPU-stack bug silently halved value-head gradients for many rounds
+   before being found — verify gradient magnitudes / loss scale sanity once.
+
+### Actionable queue additions
+- [ ] A35: 25% Stockfish-labelled batch mix via the sf-distill path
+      (teacher depth ~12, multi-PV → policy targets); A/B vs pure self-play
+- [ ] A36: training-health metrics — policy entropy, value accuracy,
+      train/test divergence on a held-out slice, P UL; surface in journal/UI
+- [ ] A37: one-time sanity check of gradient norms per head (the
+      half-gradient bug class) + confirm VALUE_WEIGHT/POLICY_WEIGHT split
+- [ ] A38: LR A/B — 3e-4 vs current 1e-3 at 1.3M params (Tiny-AZ evidence)
+
 ## Cycle 8 — 2026-11-24
 
 Sources: Chessformer (arXiv 2605.19091, 2026), pbaer/neural-chess v3,
