@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -162,9 +163,21 @@ class TrainingProfile:
     # iteration >= ema_min_iteration (early EMA still carries weak weights).
     ema_decay: float = 0.0
     ema_min_iteration: int = 2000
+    # WP10: optimizer package (all defaults = legacy behavior).
+    optimizer_kind: str = "adam"   # "adam" (legacy) | "adamw"
+    weight_decay: float = 0.0
+    grad_clip: float = 0.0          # 0 = off
+    lr_warmup_steps: int = 0        # linear warmup from ~0 over N steps
+    lr_cosine: bool = False         # cosine decay base_lr -> floor over the run
+    lr_floor_ratio: float = 0.01
+    base_lr: float | None = None    # override the regime learning rate
 
     def __post_init__(self) -> None:
         """WP-H H5: validate the backend selector at construction time."""
+        if self.optimizer_kind not in ("adam", "adamw"):
+            raise ValueError(
+                f"optimizer_kind must be 'adam' or 'adamw', got {self.optimizer_kind!r}"
+            )
         if self.selfplay_backend not in ("python", "rust_workers"):
             raise ValueError(
                 f"selfplay_backend must be 'python' or 'rust_workers', "
@@ -471,6 +484,26 @@ def _apply_lr_schedule(
     return lr
 
 
+def _iteration_lr(
+    profile: "TrainingProfile",
+    steps_done: int,
+    iteration: int,
+    base_lr: float,
+    total_iterations: int,
+) -> float:
+    """WP10: warmup -> (cosine | step-decay | constant), resume-stable."""
+    base = profile.base_lr if profile.base_lr is not None else base_lr
+    if profile.lr_warmup_steps > 0 and steps_done < profile.lr_warmup_steps:
+        return base * max(steps_done + 1, 1) / profile.lr_warmup_steps
+    if profile.lr_cosine:
+        floor = base * profile.lr_floor_ratio
+        progress = min(max(iteration / max(total_iterations - 1, 1), 0.0), 1.0)
+        return floor + 0.5 * (base - floor) * (1.0 + math.cos(math.pi * progress))
+    if profile.lr_schedule is not None:
+        return profile.lr_schedule.lr_at(iteration, base)
+    return base
+
+
 def run_training(
     profile: TrainingProfile,
     run_id: str | None = None,
@@ -519,7 +552,16 @@ def run_training(
     )
 
     model = GambitNet(profile.model).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=regime.learning_rate)
+    initial_lr = profile.base_lr if profile.base_lr is not None else regime.learning_rate
+    if profile.optimizer_kind == "adamw":
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=initial_lr,
+            weight_decay=profile.weight_decay,
+            fused=(device.type == "cuda"),
+        )
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=initial_lr)
     # WP4: EMA shadow (created empty; state restored from the resume sidecar).
     ema = EmaWeights(model, profile.ema_decay) if profile.ema_decay > 0 else None
     if ema is not None:
@@ -784,9 +826,11 @@ def run_training(
 
             # --- optimize ---------------------------------------------------
             # WP-A: per-iteration LR (constant when no schedule is configured).
-            iteration_lr = _apply_lr_schedule(
-                optimizer, profile.lr_schedule, iteration, regime.learning_rate
+            iteration_lr = _iteration_lr(
+                profile, summary.steps, iteration, regime.learning_rate, profile.iterations
             )
+            for group in optimizer.param_groups:
+                group["lr"] = iteration_lr
             if iteration_lr != last_iteration_lr:
                 log.info(
                     "[TRAIN] iteration %d: lr %.4g%s",
@@ -824,6 +868,8 @@ def run_training(
                     value_loss = torch.nn.functional.mse_loss(pred_value, values)
                 loss = policy_loss + value_loss
                 loss.backward()
+                if profile.grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), profile.grad_clip)
                 optimizer.step()
                 if ema is not None:
                     ema.update(model)
