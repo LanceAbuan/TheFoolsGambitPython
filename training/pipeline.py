@@ -744,7 +744,12 @@ def run_training(
             collect_seconds_total += collect_seconds
             for result in games_this_iter:
                 buffer.add(
-                    {"board_tensor": ex.planes, "policy": ex.policy, "value": ex.value}
+                    {
+                        "board_tensor": ex.planes,
+                        "policy": ex.policy,
+                        "value": ex.value,
+                        "policy_mask": getattr(ex, "policy_mask", 1.0),
+                    }
                     for ex in result.examples
                 )
                 summary.games_played += 1
@@ -780,14 +785,18 @@ def run_training(
                 if batch is None or len(batch[0]) < profile.min_examples:
                     log.info("[TRAIN] buffer too small (%s), skipping step", len(buffer))
                     break
-                tensors, policies, values = batch
+                tensors, policies, values, masks = batch
                 tensors = tensors.to(device)
                 policies = policies.to(device)
                 values = values.to(device)
+                masks = masks.to(device)
                 optimizer.zero_grad()
                 pred_policy, pred_value = model(tensors)
                 log_probs = torch.log_softmax(pred_policy, dim=-1)
-                policy_loss = -(policies * log_probs).sum(dim=-1).mean()
+                # WP2: PCR fast rows carry an all-zero policy and mask 0.0 —
+                # they train the value head only.
+                per_row_policy = -(policies * log_probs).sum(dim=-1)
+                policy_loss = (per_row_policy * masks).sum() / masks.sum().clamp(min=1.0)
                 if profile.model.value_head == "wdl":
                     # WP-C: cross-entropy on the one-hot game result (W/D/L
                     # from the mover's perspective); the MSE term is dropped

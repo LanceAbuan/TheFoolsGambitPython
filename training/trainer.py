@@ -142,7 +142,9 @@ class TrainingBuffer:
         tensors = torch.stack([torch.FloatTensor(ex['board_tensor']) for ex in batch])
         policies = torch.stack([torch.FloatTensor(ex['policy']) for ex in batch])
         values = torch.FloatTensor([ex['value'] for ex in batch])
-        return tensors, policies, values
+        # WP2: 1.0 on rows that train the policy head, 0.0 on PCR fast rows.
+        masks = torch.FloatTensor([float(ex.get('policy_mask', 1.0)) for ex in batch])
+        return tensors, policies, values, masks
 
     def __len__(self):
         return len(self.buffer)
@@ -288,14 +290,18 @@ class Trainer:
             self.status = "idle"
             log.info(f'[TRAINER] Buffer too small ({actual_batch_size} < {MIN_BATCH_SIZE}), skipping step')
             return None
-        tensors, policies, values = batch
+        tensors, policies, values, masks = batch
         tensors = tensors.to(self.device)
         policies = policies.to(self.device)
         values = values.to(self.device)
+        masks = masks.to(self.device)
         self.model.train()
         self.optimizer.zero_grad()
         pred_policy, pred_value = self.model(tensors)
-        p_loss = torch.nn.functional.cross_entropy(pred_policy, policies)
+        # WP2: masked policy CE (PCR fast rows are value-only).
+        log_probs = torch.nn.functional.log_softmax(pred_policy, dim=-1)
+        per_row = -(policies * log_probs).sum(dim=-1)
+        p_loss = (per_row * masks).sum() / masks.sum().clamp(min=1.0)
         v_loss = torch.nn.functional.mse_loss(pred_value.squeeze(), values)
         l2 = sum(p.pow(2).sum() for p in self.model.parameters()) * L2_REG
         loss = POLICY_WEIGHT * p_loss + VALUE_WEIGHT * v_loss + l2

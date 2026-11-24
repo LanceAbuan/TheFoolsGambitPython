@@ -119,7 +119,7 @@ def test_record_roundtrip_is_bit_exact(tmp_path):
     path = write_game_record(tmp_path, record)
     assert path.parent.name == "inbox" and path.suffix == ".jsonl"
     decoded = read_game_record(path)
-    assert decoded["schema"] == "gambit.selfplay.v1"
+    assert decoded["schema"] == "gambit.selfplay.v2"
     assert decoded["weight_version"] == 5
     assert decoded["worker_id"] == "w0"
     assert decoded["seed"] == 11 and decoded["opening_seed"] == 22
@@ -138,7 +138,7 @@ def test_record_roundtrip_is_bit_exact(tmp_path):
 def test_record_validation_rejects_bad_payloads(tmp_path):
     good = _fake_record()
     # wrong schema id
-    bad = dict(good, schema="gambit.selfplay.v2")
+    bad = dict(good, schema="gambit.selfplay.v99")
     with pytest.raises(RecordError, match="unsupported schema"):
         read_game_record(_write_raw(tmp_path, bad))
     # board tensor truncated
