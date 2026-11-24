@@ -6,6 +6,45 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 11 — 2026-11-24
+
+Sources: ONNX Runtime threading docs, "CPU Inference Threading: The
+Default Grabs Every Core and Still Loses" (2026 measured), ORT issue #14260,
+AlphaVile / "Representation Matters" (arXiv 2304.14918), Chessformer
+Appendix E (history ablation), pbaer v2 planes, Goodhart's Gambit (history
+over-reliance).
+
+### Findings
+
+1. **Our 4-worker oversubscription has a known fix.** ORT's default
+   `intra_op_num_threads=0` gives **one thread per physical core per
+   session** — N processes × 16 threads each = the slowdown our H4 bench saw
+   (4 procs 1.29× vs 1 proc 2.60×). Measured policy for small models under
+   concurrency: **1 thread per session, one session (process) per physical
+   core** → 1.7× total throughput vs one default-threaded session. Also
+   `allow_spinning=0` for non-latency-critical work (spinning burns cores).
+2. **Input planes are worth more than architecture**: AlphaVile showed
+   **+96.7 Elo from representation alone** (adding material-difference /
+   material-count / checker / grouped-mask planes; dropping the color plane)
+   — "improved representation outperforms switching to transformers".
+3. **Our encoder v2 is missing standard planes**: no halfmove clock
+   (50-move rule awareness — AlphaVile and pbaer both include it), no
+   material-difference planes. Repetition planes ✓, history 8 plies ✓
+   (Chessformer: n=0→7 big gain, 7→31 none).
+4. **History over-reliance is real** (Goodhart's Gambit): one model's policy
+   changed drastically when history was removed (35 % same top move);
+   Chessformer handles it by randomly masking history ~5 % during training.
+   → cheap robustness trick for us.
+
+### Actionable queue additions
+- [ ] A44: worker thread budget — `intra_op_num_threads=1–2` per worker,
+      `allow_spinning=0`, workers = physical cores (~8); measure
+      games/hr (expect the 1.7× concurrency pattern)
+- [ ] A45: encoder v3 planes — halfmove clock (normalized broadcast),
+      material difference (5 planes), game-phase/fullmove; + random history
+      masking 5 % during training
+- [ ] A46: worker-fleet matrix (1/2/4/8 workers × 1/2/4 threads) benchmark
+
 ## Cycle 10 — 2026-11-24
 
 Sources: KataGo Methods (root policy temperature, aux soft policy target),
