@@ -126,10 +126,25 @@ pub fn random_opening_fen(opening_seed: u64) -> Result<String, String> {
         attempts += 1;
         let mut rng = StdRng::seed_from_u64(opening_seed.wrapping_add(attempts));
         let mut pos = Position::starting();
+        // A uniform 6-ply walk can terminate EARLY: checkmate/stalemate is
+        // reachable inside the window (seed 125 -> 1.e3 f6 2.h4 g5 3.Qh5#),
+        // where legal_moves() is empty and the old `gen_range(0..0)` panicked
+        // the whole worker. python's mirror crashes the same way
+        // (`rng.integers(0)` -> ValueError), so retrying is a strictly safer
+        // superset: every seed python serves today replays identically, and
+        // terminal walks retry under the same 200x bound.
+        let mut terminated_early = false;
         for _ in 0..OPENING_PLIES {
             let legal = pos.legal_moves();
+            if legal.is_empty() {
+                terminated_early = true;
+                break;
+            }
             let pick: usize = rng.gen_range(0..legal.len());
             pos = pos.make(legal[pick]);
+        }
+        if terminated_early {
+            continue;
         }
         let fen = fen_legal_ep(&pos);
         if seen.insert(fen.clone()) {
@@ -554,5 +569,27 @@ mod tests {
         assert_eq!(game.examples.len(), 1);
         assert_eq!(game.examples[0].value, 1.0, "white delivered mate: +1");
         assert_eq!(game.fens[0], fen_legal_ep(&root.make(mating)));
+    }
+}
+
+#[cfg(test)]
+mod opening_walk_regression {
+    //! H4 worker regression: the seeded opening walk must NEVER panic or
+    //! return a terminal position (worker seed sweep hit StdRng(126) ->
+    //! 1.e3 f6 2.h4 g5 3.Qh5# inside the 6-ply window).
+
+    use super::*;
+
+    #[test]
+    fn opening_walk_survives_terminal_reachability() {
+        for seed in 0..20_000u64 {
+            // No panic (the old code panicked on StdRng(126) == seed 125).
+            let fen = random_opening_fen(seed).expect("opening samples within the retry bound");
+            let pos = Position::from_fen(&fen).expect("opening FEN parses");
+            assert!(
+                !pos.legal_moves().is_empty(),
+                "seed {seed} returned a terminal opening: {fen}"
+            );
+        }
     }
 }

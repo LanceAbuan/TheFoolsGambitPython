@@ -68,9 +68,20 @@ def random_openings(count: int, seed: int, plies: int = OPENING_PLIES) -> list[s
         rng_seed = seed + attempts
         board = chess.Board()
         rng = np.random.default_rng(rng_seed)
+        # WP-H H4 (rust mirror parity): a uniform 6-ply walk can reach a
+        # terminal position inside the window (1.e3 f6 2.h4 g5 3.Qh5#),
+        # where `rng.integers(0)` would raise. The rust sampler retries
+        # such walks; break-and-retry here is bit-identical for every
+        # seed whose walk never terminates early (no rng consumed).
+        terminated_early = False
         for _ in range(plies):
             moves = list(board.legal_moves)
+            if not moves:
+                terminated_early = True
+                break
             board.push(moves[int(rng.integers(len(moves)))])
+        if terminated_early:
+            continue
         fen = board.fen()
         if fen not in seen:
             seen.add(fen)

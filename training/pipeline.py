@@ -54,6 +54,11 @@ from .resume import (
     save_run_state,
     validate_profile_signature,
 )
+from .rust_workers import (
+    collect_from_spool,
+    export_model_to_onnx,
+    record_to_selfplay_result,
+)
 from .selfplay import (
     ArenaConfig,
     BatchNNEvaluator,
@@ -137,6 +142,28 @@ class TrainingProfile:
     # stays "python" (MCTSSearch) until the C6 gates justify flipping it;
     # "rust" routes through training.rust_search.RustMCTSSearch.
     search_backend: str = "python"
+    # WP-H H5: self-play game source. "python" (default - every pre-H4
+    # profile and the live run keep byte-identical behavior) collects
+    # games in-process via the regime provider; "rust_workers" drains a
+    # spool directory of games played by external
+    # gambit_core.selfplay_game worker processes (training.rust_workers).
+    # The default stays "python" until the H6 gates justify a flip.
+    selfplay_backend: str = "python"
+    # WP-H H4: worker spool directory override. None -> "<run root>/spool"
+    # (per-run lineage dir; workers get the same path from the launcher).
+    spool_dir: str | None = None
+    # WP-H H4: how long one iteration blocks for worker games before
+    # proceeding with a shortfall (the min_examples guard skips training
+    # until the buffer is viable). Not part of the resume signature.
+    spool_timeout_s: float = 600.0
+
+    def __post_init__(self) -> None:
+        """WP-H H5: validate the backend selector at construction time."""
+        if self.selfplay_backend not in ("python", "rust_workers"):
+            raise ValueError(
+                f"selfplay_backend must be 'python' or 'rust_workers', "
+                f"got {self.selfplay_backend!r}"
+            )
 
 
 SMOKE_PROFILE = TrainingProfile(
@@ -619,17 +646,32 @@ def run_training(
     # in one slot on the client's board grid.
     if effective_stream:
         log.info("[STREAM] live move streaming on (journal %s)", journal.path)
+    # WP-H H5: "rust_workers" swaps the GAME SOURCE only (a spool of
+    # worker-produced JSONL games); buffer/training/gates/journal are
+    # backend-agnostic. With the default "python" nothing below changes.
+    rust_backend = profile.selfplay_backend == "rust_workers"
+    onnx_dir = paths.root / "onnx"
+    spool_dir = Path(profile.spool_dir) if profile.spool_dir else paths.root / "spool"
+    current_weight_version = -1  # last exported worker model version
+    if rust_backend:
+        log.info("[SELFPLAY] backend=rust_workers: spool=%s models=%s", spool_dir, onnx_dir)
     queued_evaluator: QueuedNNEvaluator | None = None
     provider = build_data_provider(regime)
     try:
-        if effective_parallel > 1:
+        if rust_backend:
+            pass  # collection needs no in-process NN evaluator (workers run ort)
+        elif effective_parallel > 1:
             queued_evaluator = QueuedNNEvaluator(model, device)
             log.info("[SELFPLAY] parallel_games=%d via the queued evaluator", effective_parallel)
 
         for iteration in range(iteration_start, profile.iterations):
             # --- collect (provider-driven, §5.2) ----------------------------
             model.eval()
-            if queued_evaluator is not None:
+            if rust_backend:
+                # WP-H H4: games come from external rust worker processes;
+                # collection itself needs no in-process NN evaluator.
+                evaluator = None
+            elif queued_evaluator is not None:
                 evaluator: Evaluator = queued_evaluator
             else:
                 evaluator = BatchNNEvaluator(model, device)
@@ -660,16 +702,36 @@ def run_training(
                 enabled=effective_stream,
                 game_offset=iteration * profile.games_per_iteration,
             )
-            games_this_iter: list[SelfPlayResult] = provider.collect(
-                evaluator,
-                profile.games_per_iteration,
-                selfplay_config,
-                parallel_games=effective_parallel,
-                elapsed_minutes=elapsed_minutes,
-                progress=progress,
-                rng=play_rng,  # FS-5: the run's play stream, restored on resume
-                stream=stream_context,  # FS-6b: live per-move journal events
-            )
+            games_this_iter: list[SelfPlayResult]
+            if rust_backend:
+                # WP-H H4: block for worker games (up to spool_timeout_s);
+                # a shortfall proceeds with fewer games - the min_examples
+                # guard below skips training until the buffer is viable.
+                spool_records = collect_from_spool(
+                    spool_dir,
+                    profile.games_per_iteration,
+                    timeout_s=profile.spool_timeout_s,
+                    poll_s=1.0,
+                )
+                versions = sorted({r["weight_version"] for r in spool_records})
+                if versions and versions != [current_weight_version]:
+                    log.info(
+                        "[RUST-SPOOL] games tagged weight_version %s (trainer at v%d)",
+                        versions,
+                        current_weight_version,
+                    )
+                games_this_iter = [record_to_selfplay_result(r) for r in spool_records]
+            else:
+                games_this_iter = provider.collect(
+                    evaluator,
+                    profile.games_per_iteration,
+                    selfplay_config,
+                    parallel_games=effective_parallel,
+                    elapsed_minutes=elapsed_minutes,
+                    progress=progress,
+                    rng=play_rng,  # FS-5: the run's play stream, restored on resume
+                    stream=stream_context,  # FS-6b: live per-move journal events
+                )
             collect_seconds = time.monotonic() - collect_started
             collect_seconds_total += collect_seconds
             for result in games_this_iter:
@@ -737,6 +799,27 @@ def run_training(
             if last_loss is not None:
                 summary.final_loss = last_loss
                 log.info("[TRAIN] iter %d: loss %.4f", iteration, last_loss)
+
+            if rust_backend:
+                # WP-H H4: publish the current weights to the worker fleet
+                # every iteration (atomic ONNX file + latest.json pointer;
+                # workers hot-reload BETWEEN games only). Failures log and
+                # never kill the run - workers keep the last good model.
+                try:
+                    pointer = export_model_to_onnx(
+                        model,
+                        onnx_dir,
+                        weight_version=max(summary.steps, current_weight_version + 1),
+                    )
+                    current_weight_version = pointer.weight_version
+                    log.info(
+                        "[RUST-EXPORT] v%d -> %s (%.1f MB)",
+                        pointer.weight_version,
+                        pointer.path.name,
+                        pointer.path.stat().st_size / 1e6,
+                    )
+                except Exception as exc:  # noqa: BLE001 - export must not kill training
+                    log.error("[RUST-EXPORT] iteration %d export failed: %s", iteration, exc)
 
             # --- FS-6 journal: one event per iteration ----------------------
             journal.append(
