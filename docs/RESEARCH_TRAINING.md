@@ -6,6 +6,42 @@ webfetch), append findings + actionable items, commit. Cycles are listed
 **newest first**. Focus = training quality, sample efficiency, throughput.
 Never touch the live training run.
 
+## Cycle 7 — 2026-11-24
+
+Sources: Seer (McMonigle) TB-trained WDL net, ICGA 2021 "On the Road to
+Perfection?" (Lc0 vs tablebases), chessprogramming Syzygy, Apache Arrow IPC
+docs, arrow-ipc-bench, SPDL SharedMemoryArena case study (Meta), pymizu.
+
+### Findings
+
+1. **Syzygy labels are a cheap, perfect data source**: Seer trained a *small*
+   net on several million ≤6-man TB-labelled positions and was effectively
+   perfect in ≤5-man endgames. python-chess ships syzygy support; 3-4-5 WDL
+   is ~1 GB from Lichess's mirror.
+   → Three uses for us: (a) TB-correct the value target on any ≤5-man self-play
+   position (removes endgame noise from game outcomes), (b) sample TB
+   positions as perfect-label replay rows, (c) an endgame-accuracy eval
+   harness vs TB.
+2. **Endgames are a known AZ weakness worth measuring**: the ICGA study found
+   Lc0 mistake rates in 3-4 piece endgames; search corrects many but not all.
+   Our 200-ply caps/draw-heavy games likely hide endgame blunders — TB eval
+   would expose them honestly.
+3. **Our spool format will be the next throughput wall**: 9 MB/game of JSON +
+   base64 f32 costs real CPU per game at both ends. Zero-copy options measured
+   (arrow-ipc-bench): plasma export 14.5 GB/s, shared memory 8.7 GB/s, TCP
+   4.3 GB/s; memory-mapped Arrow reads allocate nothing.
+   → SPDL's SharedMemorySegmentPool pattern (producer writes once, consumer
+   gets a zero-copy view) is the clean upgrade, and Arrow + sparse-policy
+   columns also lands A12 naturally.
+
+### Actionable queue additions
+- [ ] A30: Syzygy integration — TB-corrected value targets for ≤5-man rows +
+      sampled perfect-label replay + endgame-accuracy harness (needs the
+      3-4-5 WDL download; python-chess has the reader built in)
+- [ ] A31: spool v2 — Arrow IPC memory-mapped per-game records (or a
+      shared-memory arena) replacing JSONL+b64; prerequisite for >~100
+      games/hr and for sparse policy storage (A12)
+
 ## Cycle 6 — 2026-11-24
 
 Sources: KataGo paper Appendix D + methods (soft resignation, game
