@@ -28,6 +28,7 @@ import numpy as np
 import torch
 
 from .encoder import ENCODER_VERSION, NUM_PLANES, NUM_PLANES_V2
+from .ema import EmaWeights
 from .evaluator import QueuedNNEvaluator
 from .glicko import GlickoRating, expected_games_to_accept, match_honesty
 from .hf import upload_checkpoint
@@ -156,6 +157,11 @@ class TrainingProfile:
     # proceeding with a shortfall (the min_examples guard skips training
     # until the buffer is viable). Not part of the resume signature.
     spool_timeout_s: float = 600.0
+    # WP4: exponential moving average of the weights (0 = disabled). The
+    # EMA is exported to the workers and used as the gate candidate once
+    # iteration >= ema_min_iteration (early EMA still carries weak weights).
+    ema_decay: float = 0.0
+    ema_min_iteration: int = 2000
 
     def __post_init__(self) -> None:
         """WP-H H5: validate the backend selector at construction time."""
@@ -514,6 +520,16 @@ def run_training(
 
     model = GambitNet(profile.model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=regime.learning_rate)
+    # WP4: EMA shadow (created empty; state restored from the resume sidecar).
+    ema = EmaWeights(model, profile.ema_decay) if profile.ema_decay > 0 else None
+    if ema is not None:
+        sidecars = sorted(paths.state.glob("ema-*.pt"))
+        if sidecars:
+            try:
+                ema.load_state_dict(torch.load(sidecars[-1], map_location="cpu", weights_only=True))
+                log.info("[EMA] restored %s", sidecars[-1].name)
+            except Exception as exc:  # noqa: BLE001 - sidecar must not kill the run
+                log.warning("[EMA] sidecar restore failed: %s", exc)
     buffer: TrainingBuffer = TrainingBuffer(max_size=profile.buffer_size)
     # WP-B: encoder-layout stamp for every journal record this run writes.
     encoder_version = encoder_version_for(model.config.in_channels)
@@ -809,6 +825,8 @@ def run_training(
                 loss = policy_loss + value_loss
                 loss.backward()
                 optimizer.step()
+                if ema is not None:
+                    ema.update(model)
                 summary.steps += 1
                 last_loss = float(loss.item())
                 last_policy_loss = float(policy_loss.item())
@@ -817,6 +835,15 @@ def run_training(
                 summary.final_loss = last_loss
                 log.info("[TRAIN] iter %d: loss %.4f", iteration, last_loss)
 
+            # WP4: one EMA eval copy per iteration - the export, the
+            # checkpoint and the gate candidate all use it once the EMA
+            # warmup window has passed (None -> live weights).
+            eval_model = None
+            if ema is not None and iteration >= profile.ema_min_iteration:
+                eval_model = copy.deepcopy(model)
+                ema.apply_to(eval_model)
+                eval_model.eval()
+
             if rust_backend:
                 # WP-H H4: publish the current weights to the worker fleet
                 # every iteration (atomic ONNX file + latest.json pointer;
@@ -824,7 +851,7 @@ def run_training(
                 # never kill the run - workers keep the last good model.
                 try:
                     pointer = export_model_to_onnx(
-                        model,
+                        eval_model if eval_model is not None else model,
                         onnx_dir,
                         weight_version=max(summary.steps, current_weight_version + 1),
                     )
@@ -872,8 +899,17 @@ def run_training(
 
             tag = f"ckpt-{summary.steps:06d}-{summary.games_played:04d}"
             ckpt_path = paths.checkpoints / f"{tag}.pt"
-            _save_checkpoint(model, ckpt_path, tag, regime.name, resolved_run_id, summary.steps, summary.games_played)
+            _save_checkpoint(
+                eval_model if eval_model is not None else model,
+                ckpt_path, tag, regime.name, resolved_run_id, summary.steps, summary.games_played,
+            )
             summary.checkpoints.append(tag)
+            if ema is not None:
+                ema_dir = paths.state
+                torch.save(ema.state_dict(), ema_dir / f"ema-{summary.steps:06d}.pt")
+                old_emas = sorted(ema_dir.glob("ema-*.pt"))[:-2]
+                for stale in old_emas:
+                    stale.unlink(missing_ok=True)
 
             # F-5 (audit): each checkpoint is a FRESH candidate with no rating
             # history. base_elo is only the provisional rating inside the Elo
@@ -940,7 +976,8 @@ def run_training(
                     opening_seed=gate_opening_seed(profile.seed, iteration),
                 )
                 match: MatchResult = _arena_match(
-                    model, champion_model, device, arena_config, tag, champion_tag or "unknown"
+                    eval_model if eval_model is not None else model,
+                    champion_model, device, arena_config, tag, champion_tag or "unknown"
                 )
                 last_match = match
                 arena_games_total += match.games
