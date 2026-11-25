@@ -60,6 +60,7 @@ from .resume import (
 from .rust_workers import (
     collect_from_spool,
     export_model_to_onnx,
+    prune_processed_games,
     purge_stale_games,
     record_to_selfplay_result,
 )
@@ -812,6 +813,9 @@ def run_training(
                 )
                 if staleness_horizon is not None:
                     purge_stale_games(spool_dir, staleness_horizon)
+                # Retention: at GPU-speed self-play the claimed archive grows
+                # ~60 GB/day; keep a 20k-game / 48h window instead.
+                prune_processed_games(spool_dir)
                 # Racing guard: an iteration that finds almost no fresh games
                 # must NOT train - it would burn 96 steps on stale replay and
                 # export a version the fleet has not even played yet. Keep

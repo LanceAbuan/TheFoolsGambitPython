@@ -385,6 +385,48 @@ def purge_stale_games(
     return purged
 
 
+def prune_processed_games(
+    spool_dir: Path | str,
+    keep: int = 20_000,
+    keep_hours: float = 48.0,
+) -> int:
+    """Bound the disk footprint of ``inbox/processed`` (retention).
+
+    Claimed games are kept only for replay/debugging, but at GPU-speed self-play
+    (~500 games/hr x ~5 MB) an unpruned archive grows ~60 GB/day. Keep the newest
+    ``keep`` files OR anything younger than ``keep_hours``, whichever is more
+    generous, and delete the rest. Runs are idempotent and cheap (a single
+    directory scan) so the drain can call it every iteration.
+    """
+    processed = Path(spool_dir) / INBOX_DIRNAME / PROCESSED_DIRNAME
+    if not processed.is_dir():
+        return 0
+    files = [(p, p.stat().st_mtime, p.stat().st_size) for p in processed.glob("game-*.jsonl")]
+    if len(files) <= keep:
+        return 0
+    cutoff = time.time() - keep_hours * 3600.0
+    # newest-first: everything beyond the ``keep`` window is a candidate, but
+    # recent files are protected regardless of count.
+    files.sort(key=lambda item: item[1], reverse=True)
+    removed = 0
+    freed = 0
+    for path, mtime, size in files[keep:]:
+        if mtime >= cutoff:
+            break
+        with contextlib.suppress(OSError):
+            path.unlink()
+            removed += 1
+            freed += size
+    if removed:
+        log.info(
+            "[RUST-SPOOL] pruned %d processed games (%.1f GB), kept %d",
+            removed,
+            freed / 1e9,
+            keep,
+        )
+    return removed
+
+
 def collect_from_spool(
     spool_dir: Path | str,
     want: int,
@@ -504,7 +546,10 @@ def read_model_pointer(models_dir: Path | str) -> ModelPointer | None:
     if not path.is_file():
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig: PowerShell / editors happily write a BOM, and a BOM turned
+        # every worker into "pointer unusable, waiting for the trainer" (a
+        # whole fleet idle on one invisible byte).
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
         return ModelPointer(
             weight_version=int(data["weight_version"]),
             path=Path(data["path"]),

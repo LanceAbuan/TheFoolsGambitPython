@@ -226,6 +226,31 @@ def test_purge_stale_games_only_under_pressure(tmp_path):
     assert left == [3], "only below-horizon games removed"
 
 
+def test_prune_processed_keeps_recent_and_newest(tmp_path):
+    """Retention: the claimed archive is bounded by count, and anything inside
+    the age window is protected regardless of count."""
+    import os
+
+    from training.rust_workers import prune_processed_games
+
+    processed = tmp_path / "inbox" / "processed"
+    processed.mkdir(parents=True)
+    old = time.time() - 72 * 3600
+    for i in range(6):
+        path = processed / f"game-w0-{i}-h.jsonl"
+        path.write_text("{}", encoding="utf-8")
+        if i < 3:  # the first three are older than the 48h window
+            os.utime(path, (old, old))
+
+    # keep=2: the four newest are protected by the 48h age window
+    assert prune_processed_games(tmp_path, keep=2, keep_hours=48.0) == 0
+    assert len(list(processed.glob("game-*.jsonl"))) == 6
+
+    # keep=2 with the age window disabled prunes down to exactly two
+    assert prune_processed_games(tmp_path, keep=2, keep_hours=0.0) == 4
+    assert len(list(processed.glob("game-*.jsonl"))) == 2
+
+
 def test_collect_claims_and_quarantines(tmp_path):
     write_game_record(tmp_path, _fake_record(weight_version=1))
     time.sleep(0.02)  # distinct mtimes -> deterministic drain order
