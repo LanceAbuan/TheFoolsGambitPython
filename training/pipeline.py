@@ -249,7 +249,13 @@ NIGHT_V2_PROFILE = replace(
     ),
     parallel_games=32,
     sims=600,
-    train_steps=96,
+    # GPU utilisation fix (2026-11-24): a 64-game iteration costs ~25 min of
+    # fleet time but only ~11 s of GPU (96 steps x 512). The buffer holds 80k+
+    # examples, so 96 steps was a 0.06-epoch pass - the 3080 sat idle ~99% of
+    # the cycle. 288 steps (~33 s, ~1.8 epochs of the buffer) extracts ~3x the
+    # learning from the same self-play data; watch policy_ce on the fresh batch
+    # to catch replay-ratio overfitting and back off to 192 if it climbs.
+    train_steps=288,
     # 2026-11-24 rebalance: the fleet produces ~150 games/hr and the drain is
     # newest-first, so a 64-game iteration consumes fresh data twice as fast
     # and trains on more positions per cycle.

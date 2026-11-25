@@ -127,7 +127,7 @@ class TestWPAThroughputKnobs:
         """The exact acceptance assertion from the WP-A spec."""
         from training.pipeline import NIGHT_V2_PROFILE as p
 
-        assert (p.parallel_games, p.sims, p.train_steps, p.batch_size) == (32, 600, 96, 512)
+        assert (p.parallel_games, p.sims, p.train_steps, p.batch_size) == (32, 600, 288, 512)
         assert p.min_examples == 128
         assert p.name == "night-v2"
 
@@ -261,7 +261,7 @@ class TestWPAThroughputKnobs:
         profile = module.build_profile(args)
         assert profile.name == "night-v2"
         assert (profile.parallel_games, profile.sims) == (32, 600)
-        assert (profile.train_steps, profile.batch_size, profile.min_examples) == (96, 512, 128)
+        assert (profile.train_steps, profile.batch_size, profile.min_examples) == (288, 512, 128)
         assert profile.lr_schedule is not None
         assert profile.lr_schedule.lr_at(200, 1e-3) == pytest.approx(5e-4)
         # smoke profile untouched by the refactor
