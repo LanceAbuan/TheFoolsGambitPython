@@ -51,11 +51,20 @@ if ($trainer.Count -eq 0) {
     Start-Hidden $trainerCmd
 }
 else {
-    $latest = Get-ChildItem (Join-Path $Root 'runs\scratch\second-light-v2\onnx') -Filter 'model-*.onnx' `
-        -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1
-    if ($latest -and $latest.LastWriteTime -lt (Get-Date).AddMinutes(-25)) {
-        Write-Log ("ACTION trainer stalled: newest model {0} is {1:N0} min old -> restart" -f `
-            $latest.Name, ((Get-Date) - $latest.LastWriteTime).TotalMinutes)
+    # Liveness = "is it burning CPU", NOT "did it export a model recently".
+    # A gate (16 games x 128 sims) legitimately runs 20-40 minutes with no new
+    # ONNX - an mtime rule restarted a healthy trainer mid-gate and threw away
+    # every iteration since the last snapshot. A hung trainer shows ~0 CPU.
+    $pid0 = $trainer[0].ProcessId
+    $cpu0 = (Get-Process -Id $pid0 -ErrorAction SilentlyContinue).CPU
+    Start-Sleep -Seconds 10
+    $cpu1 = (Get-Process -Id $pid0 -ErrorAction SilentlyContinue).CPU
+    $logPath = Join-Path $Root 'data\train.err.log'
+    $logAge = if (Test-Path $logPath) { ((Get-Date) - (Get-Item $logPath).LastWriteTime).TotalMinutes } else { 999 }
+    $busy = ($null -ne $cpu0 -and $null -ne $cpu1 -and ($cpu1 - $cpu0) -gt 2.0)
+    if (-not $busy -and $logAge -gt 30) {
+        Write-Log ("ACTION trainer hung: {0:N1} CPU-seconds in 10s, log silent {1:N0} min -> restart" -f `
+            ($(if ($null -ne $cpu0 -and $null -ne $cpu1) { $cpu1 - $cpu0 } else { 0 })), $logAge)
         $trainer | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         Start-Sleep -Seconds 5
         Start-Hidden $trainerCmd

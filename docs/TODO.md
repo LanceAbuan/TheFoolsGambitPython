@@ -293,6 +293,19 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [x] **Watchdog liveness was model-age based (2026-11-24, fixed).** A gate runs
+      20–40 min without exporting ONNX, so "newest model > 25 min" restarted a
+      healthy trainer mid-gate at 21:26 and rolled the run back three iterations
+      (5568 -> 6144 discarded; durability checkpoint at 5568 limited the loss).
+      Liveness is now "trainer burned > 2 CPU-seconds in 10 s", with a 30-min
+      silent-log fallback — a gate is CPU-heavy, a hang is not.
+- [x] **Fleet on stale reader code (2026-11-24).** Old workers parsed the new
+      relative pointer (`model-N.onnx`) against the CWD, failed to load, kept an
+      ancient in-memory model and tagged games with it; the staleness horizon
+      then rejected those games (`0 games` iterations). Restarting the fleet onto
+      the current code fixed it. Lesson: pointer-format changes need a fleet
+      restart in the same window, not just a trainer restart.
+
 - [ ] **Backend perf re-benchmarks** — slice-1 baseline (local, single client, uvicorn single worker):
       health 2.2 ms · play/new 27.9 ms · move 16–21 ms · games list 13.1 ms · PGN export 36.4 ms.
       Re-benchmark and record deltas after: (a) WS live feed wired (WP-B), (b) self-play telemetry
