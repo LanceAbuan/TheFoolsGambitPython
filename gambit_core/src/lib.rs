@@ -331,8 +331,16 @@ fn selfplay_game<'py>(
     search_batch: usize,
 ) -> PyResult<Bound<'py, PyDict>> {
     let game = py
-        .detach(|| -> Result<selfplay::SelfPlayGame, String> {
-            let model = ort_eval::OrtModel::load(std::path::Path::new(model_path), false)?;
+        .detach(|| -> Result<(selfplay::SelfPlayGame, bool), String> {
+            let model = ort_eval::OrtModel::load(
+                std::path::Path::new(model_path),
+                // A60: GPU inference is the difference between 4.16 ms and
+                // 0.13 ms per position (batch 16). Default ON, with the load
+                // path's loud CPU fallback when the CUDA EP/dylibs are absent;
+                // GAMBIT_ORT_CUDA=0 forces CPU (parity tests, CPU-only boxes).
+                std::env::var("GAMBIT_ORT_CUDA").map(|v| v != "0").unwrap_or(true),
+            )?;
+            let used_cuda = model.used_cuda();
             let mut evaluator = ort_eval::OrtMctsEvaluator::new(model);
             let opening_fen = match opening_seed {
                 Some(os) => selfplay::random_opening_fen(os)?,
@@ -352,9 +360,10 @@ fn selfplay_game<'py>(
                 soft_resign,
                 search_batch,
             };
-            Ok(selfplay::play_game(&mut evaluator, &root, &params))
+            Ok((selfplay::play_game(&mut evaluator, &root, &params), used_cuda))
         })
         .map_err(PyValueError::new_err)?;
+    let (game, used_cuda) = game;
 
     let dict = PyDict::new(py);
     let examples = PyList::empty(py);
@@ -378,6 +387,9 @@ fn selfplay_game<'py>(
     dict.set_item("termination", &game.termination)?;
     dict.set_item("weight_version", weight_version)?;
     dict.set_item("ply_count", game.ucis.len())?;
+    // A62: requested-vs-actual execution provider, so a CPU fallback is
+    // visible in every worker log instead of silently halving throughput.
+    dict.set_item("used_cuda", used_cuda)?;
     Ok(dict)
 }
 
