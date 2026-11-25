@@ -297,6 +297,17 @@ def test_pointer_requires_existing_model(tmp_path):
         write_model_pointer(tmp_path, tmp_path / "nope.onnx", weight_version=1)
 
 
+def test_pointer_tolerates_utf8_bom(tmp_path):
+    """A BOM (PowerShell / editors) must not strand the whole fleet: the
+    reader decodes utf-8-sig, and the pointer stays usable."""
+    model_file = tmp_path / "model-7.onnx"
+    model_file.write_bytes(b"stub-onnx-bytes")
+    pointer = write_model_pointer(tmp_path, model_file, weight_version=7)
+    raw = (tmp_path / "latest.json").read_bytes()
+    (tmp_path / "latest.json").write_bytes(b"\xef\xbb\xbf" + raw)
+    assert read_model_pointer(tmp_path) == pointer
+
+
 def test_watcher_hot_reloads_between_games(tmp_path):
     """Pointer mtime+size fingerprint -> adopt v1, then v2; cache between."""
     watcher = ModelWatcher(tmp_path)
@@ -563,3 +574,33 @@ def test_example_parity_rust_vs_python_same_seed(selfplay_env, tmp_path):
         assert pol.shape == (4672,) and pol.dtype.kind == "f"
         assert float(ex["value"]) in (-1.0, 0.0, 1.0)
         board.push(move)
+
+
+def test_fleet_forwards_search_batch():
+    """Leaf batching is opt-in end to end: the supervisor only emits
+    ``--search-batch`` above 1, so the default fleet stays bit-identical."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "rrw_under_test",
+        pathlib.Path(__file__).resolve().parent.parent / "scripts" / "run_rust_workers.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    argv = ["x", "--models-dir", ".", "--spool-dir", "."]
+    real_argv, sys.argv = sys.argv, argv + ["--workers", "2"]
+    try:
+        default = module.parse_args()
+    finally:
+        sys.argv = real_argv
+    assert "--search-batch" not in module.worker_argv(default, 0)
+
+    real_argv, sys.argv = sys.argv, argv + ["--workers", "2", "--search-batch", "8"]
+    try:
+        batched = module.parse_args()
+    finally:
+        sys.argv = real_argv
+    worker = module.worker_argv(batched, 0)
+    assert worker[worker.index("--search-batch") + 1] == "8"
