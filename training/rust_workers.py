@@ -332,24 +332,74 @@ def record_to_selfplay_result(record: dict[str, Any], tb: Any = None) -> "SelfPl
     )
 
 
+def _game_weight_version(path: Path) -> int | None:
+    """Weight version parsed from ``game-<worker>-<wv>-<hash>.jsonl``."""
+    parts = path.stem.split("-")
+    if len(parts) >= 3 and parts[2].isdigit():
+        return int(parts[2])
+    return None
+
+
+def _is_below_version(path: Path, min_weight_version: int | None) -> bool:
+    if min_weight_version is None:
+        return False
+    version = _game_weight_version(path)
+    return version is not None and version < min_weight_version
+
+
+def purge_stale_games(
+    spool_dir: Path | str,
+    min_weight_version: int,
+    high_water: int = 512,
+    batch: int = 256,
+) -> int:
+    """Delete UNCLAIMED games below ``min_weight_version``, only under pressure.
+
+    Staleness does not need deletion to be safe any more - ``collect_from_spool``
+    never reads a game below the horizon - so deletion is purely a disk
+    high-water mechanism: nothing happens until the inbox exceeds ``high_water``
+    files, then up to ``batch`` stale games are dropped. This keeps a fast
+    trainer from shredding live fleet output (in-flight games carry the
+    previous model's version tag).
+    """
+    inbox = Path(spool_dir) / INBOX_DIRNAME
+    if not inbox.is_dir():
+        return 0
+    files = [p for p in inbox.glob("game-*.jsonl") if p.is_file()]
+    if len(files) <= high_water:
+        return 0
+    purged = 0
+    for path in files:
+        if purged >= batch:
+            break
+        if _is_below_version(path, min_weight_version):
+            with contextlib.suppress(OSError):
+                path.unlink()
+                purged += 1
+    if purged:
+        log.info(
+            "[RUST-SPOOL] purged %d stale games (weight_version < %d)",
+            purged,
+            min_weight_version,
+        )
+    return purged
+
+
 def collect_from_spool(
     spool_dir: Path | str,
     want: int,
     timeout_s: float = 600.0,
     poll_s: float = 1.0,
     min_weight_version: int | None = None,
-    max_stale_purge: int = 128,
 ) -> list[dict[str, Any]]:
     """Drain up to ``want`` finished games from the spool, NEWEST FIRST.
 
     Newest-first keeps training data fresh when workers outproduce the trainer
-    (the old mtime-ascending order trained on the oldest backlog). When
-    ``min_weight_version`` is set, unclaimed games tagged with an older weight
-    version are deleted (capped at ``max_stale_purge`` per call, filename tag
-    parsed without reading the file) - such rows are multiple policy versions
-    stale and would otherwise poison the replay buffer. Each claimed file is
-    read + validated fully, THEN moved into ``inbox/processed/``; invalid
-    records are quarantined into ``inbox/rejected/``.
+    (the old mtime-ascending order trained on the oldest backlog). Games whose
+    weight version is below ``min_weight_version`` are skipped entirely (never
+    read, never claimed) - they are too many policy versions stale to train on.
+    Each claimed file is read + validated fully, THEN moved into
+    ``inbox/processed/``; invalid records are quarantined into ``inbox/rejected/``.
     """
     inbox = Path(spool_dir) / INBOX_DIRNAME
     processed = inbox / PROCESSED_DIRNAME
@@ -357,31 +407,15 @@ def collect_from_spool(
     for d in (inbox, processed, rejected):
         d.mkdir(parents=True, exist_ok=True)
 
-    # WP: stale-backlog purge - games whose weight version is too old to train
-    # on get deleted (filename game-<worker>-<wv>-<hash>.jsonl). Cap per call so
-    # a huge backlog never stalls one collect.
-    if min_weight_version is not None:
-        purged = 0
-        for path in inbox.glob("game-*.jsonl"):
-            if purged >= max_stale_purge:
-                break
-            parts = path.stem.split("-")
-            if len(parts) >= 3 and parts[2].isdigit() and int(parts[2]) < min_weight_version:
-                with contextlib.suppress(OSError):
-                    path.unlink()
-                    purged += 1
-        if purged:
-            log.info(
-                "[RUST-SPOOL] purged %d stale games (weight_version < %d)",
-                purged,
-                min_weight_version,
-            )
-
     games: list[dict[str, Any]] = []
     deadline = time.monotonic() + timeout_s
     while len(games) < want:
         candidates = sorted(
-            (p for p in inbox.glob("game-*.jsonl") if p.is_file()),
+            (
+                p
+                for p in inbox.glob("game-*.jsonl")
+                if p.is_file() and not _is_below_version(p, min_weight_version)
+            ),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
