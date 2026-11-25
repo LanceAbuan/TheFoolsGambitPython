@@ -249,6 +249,10 @@ NIGHT_V2_PROFILE = replace(
     parallel_games=32,
     sims=600,
     train_steps=96,
+    # 2026-11-24 rebalance: the fleet produces ~150 games/hr and the drain is
+    # newest-first, so a 64-game iteration consumes fresh data twice as fast
+    # and trains on more positions per cycle.
+    games_per_iteration=64,
     batch_size=512,
     min_examples=128,
     lr_schedule=LRStepSchedule(milestones=(200, 400, 600, 800), gamma=0.5),
@@ -260,9 +264,21 @@ NIGHT_V2_PROFILE = replace(
     # stays on the python search path per the flip procedure.
     selfplay_backend="rust_workers",
     # Gate throughput (2026-11-24): the 16 title games are independent -
-    # run them 8-way concurrently. The sequential match cost ~45-60 min per
-    # iteration; parallel cuts it to minutes. Decision math is unchanged.
-    ladder=replace(NIGHT_PROFILE.ladder, arena=replace(NIGHT_PROFILE.ladder.arena, parallel=8)),
+    # run them 8-way concurrently, on the RUST search backend (arena leaf
+    # evaluation is history-free exactly like the python path, so fidelity is
+    # unchanged; ~10x faster), and only every ~90 min (the champion rarely
+    # changes within one iteration - gating every iteration was 60-90% of the
+    # cycle). Decision math is unchanged.
+    ladder=replace(
+        NIGHT_PROFILE.ladder,
+        markers_minutes=(90.0,),
+        repeat_every_minutes=90.0,
+        arena=replace(
+            NIGHT_PROFILE.ladder.arena,
+            parallel=8,
+            search_backend="rust",
+        ),
+    ),
 )
 
 
@@ -778,11 +794,17 @@ def run_training(
                 # WP-H H4: block for worker games (up to spool_timeout_s);
                 # a shortfall proceeds with fewer games - the min_examples
                 # guard below skips training until the buffer is viable.
+                # Freshness: newest games claimed first; unclaimed games more
+                # than 2 weight versions behind the trainer are purged
+                # (sampling-side staleness bound, research cycle 26 / A86).
                 spool_records = collect_from_spool(
                     spool_dir,
                     profile.games_per_iteration,
                     timeout_s=profile.spool_timeout_s,
                     poll_s=1.0,
+                    min_weight_version=max(current_weight_version - 2, 0)
+                    if current_weight_version >= 0
+                    else None,
                 )
                 versions = sorted({r["weight_version"] for r in spool_records})
                 if versions and versions != [current_weight_version]:

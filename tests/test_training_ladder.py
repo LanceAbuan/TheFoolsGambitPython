@@ -179,3 +179,20 @@ class TestEloUpdate:
         cand, _champ = update_elo(800.0, 1200.0, match, k_factor=32.0)
         expected = 1.0 / (1.0 + 10.0 ** (400.0 / 400.0))
         assert abs((cand - 800.0) - 32.0 * (0.0 - expected)) < 1e-9
+
+
+def test_gate_rust_backend_completes():
+    """ArenaConfig.search_backend='rust' routes gate games through the
+    gambit_core search (skip-guarded when the wheel lacks it)."""
+    from training.rust_search import RUST_SEARCH_AVAILABLE
+
+    if not RUST_SEARCH_AVAILABLE:
+        pytest.skip("gambit_core rust search unavailable")
+    stub = StubEvaluator()
+    arena = Arena(
+        stub,
+        StubEvaluator(),
+        ArenaConfig(games=2, num_simulations=2, max_plies=4, search_backend="rust"),
+    )
+    match = arena.match("cand", "champ")
+    assert match.games == 2
