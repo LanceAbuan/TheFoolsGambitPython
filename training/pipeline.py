@@ -817,37 +817,36 @@ def run_training(
                 # ~60 GB/day; keep a 20k-game / 48h window instead.
                 prune_processed_games(spool_dir)
                 # Racing guard: an iteration that finds almost no fresh games
-                # must NOT train - it would burn 96 steps on stale replay and
-                # export a version the fleet has not even played yet. Keep
-                # polling until half a batch of fresh games exists (the fleet
-                # is the bottleneck, not the GPU).
-                spool_records: list[dict[str, Any]] = []
+                # must NOT train - it would burn 288 steps on stale replay and
+                # export a version the fleet has not even played yet. But the
+                # wait is bounded by HALF a batch, not a full one: `want` is the
+                # minimum, so a fast fleet is never held back for 10 minutes
+                # waiting to top up to `games_per_iteration` (collect blocks
+                # until `want` is reached or its timeout expires).
                 min_fresh = max(profile.games_per_iteration // 2, 1)
-                drain_deadline = time.monotonic() + max(profile.spool_timeout_s, 60.0)
-                while True:
+                spool_records = collect_from_spool(
+                    spool_dir,
+                    min_fresh,
+                    timeout_s=profile.spool_timeout_s,
+                    poll_s=1.0,
+                    min_weight_version=staleness_horizon,
+                )
+                # Top up with whatever else is already waiting - never wait for
+                # it (a short non-blocking-ish poll keeps iterations tight).
+                if len(spool_records) >= min_fresh:
                     spool_records.extend(
                         collect_from_spool(
                             spool_dir,
                             profile.games_per_iteration - len(spool_records),
-                            timeout_s=profile.spool_timeout_s,
-                            poll_s=1.0,
+                            timeout_s=min(5.0, profile.spool_timeout_s),
+                            poll_s=0.5,
                             min_weight_version=staleness_horizon,
                         )
                     )
-                    if len(spool_records) >= min_fresh:
-                        break
-                    if time.monotonic() >= drain_deadline:
-                        log.warning(
-                            "[RUST-SPOOL] starved: only %d/%d fresh games after "
-                            "waiting (trainer v%d) - training on the shortfall",
-                            len(spool_records),
-                            profile.games_per_iteration,
-                            current_weight_version,
-                        )
-                        break
-                    log.info(
-                        "[RUST-SPOOL] %d/%d fresh games (trainer v%d): still waiting "
-                        "for the fleet",
+                else:
+                    log.warning(
+                        "[RUST-SPOOL] starved: only %d/%d fresh games after "
+                        "waiting (trainer v%d) - training on the shortfall",
                         len(spool_records),
                         profile.games_per_iteration,
                         current_weight_version,

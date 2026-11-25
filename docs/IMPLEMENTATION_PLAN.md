@@ -345,6 +345,18 @@ DEFERRED (explicit reasons; ordered for the next session):
   replay. Rate facts on this box: fleet ~150 games/hr; a 64-game iteration is
   ~25 min of waiting + ~11 s of GPU; the gate adds minutes (rust backend, 90-min
   cadence). `games_per_iteration` is a drift-WARN resume key (not strict).
+- **Repo moved E: -> D: (2026-11-24).** Live path is `D:\github repos\TheFoolsGambitPython`;
+  `.venv` survived unedited (only `Scripts\*.exe` shims embed the old path, and we
+  always invoke `python -m ...`). Launchers with absolute paths live in
+  `data\*.cmd` (gitignored): `launch_trainer.cmd`, `launch_fleet.cmd`.
+  `latest.json` now stores a model **filename**, resolved against the models
+  dir at read time - the absolute path it used to store stranded the whole fleet
+  on "names a missing model file" immediately after the move.
+- **Iteration pacing (2026-11-24).** The drain claims at least
+  `games_per_iteration // 2` games (blocking up to `spool_timeout_s`) and then
+  tops up with a 5 s poll. Waiting for a full batch held iterations at 10 min
+  even when 35 games were already sitting in the spool; half-batch pacing runs
+  them every ~3 min at ~600 games/hr.
 - **Staleness incident (2026-11-24).** Oldest-first draining + a 128-file purge
   per drain trained the net on 1056-1536-era games while the fleet was at 2496,
   and once the trainer's version counter raced ahead it deleted live output.
