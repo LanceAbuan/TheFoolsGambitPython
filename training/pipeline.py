@@ -740,6 +740,7 @@ def run_training(
     onnx_dir = paths.root / "onnx"
     spool_dir = Path(profile.spool_dir) if profile.spool_dir else paths.root / "spool"
     current_weight_version = -1  # last exported worker model version
+    version_stride = max(profile.train_steps, 1)  # one iteration's version stride
     if rust_backend:
         log.info("[SELFPLAY] backend=rust_workers: spool=%s models=%s", spool_dir, onnx_dir)
     queued_evaluator: QueuedNNEvaluator | None = None
@@ -795,14 +796,14 @@ def run_training(
                 # a shortfall proceeds with fewer games - the min_examples
                 # guard below skips training until the buffer is viable.
                 # Freshness: newest games claimed first; unclaimed games more
-                # than 2 weight versions behind the trainer are purged
-                # (sampling-side staleness bound, research cycle 26 / A86).
+                # than 2 ITERATIONS behind the trainer are purged (sampling-side
+                # staleness bound, research cycle 26 / A86).
                 spool_records = collect_from_spool(
                     spool_dir,
                     profile.games_per_iteration,
                     timeout_s=profile.spool_timeout_s,
                     poll_s=1.0,
-                    min_weight_version=max(current_weight_version - 2, 0)
+                    min_weight_version=max(current_weight_version - 2 * version_stride, 0)
                     if current_weight_version >= 0
                     else None,
                 )
@@ -961,12 +962,21 @@ def run_training(
                 # workers hot-reload BETWEEN games only). Failures log and
                 # never kill the run - workers keep the last good model.
                 try:
+                    prev_weight_version = current_weight_version
                     pointer = export_model_to_onnx(
                         eval_model if eval_model is not None else model,
                         onnx_dir,
                         weight_version=max(summary.steps, current_weight_version + 1),
                     )
                     current_weight_version = pointer.weight_version
+                    # One iteration's version stride (weight_version follows
+                    # cumulative steps, so the stride is ~train_steps). The
+                    # staleness horizon is expressed in ITERATIONS, not raw
+                    # version units.
+                    if prev_weight_version >= 0:
+                        version_stride = max(current_weight_version - prev_weight_version, 1)
+                    else:
+                        version_stride = max(profile.train_steps, 1)
                     log.info(
                         "[RUST-EXPORT] v%d -> %s (%.1f MB)",
                         pointer.weight_version,

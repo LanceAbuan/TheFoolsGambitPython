@@ -210,8 +210,11 @@ def validate_game_record(record: dict[str, Any]) -> None:
             if not isinstance(rv, (int, float)) or not (-1.0 <= float(rv) <= 1.0):
                 raise RecordError(f"examples[{i}].root_value must be in [-1, 1]")
         value = ex["value"]
-        if not isinstance(value, (int, float)) or float(value) not in (-1.0, 0.0, 1.0):
-            raise RecordError(f"examples[{i}].value must be -1.0/0.0/1.0, got {value!r}")
+        # WP3 soft-Z: value targets are capped mixtures of the game result and
+        # the root eval, so any finite float in [-1, 1] is valid - the old
+        # hard {-1, 0, 1} check quarantined every soft-Z game (silent data loss).
+        if not isinstance(value, (int, float)) or not (-1.0 <= float(value) <= 1.0):
+            raise RecordError(f"examples[{i}].value must be in [-1, 1], got {value!r}")
         planes = _b64_decode_f32(
             ex["board_tensor_b64"], (BOARD_PLANES, 8, 8), f"examples[{i}].board_tensor"
         )
