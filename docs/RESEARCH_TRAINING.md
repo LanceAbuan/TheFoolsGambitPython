@@ -116,10 +116,50 @@ A76/A78 folded into WP10/WP11 scope; A79 no action (BN fine).
 ## Next-cycle topics (un-researched)
 - MCTS root move selection at play time: argmax vs temperature for human feel
 - SQLite/telemetry compression for long-run journals (ops)
-- ONNX fp16 export for play-server latency (with A60)
-- leaf batching (SearchConfig.batch_size > 1): quality cost at fixed SIMS
-  (waves + virtual loss) vs the games/hr it buys — measure before defaulting
 - replay window shape: uniform vs recency-weighted sampling at 100k rows
+- TensorRT EP vs CUDA EP for a 16 MB convnet (engine build amortisation vs
+  per-call launch overhead) - relevant now that the GPU is the wall
+- worker CPU affinity / NUMA placement once the fleet is inference-cheap
+
+## Cycle 33 - 2026-11-24
+
+Sources: "An Analysis of Virtual Loss in Parallel MCTS" (Mirsoleimani & Plaat,
+ICAART 2017), Cazenave "Batch Monte Carlo Tree Search" (arXiv 2104.04278),
+ORT "Create Float16 and Mixed Precision Models" + CUDA EP perf-tuning docs,
+NVIDIA developer blog on ONNX Runtime FP16/Tensor Cores.
+
+### Findings
+
+1. **Virtual loss is a measured quality tax, not a neutral optimisation.**
+   Lock-free tree parallelisation *with* virtual loss "still degrades the
+   performance of the algorithm" versus sequential UCT at equal playouts: the
+   wave descends into sibling subtrees that a sequential search would have
+   pruned. Our `--search-batch 8` is exactly this trade - it bought 16x
+   inference throughput, but the *search* it produces is not the batch-1 search.
+2. Batch MCTS (Cazenave) gets the win back only by re-searching: descend K
+   leaves, evaluate as one batch, then **re-descend with the real values**
+   rather than committing the virtual-loss choices. Worth checking whether
+   mcts.rs already re-descends per leaf or applies values at wave granularity.
+3. Practical consequence for us: the correct claim is "same SIMS, different
+   (slightly weaker) search", so batch >1 must be validated at **fixed sims**,
+   not at fixed wall clock - otherwise the extra visits hide the degradation.
+   The gate is the right instrument (it is batch 1, python/rust path, 128 sims).
+4. **FP16 is a real but bounded win here.** ORT/NVIDIA: `convert_float_to_float16`
+   (or `auto_convert_mixed_precision` with rtol/atol, keeping FP32 where the
+   error exceeds tolerance) unlocks Tensor Cores on Volta+; for conv-heavy nets
+   set `cudnn_conv_use_max_workspace=1` so cuDNN can pick tensor-core kernels.
+5. But we are launch-overhead-bound, not FLOP-bound (173 W of 320 W at 97%
+   util), so FP16 mainly halves memory traffic per call - expect a modest gain,
+   and it must not enter the parity path: the H1 fixture is bit-exact at 1e-5
+   and FP16 conversion would break it. Keep FP32 for export/parity, offer FP16
+   as a worker-inference artefact only.
+
+### Actionable queue additions
+- [ ] A100: leaf-batching quality A/B at FIXED sims (600) - batch 1 vs 8 on the
+      same seeds/openings, scored by the 128-sim gate; only then keep batch 8
+- [ ] A101: FP16 worker artefact (`auto_convert_mixed_precision`, keep_io_types)
+      + `cudnn_conv_use_max_workspace=1`; measured against FP32 at batch 8,
+      never on the parity fixture
 
 ## Cycle 32 - 2026-11-24
 
