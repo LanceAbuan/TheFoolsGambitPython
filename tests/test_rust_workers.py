@@ -146,9 +146,17 @@ def test_record_validation_rejects_bad_payloads(tmp_path):
     bad["examples"][0]["board_tensor_b64"] = bad["examples"][0]["board_tensor_b64"][:-8]
     with pytest.raises(RecordError, match="expected"):
         read_game_record(_write_raw(tmp_path, bad))
-    # illegal value label
+    # soft-Z value targets are legal: any finite float in [-1, 1]
+    soft = json.loads(json.dumps(good))
+    soft["examples"][0]["value"] = 0.5
+    assert read_game_record(_write_raw(tmp_path, soft))["examples"][0]["value"] == 0.5
+    # ...but out-of-range / non-finite still refuses
     bad = json.loads(json.dumps(good))
-    bad["examples"][0]["value"] = 0.5
+    bad["examples"][0]["value"] = 1.5
+    with pytest.raises(RecordError, match="value"):
+        read_game_record(_write_raw(tmp_path, bad))
+    bad = json.loads(json.dumps(good))
+    bad["examples"][0]["value"] = float("nan")
     with pytest.raises(RecordError, match="value"):
         read_game_record(_write_raw(tmp_path, bad))
     # ply_count/list disagreement

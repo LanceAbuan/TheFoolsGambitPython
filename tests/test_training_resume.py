@@ -270,6 +270,29 @@ class TestSignatureAdditiveModelKeys:
         with pytest.raises(ValueError, match="cannot resume run"):
             validate_profile_signature(drifted, current)
 
+    def test_games_per_iteration_is_a_drift_warning(self, caplog):
+        """Data volume per iteration is tunable mid-run (drain a faster
+        worker fleet) - it must NOT force a cold start."""
+        from training.resume import validate_profile_signature
+
+        saved, current = self._signatures(with_head=True)
+        saved, current = dict(saved), dict(current)
+        saved["games_per_iteration"] = 32
+        current["games_per_iteration"] = 64
+        with caplog.at_level("WARNING"):
+            validate_profile_signature(saved, current)  # must not raise
+        assert "games_per_iteration" in caplog.text
+
+    def test_batch_size_change_still_refuses(self):
+        from training.resume import validate_profile_signature
+
+        saved, current = self._signatures(with_head=True)
+        saved, current = dict(saved), dict(current)
+        saved["batch_size"] = 256
+        current["batch_size"] = 512
+        with pytest.raises(ValueError, match="batch_size"):
+            validate_profile_signature(saved, current)
+
     def test_pre_wpc_state_file_resumes_end_to_end(self, tmp_path):
         """Integration: a state file saved by a signature WITHOUT value_head
         resumes against the post-WP-C profile (the live run's upgrade path)."""
