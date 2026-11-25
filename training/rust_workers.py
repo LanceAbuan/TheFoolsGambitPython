@@ -501,7 +501,10 @@ class ModelPointer:
     def to_dict(self) -> dict[str, Any]:
         return {
             "weight_version": self.weight_version,
-            "path": str(self.path),
+            # File NAME only: an absolute path broke the fleet the moment the
+            # repo moved drives (every worker reported "names a missing model
+            # file"). Readers resolve it against the models dir.
+            "path": self.path.name,
             "sha256": self.sha256,
             "exported_at": self.exported_at,
         }
@@ -550,9 +553,14 @@ def read_model_pointer(models_dir: Path | str) -> ModelPointer | None:
         # every worker into "pointer unusable, waiting for the trainer" (a
         # whole fleet idle on one invisible byte).
         data = json.loads(path.read_text(encoding="utf-8-sig"))
+        model_path = Path(data["path"])
+        if not model_path.is_absolute():
+            # Relative entries (the current format) resolve against the models
+            # dir, so a repo/drive move cannot orphan the fleet.
+            model_path = Path(models_dir) / model_path
         return ModelPointer(
             weight_version=int(data["weight_version"]),
-            path=Path(data["path"]),
+            path=model_path,
             sha256=str(data["sha256"]),
             exported_at=float(data.get("exported_at", 0.0)),
         )
