@@ -68,6 +68,39 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def register_cuda_dlls() -> str:
+    """Make the CUDA 13 / cuDNN 9 runtime discoverable for ORT's CUDA EP.
+
+    torch already ships every DLL the ORT 1.32 CUDA build links against
+    (cublasLt64_13, cudart64_13, cudnn*64_9, cufft64_12, curand64_10), so
+    registering torch's lib dir avoids a system CUDA install entirely. Returns
+    a short description for the log line.
+    """
+    candidates = [
+        pathlib.Path(torch_lib) if (torch_lib := _torch_lib_dir()) else None,
+        *sorted((ROOT / ".venv" / "Lib" / "site-packages" / "nvidia").glob("*/bin")),
+    ]
+    added: list[str] = []
+    for path in candidates:
+        if path is not None and path.is_dir():
+            try:
+                os.add_dll_directory(str(path))
+                os.environ["PATH"] = f"{path}{os.pathsep}" + os.environ.get("PATH", "")
+                added.append(path.parent.name if path.name == "bin" else "torch/lib")
+            except OSError:  # pragma: no cover - platform dependent
+                pass
+    return ",".join(added) if added else "none"
+
+
+def _torch_lib_dir() -> str | None:
+    try:
+        import torch  # noqa: PLC0415 - optional, worker may run without torch
+    except Exception:  # pragma: no cover - torch optional
+        return None
+    lib = pathlib.Path(torch.__file__).parent / "lib"
+    return str(lib) if lib.is_dir() else None
+
+
 def find_dylib() -> str | None:
     """ORT_DYLIB_PATH wins; else the ort-sys build cache under target/."""
     env = os.environ.get("ORT_DYLIB_PATH")
@@ -104,6 +137,8 @@ def main() -> int:
         return 1
     os.environ["ORT_DYLIB_PATH"] = dylib
     LOG.info("dylib: %s", dylib)
+    LOG.info("cuda dll dirs: %s (GAMBIT_ORT_CUDA=%s)",
+             register_cuda_dlls(), os.environ.get("GAMBIT_ORT_CUDA", "1"))
 
     import gambit_core
 
@@ -197,13 +232,14 @@ def main() -> int:
         path = write_game_record(spool_dir, record)
         games_done += 1
         LOG.info(
-            "game %d done: %s %s in %d plies -> %s (%.1f KB)",
+            "game %d done: %s %s in %d plies -> %s (%.1f KB) [%s]",
             games_done,
             record["result"],
             record["termination"],
             record["ply_count"],
             path.name,
             path.stat().st_size / 1024,
+            "CUDA" if game.get("used_cuda") else "CPU",
         )
 
     LOG.info("worker done: %d games (last weight_version %d)", games_done, current_version)
