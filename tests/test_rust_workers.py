@@ -190,9 +190,9 @@ def _write_raw(tmp_path, payload) -> pathlib.Path:
 # --- trainer-side spool drain (claim / quarantine / timeout) ------------------
 
 
-def test_collect_prefers_newest_and_purges_stale(tmp_path):
-    """Freshness: newest games claimed first; games more than 2 versions
-    behind are purged unclaimed (sampling-side staleness bound)."""
+def test_collect_prefers_newest_and_skips_stale(tmp_path):
+    """Freshness: newest games claimed first; games below the staleness horizon
+    are skipped unread (not deleted - deletion is a disk-pressure mechanism)."""
     write_game_record(tmp_path, _fake_record(weight_version=2))  # stale
     time.sleep(0.02)
     write_game_record(tmp_path, _fake_record(weight_version=9))  # fresh, second
@@ -203,11 +203,27 @@ def test_collect_prefers_newest_and_purges_stale(tmp_path):
         tmp_path, want=1, timeout_s=2.0, poll_s=0.05, min_weight_version=8
     )
     assert [g["weight_version"] for g in games] == [10], "newest claimed first"
-    # version-2 game was purged; version-9 game waits for the next drain
+    # nothing was destroyed; the version-9 game waits for the next drain
     remaining = sorted(p.name for p in (tmp_path / "inbox").glob("game-*.jsonl"))
     versions_left = [int(n.split("-")[2]) for n in remaining]
-    assert 2 not in versions_left, "stale game purged"
+    assert 2 in versions_left, "stale game is skipped, not silently deleted"
     assert 9 in versions_left
+
+
+def test_purge_stale_games_only_under_pressure(tmp_path):
+    """Disk high-water: stale files survive a normal inbox, and only stale
+    files are dropped once the inbox exceeds the water mark."""
+    from training.rust_workers import purge_stale_games
+
+    for version in (1, 2, 3):
+        write_game_record(tmp_path, _fake_record(weight_version=version))
+
+    assert purge_stale_games(tmp_path, min_weight_version=10, high_water=100) == 0
+    assert len(list((tmp_path / "inbox").glob("game-*.jsonl"))) == 3
+
+    assert purge_stale_games(tmp_path, min_weight_version=3, high_water=0) == 2
+    left = sorted(int(p.stem.split("-")[2]) for p in (tmp_path / "inbox").glob("game-*.jsonl"))
+    assert left == [3], "only below-horizon games removed"
 
 
 def test_collect_claims_and_quarantines(tmp_path):

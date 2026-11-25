@@ -60,6 +60,7 @@ from .resume import (
 from .rust_workers import (
     collect_from_spool,
     export_model_to_onnx,
+    purge_stale_games,
     record_to_selfplay_result,
 )
 from .selfplay import (
@@ -795,18 +796,52 @@ def run_training(
                 # WP-H H4: block for worker games (up to spool_timeout_s);
                 # a shortfall proceeds with fewer games - the min_examples
                 # guard below skips training until the buffer is viable.
-                # Freshness: newest games claimed first; unclaimed games more
-                # than 2 ITERATIONS behind the trainer are purged (sampling-side
-                # staleness bound, research cycle 26 / A86).
-                spool_records = collect_from_spool(
-                    spool_dir,
-                    profile.games_per_iteration,
-                    timeout_s=profile.spool_timeout_s,
-                    poll_s=1.0,
-                    min_weight_version=max(current_weight_version - 2 * version_stride, 0)
+                # Freshness: newest games claimed first and nothing older than
+                # 3 ITERATIONS is ever read (A86); stale files are only
+                # deleted under disk pressure (purge_stale_games).
+                staleness_horizon = (
+                    max(current_weight_version - 3 * version_stride, 0)
                     if current_weight_version >= 0
-                    else None,
+                    else None
                 )
+                if staleness_horizon is not None:
+                    purge_stale_games(spool_dir, staleness_horizon)
+                # Racing guard: an iteration that finds almost no fresh games
+                # must NOT train - it would burn 96 steps on stale replay and
+                # export a version the fleet has not even played yet. Keep
+                # polling until half a batch of fresh games exists (the fleet
+                # is the bottleneck, not the GPU).
+                spool_records: list[dict[str, Any]] = []
+                min_fresh = max(profile.games_per_iteration // 2, 1)
+                drain_deadline = time.monotonic() + max(profile.spool_timeout_s, 60.0)
+                while True:
+                    spool_records.extend(
+                        collect_from_spool(
+                            spool_dir,
+                            profile.games_per_iteration - len(spool_records),
+                            timeout_s=profile.spool_timeout_s,
+                            poll_s=1.0,
+                            min_weight_version=staleness_horizon,
+                        )
+                    )
+                    if len(spool_records) >= min_fresh:
+                        break
+                    if time.monotonic() >= drain_deadline:
+                        log.warning(
+                            "[RUST-SPOOL] starved: only %d/%d fresh games after "
+                            "waiting (trainer v%d) - training on the shortfall",
+                            len(spool_records),
+                            profile.games_per_iteration,
+                            current_weight_version,
+                        )
+                        break
+                    log.info(
+                        "[RUST-SPOOL] %d/%d fresh games (trainer v%d): still waiting "
+                        "for the fleet",
+                        len(spool_records),
+                        profile.games_per_iteration,
+                        current_weight_version,
+                    )
                 versions = sorted({r["weight_version"] for r in spool_records})
                 if versions and versions != [current_weight_version]:
                     log.info(
