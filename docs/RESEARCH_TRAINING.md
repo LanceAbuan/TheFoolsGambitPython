@@ -114,11 +114,60 @@ Superseded/done: A19→WP6; A41→WP11; A42→WP1; A29 confirmed; A31 pending sp
 A76/A78 folded into WP10/WP11 scope; A79 no action (BN fine).
 
 ## Next-cycle topics (un-researched)
-- uncertainty-driven temperature (WDL entropy → tau) as exploration policy
 - MCTS root move selection at play time: argmax vs temperature for human feel
-- replay admission by game quality (resign/cap quality filters)
 - SQLite/telemetry compression for long-run journals (ops)
 - ONNX fp16 export for play-server latency (with A60)
+- leaf batching (SearchConfig.batch_size > 1): quality cost at fixed SIMS
+  (waves + virtual loss) vs the games/hr it buys — measure before defaulting
+- replay window shape: uniform vs recency-weighted sampling at 100k rows
+
+## Cycle 32 - 2026-11-24
+
+Sources: "Beyond Search-Imitation: Prior-Directed Exploration for Searchless
+Chess" (arXiv 2608.27757, entropy-adaptive temperature), "Uncertainty-Guided
+Exploration for Efficient AlphaZero Training" (NeurIPS 2025, LCR branching),
+"Engineering Efficient Self-Play Chess" (arXiv 2609.37447, resign calibration +
+late-game poisoning), KataGo "Accelerating Self-Play Learning in Go" App. D,
+LC0 training-data format v6 / adjudication + rescorer docs.
+
+### Findings
+
+1. **Entropy-adaptive temperature is a solved recipe and our WDL head already
+   has the input.** tau(s) = H(p_WDL) in [0, ln3]; sample the *played* move from
+   mu proportional to pi^(1/tau), so decided positions sharpen to a finish and
+   genuinely contested ones keep their exploration. Because tau <= ln3 the
+   exponent never drops below 0.91 - it only withdraws stochasticity, never
+   flattens the policy. Our ply-indexed tau=1/30-plies is the coarse proxy this
+   replaces.
+2. **No off-policy correction needed in our loop** (the paper uses V-trace
+   because it trains the *searchless* network on the sampled action). We distill
+   the search policy pi as a supervised target, so changing how the move is
+   sampled only shifts state visitation - no importance weights. This makes A98
+   a ~40-line change in selfplay.rs, not a re-derivation.
+3. **Uncertainty-weighted data (LCR = 2w(1-w)) is the strongest sample-efficiency
+   result**: branching 10 variations/game from high-uncertainty positions gave
+   +58.5% sample efficiency on 9x9 Go early and +47.3% on 19x19 late. Too
+   invasive for us now (needs per-position branching), but it says the value
+   head's own variance is the right signal to spend games on.
+4. **Capped/adjudicated games must be flagged, not silently averaged in.** LC0
+   stores per-row `adjudicated` / `max-length-exceeded` bits so training can
+   filter; the 2026 chess paper *excludes capped-game evidence from resign
+   calibration* because the natural outcome is unknown. Their poisoning case:
+   27-32% capped games made 36-38% of admitted rows inherit a cutoff target,
+   which self-reinforced into worse conversion. We already ship soft-Z +
+   `root_value`, but we do not mark the reason a game ended.
+5. **KataGo's soft alternative to resigning** (which we copied as WP3) records
+   post-collapse samples with probability 0.1+0.9*lambda instead of dropping
+   them - i.e. downweight, never hard-filter. Matches our design; worth keeping
+   when A99 lands so we do not over-prune the "how to lose" examples.
+
+### Actionable queue additions
+- [ ] A98: entropy-adaptive play temperature (tau = H(WDL), D2 clamp at
+      tau_min=0.05): log per-game tau mean + decided-position share; A/B vs
+      fixed ply-30 schedule at matched wall clock
+- [ ] A99: spool records carry an end-reason flag (checkmate / resign-soft /
+      ply-cap / repetition) + `capped` exclusion switch for calibration-style
+      analysis; never exclude by default
 
 ## Cycle 31 — 2026-11-24
 

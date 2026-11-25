@@ -54,6 +54,9 @@ def parse_args() -> argparse.Namespace:
                         help="WP2: simulations for value-only PCR searches")
     parser.add_argument("--soft-resign", action="store_true",
                         help="WP3: shrink search budget when dead lost (no resignation)")
+    parser.add_argument("--search-batch", type=int, default=1,
+                        help="Leaf batching: leaves evaluated per ORT call (1=sequential; "
+                             "8-16 cuts GPU round-trips and lifts self-play games/hr)")
     parser.add_argument("--duration-seconds", type=float, default=0.0, help="0 = until Ctrl+C")
     parser.add_argument("--max-restarts", type=int, default=10, help="per-slot restart budget")
     parser.add_argument("--restart-backoff", type=float, default=5.0)
@@ -81,7 +84,9 @@ def worker_argv(args: argparse.Namespace, slot: int) -> list[str]:
         ["--pcr-p-full", str(args.pcr_p_full), "--pcr-fast-sims", str(args.pcr_fast_sims)]
         if args.pcr_p_full > 0
         else []
-    ) + (["--soft-resign"] if args.soft_resign else [])
+    ) + (["--soft-resign"] if args.soft_resign else []) + (
+        ["--search-batch", str(args.search_batch)] if args.search_batch > 1 else []
+    )
 
 
 def main() -> int:

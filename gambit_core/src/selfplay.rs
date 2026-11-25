@@ -73,6 +73,12 @@ pub struct SelfPlayParams {
     /// consecutive plies, shrink the remaining per-ply search budget toward
     /// `pcr_fast_sims`. Never resigns; keeps targets unbiased.
     pub soft_resign: bool,
+    /// Leaf batching: simulations run in waves of this many descents, one NN
+    /// call per wave (mcts::SearchConfig::batch_size). 1 = strictly sequential
+    /// (bit-identical to the pre-batching search). >1 trades a sliver of
+    /// tree-order fidelity for far fewer ORT round-trips — the GPU sits at
+    /// ~15% utilisation with batch 1 because each worker stalls per position.
+    pub search_batch: usize,
 }
 
 impl Default for SelfPlayParams {
@@ -91,6 +97,8 @@ impl Default for SelfPlayParams {
             pcr_fast_sims: 100,
             // WP3: soft resignation off by default.
             soft_resign: false,
+            // Leaf batching off by default (bit-identical to sequential).
+            search_batch: 1,
         }
     }
 }
@@ -358,6 +366,10 @@ pub fn play_game(
             seed: rng.gen::<u64>(),
             forced_playouts: params.forced_playouts,
             fp_k: params.fp_k,
+            // Leaf batching: >1 evaluates a wave of leaves per ORT call. The
+            // tree semantics still hold (mcts.rs applies virtual loss within a
+            // wave); 1 keeps the sequential path bit-identical.
+            batch_size: params.search_batch.max(1),
             ..SearchConfig::default()
         };
         let result = mcts::search(&cur, &history, &cfg, evaluator);

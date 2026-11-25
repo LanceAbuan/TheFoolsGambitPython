@@ -312,7 +312,7 @@ fn encode_batch_v2<'py>(
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "onnx")]
 #[pyfunction]
-#[pyo3(signature = (model_path, seed = 0, sims = 64, max_plies = 200, temperature = 1.0, temperature_plies = 30, opening_seed = None, weight_version = 0, forced_playouts = false, fp_k = 2.0, pcr_p_full = 0.0, pcr_fast_sims = 100, soft_resign = false))]
+#[pyo3(signature = (model_path, seed = 0, sims = 64, max_plies = 200, temperature = 1.0, temperature_plies = 30, opening_seed = None, weight_version = 0, forced_playouts = false, fp_k = 2.0, pcr_p_full = 0.0, pcr_fast_sims = 100, soft_resign = false, search_batch = 1))]
 fn selfplay_game<'py>(
     py: Python<'py>,
     model_path: &str,
@@ -328,6 +328,7 @@ fn selfplay_game<'py>(
     pcr_p_full: f64,
     pcr_fast_sims: u32,
     soft_resign: bool,
+    search_batch: usize,
 ) -> PyResult<Bound<'py, PyDict>> {
     let game = py
         .detach(|| -> Result<selfplay::SelfPlayGame, String> {
@@ -349,6 +350,7 @@ fn selfplay_game<'py>(
                 pcr_p_full,
                 pcr_fast_sims,
                 soft_resign,
+                search_batch,
             };
             Ok(selfplay::play_game(&mut evaluator, &root, &params))
         })
