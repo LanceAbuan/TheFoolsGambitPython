@@ -26,7 +26,7 @@ import numpy as np
 
 from .glicko import GlickoRating, rate_player
 from .openings import sample_gate_openings
-from .selfplay import ArenaConfig, Evaluator, play_match_game
+from .selfplay import ArenaConfig, Evaluator, SearchConfig, play_match_game
 from .sprt import (
     DEFAULT_ALPHA,
     DEFAULT_BETA,
@@ -329,11 +329,18 @@ class Arena:
             else:
                 white_eval, black_eval = self.champion_evaluator, self.candidate_evaluator
             opening_fen = openings[game_index] if openings else None
+            arena_search = SearchConfig(
+                root_noise=False,
+                num_simulations=self.config.num_simulations,
+                search_backend=self.config.search_backend,
+            )
             result, termination = play_match_game(
                 white_eval,
                 black_eval,
                 self.config.num_simulations,
                 self.config.max_plies,
+                white_config=arena_search,
+                black_config=arena_search,
                 opening_fen=opening_fen,
             )
             return result, ("white" if candidate_is_white else "black"), termination

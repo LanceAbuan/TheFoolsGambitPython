@@ -1661,6 +1661,10 @@ class ArenaConfig:
     # the evaluators are stateless per call, so parallel > 1 only yields
     # games in completion order — the decision math is unchanged.
     parallel: int = 1
+    # Search backend for the gate games: "python" (legacy MCTSSearch) or
+    # "rust" (gambit_core, ~10x faster). Rust leaf evaluation is history-free
+    # exactly like the python arena path, so gate fidelity is unchanged.
+    search_backend: str = "python"
     sprt_early_stop: bool = False
     sprt_elo0: float = 0.0
     sprt_elo1: float = 10.0

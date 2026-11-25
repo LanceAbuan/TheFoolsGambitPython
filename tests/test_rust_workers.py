@@ -182,6 +182,26 @@ def _write_raw(tmp_path, payload) -> pathlib.Path:
 # --- trainer-side spool drain (claim / quarantine / timeout) ------------------
 
 
+def test_collect_prefers_newest_and_purges_stale(tmp_path):
+    """Freshness: newest games claimed first; games more than 2 versions
+    behind are purged unclaimed (sampling-side staleness bound)."""
+    write_game_record(tmp_path, _fake_record(weight_version=2))  # stale
+    time.sleep(0.02)
+    write_game_record(tmp_path, _fake_record(weight_version=9))  # fresh, second
+    time.sleep(0.02)
+    write_game_record(tmp_path, _fake_record(weight_version=10))  # newest
+
+    games = collect_from_spool(
+        tmp_path, want=1, timeout_s=2.0, poll_s=0.05, min_weight_version=8
+    )
+    assert [g["weight_version"] for g in games] == [10], "newest claimed first"
+    # version-2 game was purged; version-9 game waits for the next drain
+    remaining = sorted(p.name for p in (tmp_path / "inbox").glob("game-*.jsonl"))
+    versions_left = [int(n.split("-")[2]) for n in remaining]
+    assert 2 not in versions_left, "stale game purged"
+    assert 9 in versions_left
+
+
 def test_collect_claims_and_quarantines(tmp_path):
     write_game_record(tmp_path, _fake_record(weight_version=1))
     time.sleep(0.02)  # distinct mtimes -> deterministic drain order
