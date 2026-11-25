@@ -352,7 +352,14 @@ class Arena:
 
         with ThreadPoolExecutor(max_workers=parallel) as pool:
             futures = [pool.submit(play_one, i) for i in range(games)]
+            done = 0
             for future in as_completed(futures):
+                done += 1
+                # Heartbeat: the gate is GPU-bound (torch/ORT inference inside
+                # the arena), so process CPU stays low and a log-silence or
+                # CPU-activity watchdog cannot tell "gating" from "hung". One
+                # line per finished game gives every supervisor a real signal.
+                log.info("[GATE] progress %d/%d games", done, games)
                 yield future.result()
 
     def match(

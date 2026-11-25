@@ -257,12 +257,15 @@ NIGHT_V2_PROFILE = replace(
     parallel_games=32,
     sims=600,
     # GPU utilisation fix (2026-11-24): a 64-game iteration costs ~25 min of
-    # fleet time but only ~11 s of GPU (96 steps x 512). The buffer holds 80k+
-    # examples, so 96 steps was a 0.06-epoch pass - the 3080 sat idle ~99% of
-    # the cycle. 288 steps (~33 s, ~1.8 epochs of the buffer) extracts ~3x the
-    # learning from the same self-play data; watch policy_ce on the fresh batch
-    # to catch replay-ratio overfitting and back off to 192 if it climbs.
-    train_steps=288,
+    # fleet time but only ~11 s of GPU (96 steps x 512). 288 was tried and
+    # REVERTED the same evening: with the fleet at ~600 games/hr an iteration
+    # only drains the half-batch minimum (~34 games), so 288 steps on 34 fresh
+    # games is ~12 passes over them while replaying a saturated 100k buffer -
+    # policy_ce climbed 1.08 -> 1.95 and loss 1.46 -> 2.05 over 25 iterations.
+    # 96 steps keeps the data:update ratio that was stable all evening; the GPU
+    # now has headroom for a bigger NETWORK (WP11) rather than more passes over
+    # the same rows.
+    train_steps=96,
     # 2026-11-24 rebalance: the fleet produces ~150 games/hr and the drain is
     # newest-first, so a 64-game iteration consumes fresh data twice as fast
     # and trains on more positions per cycle.
