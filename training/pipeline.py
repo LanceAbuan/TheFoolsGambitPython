@@ -1186,7 +1186,13 @@ def run_training(
                 gate_seed = gate_opening_seed(profile.seed, iteration)
                 arena_config = replace(
                     profile.ladder.arena,
-                    sprt_early_stop=True,
+                    # SPRT early stop forces SEQUENTIAL play (match() switches
+                    # to the sequential path whenever it is enabled), which made
+                    # every gate 16 x ~8 min = ~2 h and starved training for
+                    # half of each 90-min cycle. It is a provable no-op at the
+                    # default 16-game size anyway, so it now follows the profile
+                    # (night-v2: False -> the 8-way parallel path).
+                    sprt_early_stop=profile.ladder.arena.sprt_early_stop,
                     sprt_elo0=profile.ladder.sprt_elo0,
                     sprt_elo1=profile.ladder.sprt_elo1,
                     sprt_alpha=profile.ladder.sprt_alpha,
