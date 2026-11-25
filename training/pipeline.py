@@ -272,6 +272,12 @@ NIGHT_V2_PROFILE = replace(
     games_per_iteration=64,
     batch_size=512,
     min_examples=128,
+    # LR (2026-11-25, unattended): policy_ce drifted 1.05 -> 2.2+ over 24
+    # iterations with a flat target entropy (~2.6) and no gate to catch it -
+    # the net was oscillating, not converging. The research log flagged 1e-3 as
+    # hot for this scale (A38: 2e-4..2e-6 evidence); 3e-4 keeps the schedule
+    # shape (halving every 200 iterations) with a colder base.
+    base_lr=3e-4,
     # Durability (2026-11-24): the ladder gate is the only thing that used to
     # write a checkpoint, and it runs every 90 min - at ~14 iterations/hr that
     # is ~20 iterations of unsaved progress. A plain checkpoint+state every 4
