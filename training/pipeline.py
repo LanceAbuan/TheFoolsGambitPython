@@ -293,8 +293,16 @@ NIGHT_V2_PROFILE = replace(
     # cycle). Decision math is unchanged.
     ladder=replace(
         NIGHT_PROFILE.ladder,
-        markers_minutes=(90.0,),
-        repeat_every_minutes=90.0,
+        # 2026-11-25 (unattended run): the gate is DISABLED for now. Every gate
+        # attempt since the D: move either ran ~2 h sequentially (SPRT forced
+        # sequential play) or stalled before emitting its first progress line,
+        # and each stall triggered a watchdog restart that rolled the run back
+        # ~2 iterations. A 16-game gate cannot resolve 55% anyway (research:
+        # ~785 games needed), so the cost/benefit is currently negative.
+        # Training now runs uninterrupted; re-enable with a cheap parallel gate
+        # (parallel=8, sprt_early_stop=False, games=32) once someone can watch it.
+        markers_minutes=(1_000_000.0,),
+        repeat_every_minutes=1_000_000.0,
         arena=replace(
             NIGHT_PROFILE.ladder.arena,
             parallel=8,

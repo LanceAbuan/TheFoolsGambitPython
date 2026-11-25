@@ -293,6 +293,19 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [ ] **Gate is DISABLED on night-v2 (2026-11-25, unattended run).** Every gate
+      attempt after the D: move failed: first ~2 h per gate (SPRT early-stop
+      forced the sequential path, so `parallel=8` never applied), then stalling
+      before the first `[GATE] progress` line and getting killed by the watchdog
+      (each kill rolled back ~2 iterations). Since a 16-game gate cannot resolve
+      55% anyway (~785 games needed per the research log), `markers_minutes` is
+      now 1e6 = gate off, training uninterrupted, champion frozen at
+      `ckpt-002016-0642`. **Re-enable** with a cheap parallel gate once someone
+      can watch it: `arena=replace(..., games=32, parallel=8,
+      sprt_early_stop=False)` and `markers_minutes=(90.0,)`. Suspect the stall
+      is evaluator construction (8 torch/ONNX sessions) while the fleet holds
+      the GPU — worth profiling `Arena.run` before trusting it again.
+
 - [x] **Watchdog liveness was model-age based (2026-11-24, fixed).** A gate runs
       20–40 min without exporting ONNX, so "newest model > 25 min" restarted a
       healthy trainer mid-gate at 21:26 and rolled the run back three iterations
