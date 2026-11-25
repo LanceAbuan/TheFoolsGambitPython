@@ -293,6 +293,18 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [ ] **policy_ce tracks time-since-restart, not (only) the learning rate
+      (2026-11-25 overnight).** Observed twice at 1e-3 and once at 3e-4: CE sits
+      at 0.65-0.80 for the first ~3 iterations after a trainer restart, then
+      climbs over ~30 iterations to a plateau of ~2.1-2.2 while target entropy
+      falls 2.65 -> 2.37. The LR cut helped the transient but not the plateau,
+      so the plateau is most likely a **distribution shift** (early batches
+      still contain backlog games with softer targets; steady-state batches are
+      the model's own sharpened output) rather than divergence. Do NOT keep
+      tuning hyper-parameters blind on this metric: the next step is a real
+      strength measurement (scripts/bench_sf.py on two checkpoints ~50
+      iterations apart) before changing anything else.
+
 - [ ] **Gate is DISABLED on night-v2 (2026-11-25, unattended run).** Every gate
       attempt after the D: move failed: first ~2 h per gate (SPRT early-stop
       forced the sequential path, so `parallel=8` never applied), then stalling
