@@ -137,6 +137,12 @@ class TrainingProfile:
     ladder: LadderConfig = field(default_factory=LadderConfig)
     seed: int | None = 0
     snapshot_every_iteration: bool = False  # smoke: gate every iteration
+    # Durability, independent of the gate: save a checkpoint + resumable state
+    # every N iterations even when the ladder snapshot is not due. Checkpoints
+    # used to exist ONLY on the gate cadence (90 min here), so a crash between
+    # gates lost everything since the last snapshot - unacceptable at 14
+    # iterations/hr. 0 disables the extra writes.
+    checkpoint_every_iterations: int = 0
     parallel_games: int | None = None  # None -> RegimeConfig.parallel_games
     stream_games: bool | None = None  # None -> RegimeConfig.stream_moves (FS-6b)
     # WP-A: optional step-decay LR schedule (milestones on ABSOLUTE iterations).
@@ -263,6 +269,11 @@ NIGHT_V2_PROFILE = replace(
     games_per_iteration=64,
     batch_size=512,
     min_examples=128,
+    # Durability (2026-11-24): the ladder gate is the only thing that used to
+    # write a checkpoint, and it runs every 90 min - at ~14 iterations/hr that
+    # is ~20 iterations of unsaved progress. A plain checkpoint+state every 4
+    # iterations (~17 min) bounds the loss without running the gate.
+    checkpoint_every_iterations=4,
     lr_schedule=LRStepSchedule(milestones=(200, 400, 600, 800), gamma=0.5),
     # WP-F C5: the flag is wired end-to-end; the default stays python
     # (flipping is a separate, measured decision after the C6 gates).
@@ -1059,6 +1070,44 @@ def run_training(
             due = due_snapshot_minutes(profile.ladder, elapsed_minutes, last_snapshot_minute)
             final_iteration = iteration == profile.iterations - 1
             if not due and not final_iteration and not profile.snapshot_every_iteration:
+                # Durability checkpoint: no gate, no ledger entry - just the
+                # weights + resumable state, so a crash costs at most N
+                # iterations instead of a whole snapshot interval.
+                every = profile.checkpoint_every_iterations
+                if every > 0 and (iteration + 1) % every == 0:
+                    tag = f"ckpt-{summary.steps:06d}-{summary.games_played:04d}"
+                    ckpt_path = paths.checkpoints / f"{tag}.pt"
+                    _save_checkpoint(
+                        eval_model if eval_model is not None else model,
+                        ckpt_path,
+                        tag,
+                        regime.name,
+                        resolved_run_id,
+                        summary.steps,
+                        summary.games_played,
+                    )
+                    summary.checkpoints.append(tag)
+                    save_run_state(
+                        paths,
+                        iterations_completed=iteration + 1,
+                        model=model,
+                        optimizer=optimizer,
+                        buffer=buffer,
+                        play_rng=play_rng,
+                        steps=summary.steps,
+                        games_played=summary.games_played,
+                        champion_tag=champion_tag,
+                        champion_elo=champion_elo,
+                        profile=profile,
+                        champion_glicko=(
+                            champion_glicko.to_dict() if champion_glicko is not None else None
+                        ),
+                    )
+                    log.info(
+                        "[CKPT] durability checkpoint %s (every %d iterations)",
+                        tag,
+                        every,
+                    )
                 continue
             last_snapshot_minute = max([elapsed_minutes, *due])
 

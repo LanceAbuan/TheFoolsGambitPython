@@ -88,6 +88,33 @@ def test_smoke_run_produces_lineage_ledger_metrics(tmp_path):
     assert summary.elapsed_seconds < 120.0
 
 
+def test_durability_checkpoint_without_gate(tmp_path):
+    """checkpoint_every_iterations writes weights + resumable state even when
+    the ladder snapshot is not due, and does NOT run the arena/gate."""
+    from dataclasses import replace
+
+    profile = replace(
+        SMOKE_PROFILE,
+        snapshot_every_iteration=False,
+        checkpoint_every_iterations=1,
+        ladder=replace(
+            SMOKE_PROFILE.ladder, markers_minutes=(10_000.0,), repeat_every_minutes=10_000.0
+        ),
+    )
+    run_training(profile, run_id="durable", base_dir=tmp_path / "runs", data_dir=tmp_path / "data")
+    root = tmp_path / "runs" / "scratch" / "durable"
+    assert list((root / "checkpoints").glob("*.pt")), "durability checkpoints written"
+    assert list((root / "state").glob("*.pt")), "resumable state written"
+    # The final iteration always runs the full snapshot/gate path; every earlier
+    # one must have written a checkpoint WITHOUT a gate row.
+    arena = tmp_path / "data" / "arena.jsonl"
+    rows = ArenaLedger(arena).read() if arena.exists() else []
+    gate_rows = [r for r in rows if r["run_id"] == "durable"]
+    checkpoints = list((root / "checkpoints").glob("*.pt"))
+    assert len(checkpoints) >= 2
+    assert len(checkpoints) > len(gate_rows), "durability checkpoints outnumber gates"
+
+
 def test_second_run_gates_against_first_champion(tmp_path):
     """The champion pointer from run 1 gates run 2 (arena actually runs)."""
     base = tmp_path / "runs"
