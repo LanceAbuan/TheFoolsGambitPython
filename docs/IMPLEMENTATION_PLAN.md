@@ -337,4 +337,18 @@ DEFERRED (explicit reasons; ordered for the next session):
   screen_games=64, tb_path=data/syzygy, optimizer_kind=adamw + lr_warmup_steps=500).
 - Syzygy tables: https://tablebase.lichess.ovh/tables/standard/3-4-5-wdl/ (~1 GB).
 - Puzzle DB: https://database.lichess.org/#puzzles -> data/puzzles.jsonl (WP9 format).
+- **Spool drain contract (2026-11-24, PRs #203-#205).** The trainer is a burst
+  consumer and the fleet is the bottleneck, so the drain is `newest-first`, skips
+  (never reads) games below a 3-iteration staleness horizon, and deletes only
+  under disk pressure (`purge_stale_games`, high-water 512 files). If a drain
+  yields < half a batch the loop keeps polling instead of training on stale
+  replay. Rate facts on this box: fleet ~150 games/hr; a 64-game iteration is
+  ~25 min of waiting + ~11 s of GPU; the gate adds minutes (rust backend, 90-min
+  cadence). `games_per_iteration` is a drift-WARN resume key (not strict).
+- **Staleness incident (2026-11-24).** Oldest-first draining + a 128-file purge
+  per drain trained the net on 1056-1536-era games while the fleet was at 2496,
+  and once the trainer's version counter raced ahead it deleted live output.
+  Nothing was persisted past `state-002400`, so the rollback was free: republish
+  `latest.json` -> `model-2496.onnx`, delete the junk ONNX, restart both. If it
+  happens again, check `state-*.pt` mtimes before assuming damage.
 
