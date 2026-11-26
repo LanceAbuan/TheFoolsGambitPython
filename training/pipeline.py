@@ -277,7 +277,9 @@ NIGHT_V2_PROFILE = replace(
     # the net was oscillating, not converging. The research log flagged 1e-3 as
     # hot for this scale (A38: 2e-4..2e-6 evidence); 3e-4 keeps the schedule
     # shape (halving every 200 iterations) with a colder base.
-    base_lr=3e-4,
+    # 2026-11-25 21:30: still climbing at 1.5e-4 (loss 3.1-3.4, CE 2.7-3.0,
+    # target entropy RISING 2.72 -> 2.81 = flatter search targets). Cut again.
+    base_lr=1e-4,
     # Durability (2026-11-24): the ladder gate is the only thing that used to
     # write a checkpoint, and it runs every 90 min - at ~14 iterations/hr that
     # is ~20 iterations of unsaved progress. A plain checkpoint+state every 4
