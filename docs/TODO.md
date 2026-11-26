@@ -293,6 +293,26 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [ ] **SUSPECTED POLICY COLLAPSE, iterations ~440-474 (2026-11-25 23:30).**
+      Evidence: policy_ce 0.79 -> 3.55 and target entropy 2.71 -> 2.99 over 30
+      iterations at an EFFECTIVE LR of 2.5e-5 (base 1e-4, two schedule
+      halvings), with the fleet verified in sync (workers playing 52320 while
+      the pointer was 52320) and the spool drained. So it is not LR, not stale
+      targets, not a backlog artifact. Rising target entropy = the search is
+      producing flatter distributions, i.e. the classic self-reinforcing
+      "weaker net -> flatter targets -> weaker net" loop - precisely what the
+      ladder gate exists to catch, and it is disabled.
+      **Do not keep tuning LR.** The decisive test is a strength bench
+      (`scripts/bench_sf.py`) of `ckpt-002016` vs a recent checkpoint; if the
+      recent one is not clearly better, roll the lineage back:
+      pick a `ckpt-*` from the healthy window (CE ~2.1-2.5, entropy ~2.45, e.g.
+      steps 28800-31300), write a fresh resume state from it (weights only,
+      empty replay buffer, fresh optimizer) and restart - the spool refills the
+      buffer within an hour at 600 games/hr.
+      Secondary suspect from cycle 33 / A100: `--search-batch 8` wave search
+      with virtual loss produces systematically weaker policy targets than
+      sequential search; A/B it at fixed sims on identical seeds.
+
 - [ ] **policy_ce tracks time-since-restart, not (only) the learning rate
       (2026-11-25 overnight).** Observed twice at 1e-3 and once at 3e-4: CE sits
       at 0.65-0.80 for the first ~3 iterations after a trainer restart, then
