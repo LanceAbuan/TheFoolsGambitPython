@@ -304,6 +304,18 @@ commits each slice as it lands, then pushes + opens the PR:
       tuning hyper-parameters blind on this metric: the next step is a real
       strength measurement (scripts/bench_sf.py on two checkpoints ~50
       iterations apart) before changing anything else.
+- [ ] **Escalation 21:30 (2026-11-25): the plateau gave way to real drift.**
+      By iteration 436 loss was 3.1-3.4, CE 2.7-3.0, and *target entropy rose*
+      2.72 -> 2.81 - flatter search targets, i.e. the self-reinforcing "weaker
+      net -> flatter targets -> weaker net" loop, not a distribution artifact.
+      base_lr cut to 1e-4 (effective 2.5e-5 at iter 440 after two schedule
+      halvings) and CE fell to 0.79 immediately. **Leading hypothesis for the
+      root cause: `--search-batch 8` wave search with virtual loss produces
+      systematically weaker policy targets than sequential search (cycle 33,
+      A100), and that compounds over hundreds of iterations.** Test order when
+      someone is watching: (1) bench the current checkpoint vs `ckpt-002016`,
+      (2) A/B search_batch 1 vs 8 at fixed sims feeding identical seeds, (3)
+      only then resume normal LR.
 
 - [ ] **Gate is DISABLED on night-v2 (2026-11-25, unattended run).** Every gate
       attempt after the D: move failed: first ~2 h per gate (SPRT early-stop
