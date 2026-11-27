@@ -118,3 +118,34 @@ def test_build_from_run_uses_newest_state(tmp_path, monkeypatch):
     path = build_from_run(run_root, count=6)
     assert path.name == EVAL_SET_FILENAME
     assert load_eval_set(path)["planes"].shape[0] == 6
+def test_build_from_spool_filters_worker(tmp_path):
+    """A NEUTRAL set can be built from engine-labelled rows only."""
+    import base64
+
+    import numpy as np
+
+    from training.eval_set import build_from_spool
+    from training.rust_workers import write_game_record
+
+    rng = np.random.default_rng(0)
+    for worker in ("sf", "w0"):
+        policy = np.zeros(4672, dtype=np.float32)
+        policy[0] = 1.0
+        record = {
+            "schema": "gambit.selfplay.v2", "encoding": "f32.le.b64", "weight_version": 1,
+            "worker_id": worker, "seed": 1, "opening_seed": None, "sims": 0,
+            "max_plies": 4, "temperature": 0.0, "temperature_plies": 0,
+            "opening_fen": "start", "result": "1/2-1/2", "termination": "game-over",
+            "ucis": ["e2e4"], "moves": ["e4"], "fens": ["x"], "ply_count": 1,
+            "examples": [{
+                "board_tensor_b64": base64.b64encode(
+                    np.zeros((104, 8, 8), dtype="<f4").tobytes()).decode(),
+                "policy_b64": base64.b64encode(policy.astype("<f4").tobytes()).decode(),
+                "value": 0.0,
+            }],
+        }
+        write_game_record(tmp_path / "spool", record)
+
+    path = build_from_spool(tmp_path / "spool", worker_prefix="sf", count=8)
+    data = np.load(path)
+    assert data["planes"].shape[0] == 1, "only the sf game contributes"
