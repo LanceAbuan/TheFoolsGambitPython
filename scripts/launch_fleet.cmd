@@ -5,7 +5,7 @@ pushd "%ROOT%"
 set "PYTHONPATH=%CD%"
 set "ORT_DYLIB_PATH=%CD%\.venv\Lib\site-packages\onnxruntime\capi\onnxruntime.dll"
 ".venv\Scripts\python.exe" "scripts\run_rust_workers.py" ^
-  --workers 4 ^
+  --workers 2 ^
   --models-dir "runs\scratch\second-light-v2\onnx" ^
   --spool-dir "runs\scratch\second-light-v2\spool" ^
   --sims 600 --max-plies 200 ^

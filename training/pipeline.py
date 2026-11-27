@@ -133,7 +133,13 @@ class TrainingProfile:
     train_steps: int = 2
     batch_size: int = 8
     min_examples: int = 4
-    buffer_size: int = 100_000
+    # 100k examples of 104x8x8 fp32 planes = ~2.7 GB in RAM plus ~1.9 GB for
+    # policies. With the 4 GB Windows pagefile and the CUDA fleet that is the
+    # difference between training and `buffer.sample()` dying on a 1.3 MB
+    # allocation (2026-11-27 crash loop). 40k keeps ~2.5x its own batch size of
+    # fresh rows and fits the commit budget; `buffer_size` is now a drift-warn
+    # resume key (a memory knob, not run identity).
+    buffer_size: int = 40_000
     ladder: LadderConfig = field(default_factory=LadderConfig)
     seed: int | None = 0
     snapshot_every_iteration: bool = False  # smoke: gate every iteration

@@ -128,7 +128,7 @@ def validate_profile_signature(
     iteration, not run identity, and tuning it mid-flight (e.g. draining a
     faster worker fleet) must not require a cold start. A change warns.
     """
-    strict_keys = ("regime", "model", "buffer_size", "batch_size")
+    strict_keys = ("regime", "model", "batch_size")
     for key in strict_keys:
         saved_value, current_value = saved.get(key), current.get(key)
         # The model config compares additively (WP-C): keys the saved dict

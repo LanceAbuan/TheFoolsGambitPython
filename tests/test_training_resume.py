@@ -246,8 +246,18 @@ class TestKillAndResume:
         data = tmp_path / "data"
         run_training(tiny_profile(iterations=1), run_id="strict", base_dir=runs, data_dir=data)
         with pytest.raises(ValueError, match="cannot resume run"):
-            run_training(tiny_profile(buffer_size=555), run_id="strict", base_dir=runs,
+            run_training(tiny_profile(batch_size=3), run_id="strict", base_dir=runs,
                          data_dir=data, resume=True)
+
+    def test_buffer_size_is_a_tunable_memory_knob(self, tmp_path):
+        """buffer_size trims RAM, so changing it must NOT block a resume
+        (2026-11-27: the 100k buffer did not fit the commit budget)."""
+        runs = tmp_path / "runs"
+        data = tmp_path / "data"
+        run_training(tiny_profile(iterations=1), run_id="memsize", base_dir=runs, data_dir=data)
+        resumed = run_training(tiny_profile(iterations=2, buffer_size=32), run_id="memsize",
+                               base_dir=runs, data_dir=data, resume=True)
+        assert resumed.steps > 0
 
 
 class TestSignatureAdditiveModelKeys:
