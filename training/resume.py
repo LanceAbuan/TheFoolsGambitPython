@@ -257,20 +257,48 @@ def save_run_state(
 
 
 def load_latest_run_state(paths: RunPaths) -> dict[str, object] | None:
-    """Newest persisted state for this run; None when the run has no state yet."""
+    """Newest READABLE persisted state; None only when no state file exists.
+
+    Transient load failures are retried and then FALL BACK TO THE NEXT-NEWEST
+    state file. A 2 GB state can fail to load under memory pressure (that is
+    exactly what happened on 2026-11-27: an OpenBLAS allocation error made the
+    newest state unreadable, the caller treated None as "new run" and silently
+    restarted the lineage at iteration 0). Falling back one step loses two
+    iterations; starting over loses nine hundred.
+    """
     candidates = sorted(paths.state.glob(f"{STATE_PREFIX}*.pt"))
     if not candidates:
         return None
-    latest = candidates[-1]  # zero-padded step stamp sorts chronologically
-    try:
-        state = torch.load(latest, map_location="cpu", weights_only=False)
-    except Exception:  # torn/corrupt state files degrade to a fresh start
-        log.exception("[RESUME] state file %s unreadable; starting fresh", latest)
-        return None
-    log.info("[RESUME] loaded state %s", latest)
-    if isinstance(state, dict):
-        return state
-    return None
+    for latest in reversed(candidates):
+        for attempt in (1, 2):
+            try:
+                state = torch.load(latest, map_location="cpu", weights_only=False)
+            except Exception as exc:  # noqa: BLE001 - retry then fall back
+                log.error(
+                    "[RESUME] state file %s unreadable (attempt %d/2): %s",
+                    latest.name,
+                    attempt,
+                    exc,
+                )
+                if attempt == 2:
+                    break
+                time.sleep(2.0)
+                continue
+            log.info("[RESUME] loaded state %s", latest)
+            if isinstance(state, dict):
+                return state
+            log.error("[RESUME] state file %s is not a dict; trying an older state", latest.name)
+            break
+    log.error(
+        "[RESUME] NO readable state under %s (%d candidate files) - refusing to start "
+        "from scratch; move the unreadable files aside and re-run resume",
+        paths.state,
+        len(candidates),
+    )
+    raise RuntimeError(
+        f"no readable resume state for run {paths.run_id!r} despite {len(candidates)} "
+        "state file(s); refusing to silently restart the lineage"
+    )
 
 
 def restore_run_state(

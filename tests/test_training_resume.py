@@ -140,6 +140,29 @@ class TestRunStateRoundtrip:
         paths = create_run(get_regime("scratch"), "empty-run", base_dir=tmp_path)
         assert load_latest_run_state(paths) is None
 
+    def test_unreadable_state_falls_back_to_older(self, tmp_path):
+        """A state that cannot load must degrade ONE step, not restart the run.
+
+        Regression for 2026-11-27: a transient OOM made the newest 2 GB state
+        unreadable, the caller saw None and silently restarted the lineage at
+        iteration 0 (losing ~900 iterations).
+        """
+        paths = create_run(get_regime("scratch"), "fallback-run", base_dir=tmp_path)
+        good = paths.state / "state-000384.pt"
+        bad = paths.state / "state-000480.pt"
+        good.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({"iterations_completed": 4, "steps": 384}, good)
+        bad.write_bytes(b"not a torch checkpoint")
+        state = load_latest_run_state(paths)
+        assert state is not None and state["steps"] == 384
+
+    def test_all_states_unreadable_refuses_to_start_fresh(self, tmp_path):
+        paths = create_run(get_regime("scratch"), "broken-run", base_dir=tmp_path)
+        paths.state.mkdir(parents=True, exist_ok=True)
+        (paths.state / "state-000096.pt").write_bytes(b"garbage")
+        with pytest.raises(RuntimeError, match="refusing to silently restart"):
+            load_latest_run_state(paths)
+
 
 class TestKillAndResume:
     def test_two_calls_continue_iteration_counter_and_buffer(self, tmp_path):
