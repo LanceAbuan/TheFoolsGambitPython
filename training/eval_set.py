@@ -181,9 +181,53 @@ def build_from_run(
     return build_eval_set(examples, root / EVAL_SET_FILENAME, count=count, seed=seed)
 
 
+def build_from_spool(
+    spool_dir: pathlib.Path | str,
+    out_path: pathlib.Path | str | None = None,
+    count: int = 2048,
+    seed: int = 0,
+    worker_prefix: str | None = None,
+) -> pathlib.Path:
+    """Build a NEUTRAL eval set from finished spool games.
+
+    ``worker_prefix="sf"`` builds it from Stockfish-labelled games, which makes
+    the metric comparable ACROSS lineages and champions - the self-play-built
+    set is biased toward whatever model generated it.
+    """
+    from .rust_workers import INBOX_DIRNAME, PROCESSED_DIRNAME, RecordError, read_game_record
+
+    inbox = pathlib.Path(spool_dir) / INBOX_DIRNAME
+    candidates: list[pathlib.Path] = []
+    for directory in (inbox / PROCESSED_DIRNAME, inbox):
+        if directory.is_dir():
+            candidates.extend(sorted(directory.glob("game-*.jsonl")))
+    if worker_prefix:
+        candidates = [
+            p for p in candidates if p.stem.split("-")[1:2] == [worker_prefix]
+        ]
+    if not candidates:
+        raise FileNotFoundError(
+            f"no spool games under {inbox}"
+            + (f" for worker {worker_prefix!r}" if worker_prefix else "")
+        )
+
+    examples: list[dict[str, Any]] = []
+    # Newest first so a bounded read still covers recent play.
+    for path in reversed(candidates[-max(count * 4, 32):]):
+        try:
+            record = read_game_record(path)
+        except RecordError:
+            continue
+        examples.extend(record["examples"])
+        if len(examples) >= count * 4:
+            break
+    out = pathlib.Path(out_path) if out_path else inbox.parent / EVAL_SET_FILENAME
+    return build_eval_set(examples, out, count=count, seed=seed)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["build", "score"])
+    parser.add_argument("command", choices=["build", "build-sf", "score"])
     parser.add_argument("--run-root", default="runs/scratch/second-light-v2")
     parser.add_argument("--out", default=None)
     parser.add_argument("--count", type=int, default=2048)
@@ -197,6 +241,13 @@ def main() -> int:
         path = build_from_run(root, count=args.count, seed=args.seed)
         data = load_eval_set(out if args.out is None else path)
         print(f"[eval-set] wrote {path} with {data['planes'].shape[0]} positions")
+        return 0
+    if args.command == "build-sf":
+        path = build_from_spool(
+            root / "spool", out_path=out, count=args.count, seed=args.seed, worker_prefix="sf"
+        )
+        data = load_eval_set(path)
+        print(f"[eval-set] wrote {path} from Stockfish rows: {data['planes'].shape[0]} positions")
         return 0
 
     import torch
