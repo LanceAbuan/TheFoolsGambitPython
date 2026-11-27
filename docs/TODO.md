@@ -293,6 +293,25 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [x] **Frozen eval set replaces the live-buffer metric (2026-11-27, #227).**
+      `training/eval_set.py` freezes 2048 positions from a checkpoint's replay
+      buffer and scores every iteration against identical tensors with proper
+      scoring rules (`policy_ce`, `policy_top1`, `value_ce`, **Brier**,
+      **mean P(true)**, score MAE) - journaled as `kind=eval`. First read on the
+      old lineage: champion 002016 policy_ce 1.433 / top1 2.3% vs latest 096960
+      **0.925 / 15.0%**, i.e. the net fits its own distribution far better while
+      the head-to-head says equal strength. Caveat: it is self-play-specific, so
+      cross-lineage comparisons need a NEUTRAL set (below).
+- [ ] **Stockfish-labelled data is wired but not yet mixed (2026-11-27).**
+      `scripts/gen_sf_labels.py` plays SF-vs-SF from random openings and writes
+      normal spool games (worker_id `sf`) whose policy is SF's move as a one-hot
+      and whose value is SF's normalized eval - i.e. distillation from a stronger
+      teacher, consumed by the existing drain with no pipeline change. Verified
+      end to end against `tools/stockfish.exe`. Research A35: mix ~25% engine
+      rows (50% hurts). Next: run ~40 games/day at depth 8-10 and watch
+      `[EVAL]` + `[RUST-SPOOL]` mix; also use SF positions to build a NEUTRAL
+      eval set so cross-checkpoint numbers stop being self-referential.
+
 - [x] **The trainer silently restarted the lineage at iteration 0 (2026-11-27).**
       A transient state-load failure (2.2 GB state + 8 workers x 1.1 GB against a
       32 GB box with the C: pagefile capped at 4 GB -> `MemoryError` inside
