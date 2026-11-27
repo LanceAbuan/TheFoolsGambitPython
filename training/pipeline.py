@@ -278,6 +278,10 @@ NIGHT_V2_PROFILE = replace(
     games_per_iteration=64,
     batch_size=512,
     min_examples=128,
+    # Sequential search (--search-batch 1, E1 verdict) halves the fleet's game
+    # rate, so a 10-minute drain only fills ~11-20 of the 32 games an iteration
+    # wants and trains on a starved batch. Wait up to 30 minutes instead.
+    spool_timeout_s=1800.0,
     # LR (2026-11-27): restored to 3e-4 after the bench/head-to-head session.
     # The earlier drift investigation (1e-3 -> 3e-4 -> 1e-4, effective 2.5e-5)
     # showed the CE climb was NOT learning-rate driven, so the floor was too
