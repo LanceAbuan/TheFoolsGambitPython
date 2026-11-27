@@ -10,6 +10,6 @@ set "ORT_DYLIB_PATH=%CD%\.venv\Lib\site-packages\onnxruntime\capi\onnxruntime.dl
   --spool-dir "runs\scratch\second-light-v2\spool" ^
   --sims 600 --max-plies 200 ^
   --forced-playouts --pcr-p-full 0.25 --pcr-fast-sims 100 --soft-resign ^
-  --search-batch 8 ^
+  --search-batch 1 ^
   >> "data\rust_workers.out.log" 2>> "data\rust_workers.err.log"
 popd

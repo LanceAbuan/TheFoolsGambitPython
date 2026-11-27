@@ -17,6 +17,7 @@ Usage (fleet stopped, so the GPU is not shared):
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import statistics
 import time
@@ -25,6 +26,27 @@ import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MODEL_GLOB = "runs/scratch/second-light-v2/onnx/model-*.onnx"
+
+
+def _register_cuda_dlls() -> str:
+    """Make the CUDA 13 / cuDNN 9 runtime visible to ORT's CUDA EP.
+
+    Without this the first `selfplay_game` call logs "CUDA EP FAILED ... cublasLt64_13.dll
+    is missing" and silently falls back to the CPU EP - which makes every timing in
+    this benchmark meaningless. torch ships all the DLLs ORT links against.
+    """
+    added: list[str] = []
+    try:
+        import torch
+
+        lib = pathlib.Path(torch.__file__).parent / "lib"
+        if lib.is_dir():
+            os.add_dll_directory(str(lib))
+            os.environ["PATH"] = f"{lib}{os.pathsep}" + os.environ.get("PATH", "")
+            added.append(str(lib))
+    except Exception:  # noqa: BLE001 - torch is optional for this script
+        pass
+    return ", ".join(added) if added else "none"
 
 
 def latest_model() -> pathlib.Path:
@@ -103,6 +125,7 @@ def main() -> int:
     args = parser.parse_args()
 
     model = pathlib.Path(args.model) if args.model else latest_model()
+    print(f"[batch-ab] cuda dlls: {_register_cuda_dlls()}", flush=True)
     print(f"[batch-ab] model {model.name} | {args.games} games/config, {args.sims} sims", flush=True)
     print(f"{'batch':>5} {'games/s':>8} {'sims/s':>9} {'entropy':>8} {'max_p':>7} {'sign':>6}", flush=True)
     for batch in args.batches:
