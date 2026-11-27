@@ -272,14 +272,12 @@ NIGHT_V2_PROFILE = replace(
     games_per_iteration=64,
     batch_size=512,
     min_examples=128,
-    # LR (2026-11-25, unattended): policy_ce drifted 1.05 -> 2.2+ over 24
-    # iterations with a flat target entropy (~2.6) and no gate to catch it -
-    # the net was oscillating, not converging. The research log flagged 1e-3 as
-    # hot for this scale (A38: 2e-4..2e-6 evidence); 3e-4 keeps the schedule
-    # shape (halving every 200 iterations) with a colder base.
-    # 2026-11-25 21:30: still climbing at 1.5e-4 (loss 3.1-3.4, CE 2.7-3.0,
-    # target entropy RISING 2.72 -> 2.81 = flatter search targets). Cut again.
-    base_lr=1e-4,
+    # LR (2026-11-27): restored to 3e-4 after the bench/head-to-head session.
+    # The earlier drift investigation (1e-3 -> 3e-4 -> 1e-4, effective 2.5e-5)
+    # showed the CE climb was NOT learning-rate driven, so the floor was too
+    # conservative: at 2.5e-5 the net was annealing, not learning. 3e-4 with the
+    # step schedule (halving at 200/400/600/800) is the defensible default.
+    base_lr=3e-4,
     # Durability (2026-11-24): the ladder gate is the only thing that used to
     # write a checkpoint, and it runs every 90 min - at ~14 iterations/hr that
     # is ~20 iterations of unsaved progress. A plain checkpoint+state every 4
@@ -301,19 +299,19 @@ NIGHT_V2_PROFILE = replace(
     # cycle). Decision math is unchanged.
     ladder=replace(
         NIGHT_PROFILE.ladder,
-        # 2026-11-25 (unattended run): the gate is DISABLED for now. Every gate
-        # attempt since the D: move either ran ~2 h sequentially (SPRT forced
-        # sequential play) or stalled before emitting its first progress line,
-        # and each stall triggered a watchdog restart that rolled the run back
-        # ~2 iterations. A 16-game gate cannot resolve 55% anyway (research:
-        # ~785 games needed), so the cost/benefit is currently negative.
-        # Training now runs uninterrupted; re-enable with a cheap parallel gate
-        # (parallel=8, sprt_early_stop=False, games=32) once someone can watch it.
-        markers_minutes=(1_000_000.0,),
-        repeat_every_minutes=1_000_000.0,
+        # Gate (2026-11-27): re-enabled after an end-to-end verification run.
+        # 32 games, 96 sims, parallel=8, NO SPRT early stop (SPRT silently
+        # forces Arena.match onto the sequential path, which turned every gate
+        # into ~2 h). Verified with scripts/verify_gate.py: 32 games complete in
+        # ~16 min and the match returns a real MatchResult.
+        markers_minutes=(180.0,),
+        repeat_every_minutes=180.0,
         arena=replace(
             NIGHT_PROFILE.ladder.arena,
+            games=32,
+            num_simulations=96,
             parallel=8,
+            sprt_early_stop=False,
             search_backend="rust",
         ),
     ),
