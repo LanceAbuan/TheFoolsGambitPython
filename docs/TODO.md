@@ -293,6 +293,30 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [x] **Gate re-enabled with a verified configuration (2026-11-27).** 32 games,
+      96 sims, parallel=8, `sprt_early_stop=False` (SPRT silently forced the
+      SEQUENTIAL path -> ~2 h gates), cadence 180 min. Verified end-to-end with
+      `scripts/verify_gate.py`: 32 games complete and return a real MatchResult
+      (`latest-093504 vs champion-002016: 16W-0D-16L, score 0.500`, 16.5 min
+      with the fleet running). The gate now costs ~9% of wall clock instead of
+      >50%.
+- [x] **SF bench cannot rank checkpoints at this strength (2026-11-27).**
+      `scripts/bench_sf.py` at 128 sims floored out: all three checkpoints lost
+      0-8 to both `wandering` and `curious` (latest scraped one draw). At 128
+      sims the bot is below the bench's resolution, so **head-to-head matches are
+      the only usable discriminator**; the SF bench needs ~600 sims to be
+      informative and is a slow way to get it.
+- [ ] **No measurable improvement over ~900 iterations (2026-11-27).**
+      `ckpt-093504` scored exactly 0.500 (16W-0D-16L) against the served
+      champion `ckpt-002016`, with ZERO draws - two nets of indistinguishable
+      strength. Combined with the CE/entropy drift this says the self-play loop
+      has not been producing strength gains since the early iterations, which is
+      the thing to fix (not the LR, and not the checkpoint choice).
+      Next candidate causes, in order: (1) `--search-batch 8` wave targets
+      (A100, being measured with `scripts/bench_batch_search.py`), (2) the net
+      is too small for 600-sim self-play at this data volume (WP11), (3) replay
+      sampling breadth (uniform over 100k rows).
+
 - [ ] **SUSPECTED POLICY COLLAPSE, iterations ~440-474 (2026-11-25 23:30).**
       Evidence: policy_ce 0.79 -> 3.55 and target entropy 2.71 -> 2.99 over 30
       iterations at an EFFECTIVE LR of 2.5e-5 (base 1e-4, two schedule
