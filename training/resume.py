@@ -51,6 +51,10 @@ _BUFFER_FP16 = True
 # Audit F-2: state files previously accumulated unbounded (one full-buffer
 # dump per checkpoint); keep only the newest few.
 STATE_FILES_TO_KEEP = 2
+# Memory bound on the persisted replay buffer: 30k fp16 examples is ~0.5 GB.
+# The in-RAM buffer can be larger; persistence only needs a representative
+# window, and a bounded blob cannot OOM the trainer under a small pagefile.
+MAX_PERSISTED_EXAMPLES = 30_000
 
 
 @dataclass
@@ -161,17 +165,40 @@ class ReplayBufferLike(Protocol):
 
 
 def _buffer_npz_bytes(examples: list[dict[str, Any]]) -> bytes:
-    """Encode replay examples as an in-memory npz (planes, policies, values)."""
-    dtype: type = np.float16 if _BUFFER_FP16 else np.float32
-    if examples:
-        planes = np.stack([np.asarray(ex["board_tensor"], dtype=np.float32) for ex in examples])
-        policies = np.stack([np.asarray(ex["policy"], dtype=np.float32) for ex in examples])
+    """Encode replay examples as an in-memory npz (planes, policies, values).
+
+    Built row-by-row into a preallocated fp16 array: the old np.stack of 100k
+    float32 planes materialised a 2.6 GB temporary and, with the fleet running
+    under a small Windows pagefile, raised `_ArrayMemoryError: unable to
+    allocate 2.48 GiB` - which killed the trainer every few iterations
+    (2026-11-27 crash loop). Persisting the newest MAX_PERSISTED_EXAMPLES keeps
+    the blob bounded regardless of the in-RAM buffer size.
+    """
+    dtype = np.float16 if _BUFFER_FP16 else np.float32
+    if len(examples) > MAX_PERSISTED_EXAMPLES:
+        log.warning(
+            "[RESUME] persisting the newest %d of %d replay examples (memory bound)",
+            MAX_PERSISTED_EXAMPLES,
+            len(examples),
+        )
+        examples = examples[-MAX_PERSISTED_EXAMPLES:]
+    count = len(examples)
+    if count:
+        first_planes = np.asarray(examples[0]["board_tensor"])
+        planes = np.empty((count, *first_planes.shape), dtype=dtype)
+        policies = np.empty((count, np.asarray(examples[0]["policy"]).shape[0]), dtype=dtype)
+        for index, ex in enumerate(examples):
+            planes[index] = ex["board_tensor"]  # per-row cast, no giant temp
+            policies[index] = ex["policy"]
+        values = np.fromiter(
+            (float(ex["value"]) for ex in examples), dtype=np.float32, count=count
+        )
     else:
-        planes = np.zeros((0, 0, 0, 0), dtype=np.float32)
-        policies = np.zeros((0, 0), dtype=np.float32)
-    values = np.array([float(ex["value"]) for ex in examples], dtype=np.float32)
+        planes = np.zeros((0, 0, 0, 0), dtype=dtype)
+        policies = np.zeros((0, 0), dtype=dtype)
+        values = np.zeros((0,), dtype=np.float32)
     handle = io.BytesIO()
-    np.savez(handle, planes=planes.astype(dtype), policies=policies.astype(dtype), values=values)
+    np.savez(handle, planes=planes, policies=policies, values=values)
     return handle.getvalue()
 
 
@@ -223,13 +250,26 @@ def save_run_state(
     default so a crash-restart across the upgrade stays resume-exact.
     """
     examples = list(buffer.buffer)
+    try:
+        buffer_blob = _buffer_npz_bytes(examples)
+    except MemoryError:
+        # Last line of defence: a state WITHOUT the replay buffer still resumes
+        # the lineage exactly (weights, optimizer, counters, RNG); the buffer
+        # refills from the spool within an hour. Never lose 900 iterations over
+        # a failed blob allocation.
+        log.error(
+            "[RESUME] could not encode %d replay examples (out of memory); "
+            "saving the state WITHOUT the buffer",
+            len(examples),
+        )
+        buffer_blob = b""
     payload = {
         "iterations_completed": iterations_completed,
         "steps": steps,
         "games_played": games_played,
         "model_state": model.state_dict(),
         "optimizer_state": optimizer.state_dict(),
-        "buffer_npz": _buffer_npz_bytes(examples),
+        "buffer_npz": buffer_blob,
         "buffer_count": len(examples),
         "buffer_max_size": buffer.buffer.maxlen,
         "torch_rng_state": torch.get_rng_state(),
@@ -312,10 +352,12 @@ def restore_run_state(
     """Rebuild model/optimizer/buffer/RNGs in place; returns the progress counters."""
     model.load_state_dict(state["model_state"])  # type: ignore[arg-type]
     optimizer.load_state_dict(state["optimizer_state"])  # type: ignore[arg-type]
-    if state.get("buffer_npz") is not None:
+    if state.get("buffer_npz"):
         examples = _examples_from_npz(bytes(state["buffer_npz"]))
-    else:  # legacy pre-F-2 state files carried a pickled example list
+    else:  # empty blob = saved without the buffer (OOM fallback) or legacy pickled list
         examples = state.get("buffer_examples", [])
+        if not examples:
+            log.warning("[RESUME] state carries no replay examples; the buffer will refill from the spool")
     buffer.add(examples)
     torch.set_rng_state(state["torch_rng_state"])  # type: ignore[arg-type]
     np.random.set_state(state["numpy_rng_state"])  # type: ignore[call-overload]
