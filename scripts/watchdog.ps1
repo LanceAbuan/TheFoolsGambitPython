@@ -77,10 +77,21 @@ else {
 }
 
 # --- 3. worker fleet ---------------------------------------------------------
+# The expected size comes from the launcher, not a constant: after the
+# 2026-11-27 memory incident the fleet runs 4 workers (8 x 1.1 GB + a 2 GB
+# resume state did not fit in 32 GB + a 4 GB pagefile). A hardcoded 6 would
+# restart the fleet forever.
+$fleetLauncher = Join-Path $Root 'scripts\launch_fleet.cmd'
+$expectedWorkers = 6
+if (Test-Path $fleetLauncher) {
+    $match = Select-String -Path $fleetLauncher -Pattern '--workers\s+(\d+)' | Select-Object -First 1
+    if ($match) { $expectedWorkers = [int]$match.Matches[0].Groups[1].Value }
+}
 $workers = Get-Procs '*run_rust_workers*'
 $workerCount = (Get-Procs '*rust_worker.py*').Count
-if ($workers.Count -eq 0 -or $workerCount -lt 6) {
-    Write-Log ("ACTION fleet degraded (supervisors={0}, workers={1}) -> restart" -f $workers.Count, $workerCount)
+if ($workers.Count -eq 0 -or $workerCount -lt [Math]::Max($expectedWorkers - 1, 1)) {
+    Write-Log ("ACTION fleet degraded (supervisors={0}, workers={1}, expected>={2}) -> restart" -f `
+        $workers.Count, $workerCount, ($expectedWorkers - 1))
     Get-Procs '*rust_worker*' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 5
     Start-Hidden $fleetCmd

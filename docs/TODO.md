@@ -293,6 +293,23 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [x] **The trainer silently restarted the lineage at iteration 0 (2026-11-27).**
+      A transient state-load failure (2.2 GB state + 8 workers x 1.1 GB against a
+      32 GB box with the C: pagefile capped at 4 GB -> `MemoryError` inside
+      `torch.load`) made `load_latest_run_state` return None, and the pipeline
+      treated None as "new run": it began again at iteration 0 and crashed.
+      Fixed twice over: (1) the loader now retries, falls back to the NEXT-newest
+      state, and raises instead of returning None when state files exist but
+      none load; (2) a regression test pins both behaviours.
+- [ ] **Windows commit charge is the binding constraint, not RAM.** The C:
+      pagefile was capped at 1-4 GB while reclaiming disk; with 8 CUDA workers
+      plus a 2 GB resume state the commit limit (34 GB) is hit and allocations
+      fail (`OSError 1455`, `MemoryError`, OpenBLAS "memory allocation still
+      failed"). Interim mitigation: fleet runs **4** workers (launcher is the
+      source of truth, the watchdog parses it). Real fix needs admin: set
+      C: 2-8 GB and D: 8-32 GB (`data/fix_pagefile.ps1`), then reboot. Until
+      then never run pytest + bench + fleet concurrently.
+
 - [x] **Gate re-enabled with a verified configuration (2026-11-27).** 32 games,
       96 sims, parallel=8, `sprt_early_stop=False` (SPRT silently forced the
       SEQUENTIAL path -> ~2 h gates), cadence 180 min. Verified end-to-end with
