@@ -46,6 +46,7 @@ from .ladder import (
     update_match_pair,
 )
 from .ledger import ArenaLedger, LedgerEntry, MetricsWriter, recompute_elos, recompute_glickos
+from .eval_set import EVAL_SET_FILENAME, load_eval_set, score
 from .model import GambitNet, ModelConfig
 from .openings import gate_opening_seed
 from .regimes import RegimeConfig, RunPaths, build_data_provider, create_run, get_regime
@@ -76,6 +77,8 @@ from .selfplay import (
 from .trainer import TrainingBuffer, wdl_targets
 
 log = logging.getLogger(__name__)
+# Cached frozen eval-set tensors; scoring reloads only when the path changes.
+_eval_cache: dict[str, object] = {}
 
 CHAMPION_FILENAME = "champion.json"
 
@@ -173,6 +176,10 @@ class TrainingProfile:
     # proceeding with a shortfall (the min_examples guard skips training
     # until the buffer is viable). Not part of the resume signature.
     spool_timeout_s: float = 600.0
+    # Frozen eval-set scoring cadence (0 = off). See training/eval_set.py: the
+    # live-buffer metrics are not comparable across iterations, this is.
+    eval_every: int = 0
+    eval_set_path: str | None = None
     # WP4: exponential moving average of the weights (0 = disabled). The
     # EMA is exported to the workers and used as the gate candidate once
     # iteration >= ema_min_iteration (early EMA still carries weak weights).
@@ -282,6 +289,10 @@ NIGHT_V2_PROFILE = replace(
     # rate, so a 10-minute drain only fills ~11-20 of the 32 games an iteration
     # wants and trains on a starved batch. Wait up to 30 minutes instead.
     spool_timeout_s=1800.0,
+    # Frozen eval set (training/eval_set.py): the comparable progress series.
+    # 0 disables; path None -> <run root>/eval_set.npz.
+    eval_every=1,
+    eval_set_path=None,
     # LR (2026-11-27): restored to 3e-4 after the bench/head-to-head session.
     # The earlier drift investigation (1e-3 -> 3e-4 -> 1e-4, effective 2.5e-5)
     # showed the CE climb was NOT learning-rate driven, so the floor was too
@@ -997,6 +1008,9 @@ def run_training(
             # policy CE, policy entropy, P UL (CE vs uniform) and value
             # accuracy. Cheap (one forward, no grads) and journaled so
             # value-head overfitting / entropy collapse are visible early.
+            # NOTE: this batch is drawn from the LIVE buffer, so the number is
+            # not comparable across iterations (that is why it swings 0.8-3.7).
+            # The FROZEN eval-set scores below are the comparable series.
             health: dict[str, object] | None = None
             holdout = buffer.sample(256)
             if holdout is not None and len(holdout[0]) >= 4:
@@ -1028,6 +1042,49 @@ def run_training(
                     "[METRICS] iter %d: policy_ce %.3f entropy %.2f p_ul %.3f value_acc %.2f",
                     iteration, policy_ce, entropy, p_ul, value_acc,
                 )
+
+            # Frozen eval-set scores: the COMPARABLE progress series. Built once
+            # (training/eval_set.py) and scored against identical positions every
+            # eval_every iterations, with proper scoring rules instead of argmax
+            # accuracy (research A88).
+            if profile.eval_every > 0 and (iteration + 1) % profile.eval_every == 0:
+                try:
+                    evalset_path = (
+                        Path(profile.eval_set_path)
+                        if profile.eval_set_path
+                        else paths.root / EVAL_SET_FILENAME
+                    )
+                    if evalset_path.is_file():
+                        if _eval_cache.get("path") != str(evalset_path):
+                            _eval_cache["data"] = load_eval_set(evalset_path)
+                            _eval_cache["path"] = str(evalset_path)
+                        scores = score(
+                            model,
+                            _eval_cache["data"],
+                            device,
+                            value_head=profile.model.value_head,
+                        )
+                        journal.append({"kind": "eval", "iteration": iteration, **scores})
+                        log.info(
+                            "[EVAL] iter %d: policy_ce %.3f top1 %.3f value_ce %.3f "
+                            "brier %.3f mean_p_true %.3f score_mae %.3f (n=%d)",
+                            iteration,
+                            scores["eval_policy_ce"],
+                            scores["eval_policy_top1"],
+                            scores["eval_value_ce"],
+                            scores["eval_value_brier"],
+                            scores["eval_mean_p_true"],
+                            scores["eval_score_mae"],
+                            int(scores["eval_n"]),
+                        )
+                    elif iteration == 0:
+                        log.info(
+                            "[EVAL] no frozen eval set at %s; build one with "
+                            "`python -m training.eval_set build`",
+                            evalset_path,
+                        )
+                except Exception:  # noqa: BLE001 - never kill a run over metrics
+                    log.exception("[EVAL] scoring failed; continuing without it")
 
             # WP4: one EMA eval copy per iteration - the export, the
             # checkpoint and the gate candidate all use it once the EMA
