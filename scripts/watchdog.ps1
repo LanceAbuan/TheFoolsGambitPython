@@ -59,7 +59,7 @@ else {
     $pid0 = $trainer[0].ProcessId
     $logPath = Join-Path $Root 'data\train.err.log'
     $logAge = if (Test-Path $logPath) { ((Get-Date) - (Get-Item $logPath).LastWriteTime).TotalMinutes } else { 999 }
-    if ($logAge -gt 15) {
+    if ($logAge -gt 40) {
         $cpu0 = (Get-Process -Id $pid0 -ErrorAction SilentlyContinue).CPU
         Start-Sleep -Seconds 10
         $cpu1 = (Get-Process -Id $pid0 -ErrorAction SilentlyContinue).CPU
@@ -89,7 +89,7 @@ if (Test-Path $fleetLauncher) {
 }
 $workers = Get-Procs '*run_rust_workers*'
 $workerCount = (Get-Procs '*rust_worker.py*').Count
-if ($workers.Count -eq 0 -or $workerCount -lt [Math]::Max($expectedWorkers - 1, 1)) {
+if ($workers.Count -eq 0 -or $workerCount -lt $expectedWorkers) {
     Write-Log ("ACTION fleet degraded (supervisors={0}, workers={1}, expected>={2}) -> restart" -f `
         $workers.Count, $workerCount, ($expectedWorkers - 1))
     Get-Procs '*rust_worker*' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 import time
@@ -24,7 +25,13 @@ sys.path.insert(0, str(ROOT))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--run-root", default="runs/scratch/second-light-v2")
+    parser.add_argument(
+        "--run-root",
+        default=None,
+        help="directory holding champion.json; default = the REGIME dir derived "
+             "from the checkpoint path (runs/<regime>), which is where the trainer "
+             "writes it and where server/model_server.py scans",
+    )
     parser.add_argument("--elo", type=float, default=808.8)
     parser.add_argument("--glicko-r", type=float, default=1524.0)
     parser.add_argument("--glicko-rd", type=float, default=36.5)
@@ -52,13 +59,23 @@ def main() -> int:
         "model_config": config.to_dict(),
         "updated_at": time.time(),
     }
-    target = pathlib.Path(args.run_root) / "champion.json"
+    target_dir = (
+        pathlib.Path(args.run_root)
+        if args.run_root
+        # runs/<regime>/<run-id>/checkpoints/x.pt -> runs/<regime>
+        else ckpt.parents[2]
+    )
+    target = target_dir / "champion.json"
     print(json.dumps(payload, indent=2))
     if args.dry_run:
         print(f"[champion] dry run; would write {target}")
         return 0
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    # Atomic: a torn champion.json disables the served model (it vanished once
+    # already and had to be hand-restored).
+    tmp = target.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    os.replace(tmp, target)
     print(f"[champion] wrote {target} -> {tag}")
     return 0
 
