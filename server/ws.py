@@ -119,8 +119,14 @@ class Hub:
 
     async def subscribe(self, topic: str, ws: WebSocket) -> None:
         async with self._lock:
+            existing = self._subs.setdefault(topic, {})
+            if ws in existing:
+                # Re-subscribing (a client re-mounting a view sends it again)
+                # used to build a SECOND _Subscriber with its own pump task and
+                # leak the old one forever - 100k frames => 100k orphan tasks.
+                return
             sub = _Subscriber(ws)
-            self._subs.setdefault(topic, {})[ws] = sub
+            existing[ws] = sub
         sub.task = asyncio.create_task(_pump(self, topic, sub), name=f"hub-pump-{topic}")
 
     async def unsubscribe(self, topic: str, ws: WebSocket) -> None:
@@ -261,6 +267,11 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     try:
         while True:
             raw = await ws.receive_json()
+            if not isinstance(raw, dict):
+                # A JSON list/number/string used to raise AttributeError on
+                # raw.get and kill the socket with a traceback.
+                await _reject(ws, "message must be a JSON object")
+                continue
             if raw.get("type") != "subscribe":
                 await _reject(ws, "unsupported message type")
                 continue
