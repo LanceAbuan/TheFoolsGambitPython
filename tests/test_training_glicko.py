@@ -183,14 +183,27 @@ class TestSequentialEarlyStop:
 
     @staticmethod
     def _scripted_run(results: list[str]):
-        """Deterministic Arena.run replacement yielding `results` forever."""
+        """Deterministic Arena.run replacement.
+
+        ``results`` are CANDIDATE-perspective outcomes ("1-0" = the candidate
+        won). They are translated into actual game results by colour, because
+        ``Arena.match`` scores from the candidate's side (2026-11-28 fix).
+        """
 
         def run(self, candidate_tag: str, champion_tag: str):
             planned = self.config.games + (self.config.games % 2)
             for index in range(planned):
-                yield results[index % len(results)], (
-                    "white" if index % 2 == 0 else "black"
-                ), "game-over"
+                outcome = results[index % len(results)]
+                color = "white" if index % 2 == 0 else "black"
+                if outcome == "1/2-1/2":
+                    game = "1/2-1/2"
+                else:
+                    candidate_won = outcome == "1-0"
+                    if color == "white":
+                        game = "1-0" if candidate_won else "0-1"
+                    else:
+                        game = "0-1" if candidate_won else "1-0"
+                yield game, color, "game-over"
 
         return run
 

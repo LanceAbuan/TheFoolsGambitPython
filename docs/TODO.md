@@ -293,6 +293,22 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [x] **BLOCKER FOUND AND FIXED (2026-11-28): the gate scored White, not the
+      candidate.** `Arena.match` counted `result == "1-0"` as a candidate win
+      regardless of which colour the candidate played
+      (`training/ladder.py:384-393`). With mirrored openings a stronger
+      candidate wins as White ("1-0" -> "win") and as Black ("0-1" -> "loss"),
+      so the score cancels to **exactly 0.500 for any consistent strength gap**.
+      Consequences that were all artefacts of this bug: `ckpt-093504 vs
+      ckpt-002016 = 16W-0D-16L` (that is "White won every game"), the
+      "~1000 iterations produced no measurable strength gain" conclusion, the
+      frozen champion, and the E2 deferral in `data/experiments_done.txt`.
+      Fix: score from the candidate's colour + three regression tests
+      (`tests/test_gate_scoring_colour.py`: mirrored double win must be 1.0, not
+      0.5). The two Glicko SPRT tests that had encoded the bug were rewritten to
+      script candidate-perspective outcomes.
+      **Every strength number produced before this commit is void.**
+
 - [x] **Corrected neutral benchmark (2026-11-27): the newer net IS better.**
       Rebuilt from decisive engine games with STRONG-SIDE-ONLY targets (565
       positions, 59W/425D/81L). Lower is better on every composite:

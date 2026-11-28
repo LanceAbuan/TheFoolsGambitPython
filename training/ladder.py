@@ -381,13 +381,18 @@ class Arena:
         wins = draws = losses = 0
         games = 0
         played_openings: list[str] = []
-        for result, _candidate_color, _termination in self.run(candidate_tag, champion_tag):
+        for result, candidate_color, _termination in self.run(candidate_tag, champion_tag):
             games += 1
             if openings:
                 played_openings.append(openings[games - 1])
+            # SCORE FROM THE CANDIDATE'S PERSPECTIVE. Counting "1-0" as a win
+            # regardless of colour cancels any consistent strength gap to
+            # exactly 0.500 when openings are mirrored (candidate wins as White
+            # -> "1-0", wins as Black -> "0-1"), which silently froze promotion
+            # and produced the bogus "no measurable progress" conclusion.
             if result == "1/2-1/2":
                 draws += 1
-            elif result == "1-0":
+            elif (result == "1-0") == (candidate_color == "white"):
                 wins += 1
             else:
                 losses += 1
