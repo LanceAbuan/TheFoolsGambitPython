@@ -293,6 +293,26 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [x] **My "value head regressed" claim was an ARTIFACT (2026-11-27, corrected).**
+      The neutral eval set was built from 3 depth-6 SF-vs-SF games: all 120
+      positions have |SF eval| < 0.5, i.e. the target class is "draw" almost
+      everywhere. A net that predicts draws confidently therefore wins on Brier,
+      which is exactly what the OLD champion did (mean P(true) 0.73) while the
+      newer net looked worse (0.36). It measured draw-bias, not value knowledge.
+      **Lesson: an eval set needs balanced outcome classes** - the self-play set
+      (593 W / 945 D / 510 L) is the usable one, and it says the latest
+      checkpoint is better on BOTH heads (policy CE 0.925 vs 1.433, value CE
+      2.15 vs 4.81) - with the self-referential caveat.
+      Also fixed a genuine scorer bug found while investigating: the model's WDL
+      index order is **0=win, 1=draw, 2=loss** (`trainer.wdl_targets`), but the
+      scorer assumed the reverse, so `mean_p_true`/Brier/score-MAE read off the
+      wrong class. Pinned by `test_value_class_order_is_win_draw_loss`.
+- [ ] **Next neutral benchmark: use skill disparity, not parity.** `gen_sf_labels.py`
+      now takes `--skill-black`; white 20 vs black 0 produces decisive games and
+      positions with spread-out evals, which is what a value benchmark needs.
+      Rebuild `eval_set_sf.npz` from those before trusting any cross-lineage
+      value comparison.
+
 - [x] **Frozen eval set replaces the live-buffer metric (2026-11-27, #227).**
       `training/eval_set.py` freezes 2048 positions from a checkpoint's replay
       buffer and scores every iteration against identical tensors with proper

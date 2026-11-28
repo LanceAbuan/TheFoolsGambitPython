@@ -123,8 +123,11 @@ def score(
             )
 
             if value_head == "wdl":
-                # value target in [-1, 1] -> class index 0/1/2 (loss/draw/win)
-                cls = torch.round((v_batch + 1.0) * 0.5).long().clamp(0, 2).to(device)
+                # VALUE CLASS ORDER IS 0=win, 1=draw, 2=loss (trainer.wdl_targets).
+                # The first version of this scorer assumed -1..+1 -> 0..2 and so
+                # read p(loss) as p(true); every value metric it printed was
+                # measured against the wrong class.
+                cls = torch.round(1.0 - v_batch).long().clamp(0, 2).to(device)
                 log_v = torch.log_softmax(out_v, dim=-1)
                 probs = log_v.exp()
                 onehot = torch.zeros_like(probs)
@@ -132,8 +135,9 @@ def score(
                 value_ce += float(-(onehot * log_v).sum(dim=-1).sum().item())
                 value_brier += float(((probs - onehot) ** 2).sum(dim=-1).sum().item())
                 mean_p_true += float((probs * onehot).sum(dim=-1).sum().item())
-                expected = probs[:, 2] * 1.0 + probs[:, 1] * 0.5 + probs[:, 0] * 0.0
-                actual = (cls.float()) * 0.5
+                # Expected score = P(win) + 0.5 * P(draw); actual = 1 / 0.5 / 0.
+                expected = probs[:, 0] * 1.0 + probs[:, 1] * 0.5
+                actual = (2.0 - cls.float()) * 0.5
                 score_mae += float((expected - actual).abs().sum().item())
             else:
                 v_pred = out_v.reshape(-1)
