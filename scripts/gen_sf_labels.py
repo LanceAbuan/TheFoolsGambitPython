@@ -82,6 +82,7 @@ def build_record(
     max_plies: int = 120,
     opening_plies: int = 6,
     worker_id: str = "sf",
+    black_engine=None,
 ) -> dict:
     """Play one SF-vs-SF game and return a schema-valid spool record.
 
@@ -99,10 +100,11 @@ def build_record(
     fens: list[str] = []
 
     while not board.is_game_over() and len(ucis) < max_plies:
-        move = _coerce_move(board, engine.get_move(board))
+        active = black_engine if (black_engine is not None and not board.turn) else engine
+        move = _coerce_move(board, active.get_move(board))
         if move is None:
             break
-        eval_norm = float(engine.get_evaluation_normalized(board))
+        eval_norm = float(active.get_evaluation_normalized(board))
         policy = np.zeros(4672, dtype=np.float32)
         index = encode_move(board, move)
         if index is not None:
@@ -155,6 +157,10 @@ def main() -> int:
     parser.add_argument("--games", type=int, default=20)
     parser.add_argument("--depth", type=int, default=8)
     parser.add_argument("--skill", type=int, default=None, help="UCI skill 0-20 (None = full)")
+    parser.add_argument("--skill-black", type=int, default=None,
+                        help="optional second skill for Black; a disparity (e.g. white 20 vs "
+                             "black 0) produces DECISIVE games, which is what makes the "
+                             "resulting positions useful as a value benchmark")
     parser.add_argument("--max-plies", type=int, default=120)
     parser.add_argument("--opening-plies", type=int, default=6)
     parser.add_argument("--seed", type=int, default=20261127)
@@ -178,22 +184,31 @@ def main() -> int:
         version = pointer.weight_version if pointer is not None else 0
 
     written = 0
+    black_engine = None
     with StockfishPlayer(depth=args.depth, skill=args.skill) as engine:
-        for i in range(args.games):
-            record = build_record(
-                engine,
-                seed=args.seed + i,
-                weight_version=version,
-                max_plies=args.max_plies,
-                opening_plies=args.opening_plies,
-            )
-            path = write_game_record(args.spool_dir, record)
-            written += 1
-            print(
-                f"[sf-labels] {i+1}/{args.games} {record['result']} "
-                f"{record['ply_count']} plies -> {path.name}",
-                flush=True,
-            )
+        if args.skill_black is not None and args.skill_black != args.skill:
+            black_engine = StockfishPlayer(depth=args.depth, skill=args.skill_black)
+            black_engine.__enter__()
+        try:
+            for i in range(args.games):
+                record = build_record(
+                    engine,
+                    seed=args.seed + i,
+                    weight_version=version,
+                    max_plies=args.max_plies,
+                    opening_plies=args.opening_plies,
+                    black_engine=black_engine,
+                )
+                path = write_game_record(args.spool_dir, record)
+                written += 1
+                print(
+                    f"[sf-labels] {i+1}/{args.games} {record['result']} "
+                    f"{record['ply_count']} plies -> {path.name}",
+                    flush=True,
+                )
+        finally:
+            if black_engine is not None:
+                black_engine.__exit__(None, None, None)
     print(f"[sf-labels] wrote {written} games (weight_version {version})", flush=True)
     return 0
 
