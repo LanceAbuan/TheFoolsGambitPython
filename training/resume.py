@@ -28,7 +28,9 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import time
+import contextlib
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -252,13 +254,16 @@ def save_run_state(
     examples = list(buffer.buffer)
     try:
         buffer_blob = _buffer_npz_bytes(examples)
-    except MemoryError:
+    except (MemoryError, ValueError, OSError):
         # Last line of defence: a state WITHOUT the replay buffer still resumes
         # the lineage exactly (weights, optimizer, counters, RNG); the buffer
         # refills from the spool within an hour. Never lose 900 iterations over
-        # a failed blob allocation.
-        log.error(
-            "[RESUME] could not encode %d replay examples (out of memory); "
+        # a failed blob allocation. NOTE: numpy's npz writer raises MemoryError
+        # inside write() and then ValueError ("I/O operation on closed file")
+        # from close() *while handling it*, so catching MemoryError alone let
+        # the process die mid-save (2026-11-27 crash cascade).
+        log.exception(
+            "[RESUME] could not encode %d replay examples; "
             "saving the state WITHOUT the buffer",
             len(examples),
         )
@@ -284,7 +289,24 @@ def save_run_state(
         "ts": time.time(),
     }
     target = paths.state / f"{STATE_PREFIX}{steps:06d}.pt"
-    torch.save(payload, target)
+    # Atomic save: write a sibling temp file, flush+fsync, then rename. A crash
+    # or a torn write during torch.save previously left a half-written state at
+    # the FINAL path, and _prune_state_files then deleted the last good one -
+    # i.e. a single bad save could destroy the only resume point.
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    with open(tmp, "wb") as fh:
+        torch.save(payload, fh)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, target)
+    # Only prune once the new state is known to load.
+    try:
+        torch.load(target, map_location="cpu", weights_only=False)
+    except Exception:  # noqa: BLE001 - a state we cannot reload must not evict old ones
+        log.exception("[RESUME] new state %s does not reload; keeping older states", target.name)
+        with contextlib.suppress(OSError):
+            target.unlink()
+        raise
     _prune_state_files(paths)
     log.info(
         "[RESUME] state saved: %s (iter %d, steps %d, buffer %d)",

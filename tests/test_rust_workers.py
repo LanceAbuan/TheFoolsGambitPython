@@ -227,8 +227,13 @@ def test_purge_stale_games_only_under_pressure(tmp_path):
 
 
 def test_prune_processed_keeps_recent_and_newest(tmp_path):
-    """Retention: the claimed archive is bounded by count, and anything inside
-    the age window is protected regardless of count."""
+    """Retention keeps the newest `keep` OR anything inside `keep_hours`.
+
+    The documented rule is "whichever is more generous", so an old file beyond
+    `keep` is still deleted even when a NEWER file sits inside the window -
+    this used to `break` at the first recent file, which made retention a no-op
+    exactly when the disk was filling.
+    """
     import os
 
     from training.rust_workers import prune_processed_games
@@ -242,12 +247,12 @@ def test_prune_processed_keeps_recent_and_newest(tmp_path):
         if i < 3:  # the first three are older than the 48h window
             os.utime(path, (old, old))
 
-    # keep=2: the four newest are protected by the 48h age window
-    assert prune_processed_games(tmp_path, keep=2, keep_hours=48.0) == 0
-    assert len(list(processed.glob("game-*.jsonl"))) == 6
+    # keep=2, 48h window: the 3 recent files survive, the 3 expired ones go.
+    assert prune_processed_games(tmp_path, keep=2, keep_hours=48.0) == 3
+    assert len(list(processed.glob("game-*.jsonl"))) == 3
 
     # keep=2 with the age window disabled prunes down to exactly two
-    assert prune_processed_games(tmp_path, keep=2, keep_hours=0.0) == 4
+    assert prune_processed_games(tmp_path, keep=2, keep_hours=0.0) == 1
     assert len(list(processed.glob("game-*.jsonl"))) == 2
 
 

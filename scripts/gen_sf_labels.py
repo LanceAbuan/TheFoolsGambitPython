@@ -94,7 +94,12 @@ def build_record(
     rng = random.Random(seed)
     board = _random_opening(rng, opening_plies)
     opening_fen = board.fen()
-    history = [board.copy(stack=False)]
+    # encode_v2 expects NEWEST-FIRST history: history[0] == t-1, history[1] == t-2.
+    # This list used to be oldest-first and to include the CURRENT position, which
+    # duplicated the position into the prev-plane channels and shifted the deep
+    # history planes for every Stockfish row (2026-11-28 review, confirmed by
+    # decoding the generated records: planes[0:12] == planes[12:24]).
+    history: list[chess.Board] = []
     records: list[dict] = []
     ucis: list[str] = []
     sans: list[str] = []
@@ -106,6 +111,10 @@ def build_record(
         if move is None:
             break
         eval_norm = float(active.get_evaluation_normalized(board))
+        # SF eval is WHITE's perspective; spool `value` is the MOVER's. Every
+        # Black-to-move row used to be inverted (2026-11-28 review).
+        if board.turn == chess.BLACK:
+            eval_norm = -eval_norm
         # Distillation: only the STRONG side's moves are teachable. Recording a
         # deliberately weak opponent's moves would train the net to play them
         # (that is what happened to the 12 probe games on 2026-11-27). The
@@ -119,6 +128,9 @@ def build_record(
             if index is not None:
                 policy[index] = 1.0
         planes = encode_v2(board, history)
+        # History is NEWEST-FIRST and holds positions BEFORE the current one, so
+        # capture the pre-move board and insert it after pushing.
+        pre_move = board.copy(stack=False)
         records.append(
             {
                 "board_tensor_b64": _b64(planes),
@@ -130,7 +142,8 @@ def build_record(
         ucis.append(move.uci())
         sans.append(board.san(move))
         board.push(move)
-        history.append(board.copy(stack=False))
+        history.insert(0, pre_move)
+        del history[7:]
         fens.append(board.fen())
 
     if not ucis:

@@ -61,6 +61,7 @@ from .resume import (
 from .rust_workers import (
     collect_from_spool,
     export_model_to_onnx,
+    prune_exported_models,
     prune_processed_games,
     purge_stale_games,
     record_to_selfplay_result,
@@ -180,6 +181,7 @@ class TrainingProfile:
     # live-buffer metrics are not comparable across iterations, this is.
     eval_every: int = 0
     eval_set_path: str | None = None
+    gate_every_iterations: int = 0
     # WP4: exponential moving average of the weights (0 = disabled). The
     # EMA is exported to the workers and used as the gate candidate once
     # iteration >= ema_min_iteration (early EMA still carries weak weights).
@@ -293,6 +295,9 @@ NIGHT_V2_PROFILE = replace(
     # 0 disables; path None -> <run root>/eval_set.npz.
     eval_every=1,
     eval_set_path=None,
+    # Gate cadence in ITERATIONS (0 = wall-clock markers only). Restart-safe,
+    # unlike ladder.markers_minutes which measures process uptime.
+    gate_every_iterations=20,
     # LR (2026-11-27): restored to 3e-4 after the bench/head-to-head session.
     # The earlier drift investigation (1e-3 -> 3e-4 -> 1e-4, effective 2.5e-5)
     # showed the CE climb was NOT learning-rate driven, so the floor was too
@@ -1108,6 +1113,9 @@ def run_training(
                         weight_version=max(summary.steps, current_weight_version + 1),
                     )
                     current_weight_version = pointer.weight_version
+                    # Keep the export directory bounded (one file per iteration,
+                    # never pruned: 944 files / 14.6 GB by 2026-11-28).
+                    prune_exported_models(onnx_dir)
                     # One iteration's version stride (weight_version follows
                     # cumulative steps, so the stride is ~train_steps). The
                     # staleness horizon is expressed in ITERATIONS, not raw
@@ -1151,7 +1159,18 @@ def run_training(
             # --- ladder + arena gate (§5.1) ---------------------------------
             model.eval()
             elapsed_minutes = (time.monotonic() - started) / 60.0
+            # Gate cadence is measured in ITERATIONS, not process-uptime: the
+            # wall-clock marker restarts at 0 on every resume, and with the
+            # watchdog/restart cadence the 180-minute marker was unreachable, so
+            # the ladder silently never ran (arena.jsonl frozen for days while
+            # the trainer advanced 30k games). Iteration numbers are persisted,
+            # so this survives restarts.
             due = due_snapshot_minutes(profile.ladder, elapsed_minutes, last_snapshot_minute)
+            if (
+                profile.gate_every_iterations > 0
+                and (iteration + 1) % profile.gate_every_iterations == 0
+            ):
+                due = True
             final_iteration = iteration == profile.iterations - 1
             if not due and not final_iteration and not profile.snapshot_every_iteration:
                 # Durability checkpoint: no gate, no ledger entry - just the

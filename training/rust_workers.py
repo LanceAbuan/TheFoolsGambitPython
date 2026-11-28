@@ -412,7 +412,11 @@ def prune_processed_games(
     freed = 0
     for path, mtime, size in files[keep:]:
         if mtime >= cutoff:
-            break
+            # `continue`, not `break`: files are newest-first, so a recent file
+            # does not mean every older one is recent too. `break` made the
+            # retention a no-op whenever >`keep` files sat inside the window,
+            # i.e. exactly when the disk was filling.
+            continue
         with contextlib.suppress(OSError):
             path.unlink()
             removed += 1
@@ -424,6 +428,42 @@ def prune_processed_games(
             freed / 1e9,
             keep,
         )
+    return removed
+
+
+def prune_exported_models(onnx_dir: Path | str, keep: int = 60) -> int:
+    """Delete old ``model-<v>.onnx`` exports, keeping the newest ``keep``.
+
+    One export per iteration and never pruned: 944 files / 14.6 GB on
+    2026-11-28. Workers only ever load the version named by ``latest.json``, so
+    older exports are dead weight (keep a window for A/B and debugging).
+    """
+    directory = Path(onnx_dir)
+    if not directory.is_dir():
+        return 0
+    models: list[tuple[int, Path]] = []
+    for path in directory.glob("model-*.onnx"):
+        parts = path.stem.split("-")
+        if len(parts) == 2 and parts[1].isdigit():
+            models.append((int(parts[1]), path))
+    if len(models) <= keep:
+        return 0
+    models.sort(key=lambda item: item[0])
+    keep_path = None
+    try:
+        pointer = read_model_pointer(directory)
+        keep_path = pointer.path if pointer is not None else None
+    except ModelPointerError:
+        keep_path = None
+    removed = 0
+    for _version, path in models[:-keep]:
+        if keep_path is not None and path.resolve() == keep_path.resolve():
+            continue
+        with contextlib.suppress(OSError):
+            path.unlink()
+            removed += 1
+    if removed:
+        log.info("[RUST-EXPORT] pruned %d old ONNX exports (kept newest %d)", removed, keep)
     return removed
 
 

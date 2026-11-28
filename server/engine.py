@@ -145,7 +145,7 @@ def all_sessions() -> list[Session]:
 
 
 def _finish_if_over(session: Session) -> None:
-    if not session.board.is_game_over():
+    if not session.board.is_game_over(claim_draw=True):
         return
     outcome = session.board.outcome()
     assert outcome is not None  # is_game_over() guarantees an outcome
@@ -200,7 +200,7 @@ def _opponent_move_sync(session: Session) -> chess.Move | None:
     a live game is never stranded; the dead process is deregistered and the
     next move respawns if the binary is available again.
     """
-    if session.board.is_game_over():
+    if session.board.is_game_over(claim_draw=True):
         return None
     if session.opponent == "fool":
         return _fool_move(session.board)
