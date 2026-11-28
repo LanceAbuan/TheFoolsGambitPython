@@ -293,6 +293,26 @@ commits each slice as it lands, then pushes + opens the PR:
 
 ## Hygiene
 
+- [x] **Corrected neutral benchmark (2026-11-27): the newer net IS better.**
+      Rebuilt from decisive engine games with STRONG-SIDE-ONLY targets (565
+      positions, 59W/425D/81L). Lower is better on every composite:
+      champion 002016 -> latest 096960: policy_ce 3.749 -> 3.418, top1 0.9% ->
+      1.6%, value_ce 1.765 -> 1.144, Brier 0.721 -> 0.684, score-MAE 0.209 ->
+      0.187. (mean_p_true looks worse only because 75% of the positions are
+      draws and the older net predicts draws more confidently - uninformative.)
+      So the lineage did improve, by less than a 32-game head-to-head can
+      resolve: E2 must use >=128 games, not 32.
+- [x] **Generators: weak-side plies are masked, never taught (2026-11-27).**
+      `gen_sf_labels.py` records ONLY the strong side's moves as policy targets
+      (weak-side plies stay as masked rows so the schema and value targets
+      survive). The 15 probe games generated before this fix were purged from
+      the spool - they would have taught deliberate blunders.
+- [x] **champion.json was missing and is restored (2026-11-27).**
+      The play server had no champion pointer after the crash cascade, so the
+      site had nothing to serve. `scripts/restore_champion.py` rewrites it from
+      a checkpoint + the trainer's known state (tag/elo/glicko/model_config) in
+      the exact `_save_champion` format.
+
 - [x] **My "value head regressed" claim was an ARTIFACT (2026-11-27, corrected).**
       The neutral eval set was built from 3 depth-6 SF-vs-SF games: all 120
       positions have |SF eval| < 0.5, i.e. the target class is "draw" almost

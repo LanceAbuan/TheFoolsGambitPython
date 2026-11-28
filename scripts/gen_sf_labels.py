@@ -83,6 +83,7 @@ def build_record(
     opening_plies: int = 6,
     worker_id: str = "sf",
     black_engine=None,
+    strong_side: chess.Color | None = None,
 ) -> dict:
     """Play one SF-vs-SF game and return a schema-valid spool record.
 
@@ -105,17 +106,25 @@ def build_record(
         if move is None:
             break
         eval_norm = float(active.get_evaluation_normalized(board))
+        # Distillation: only the STRONG side's moves are teachable. Recording a
+        # deliberately weak opponent's moves would train the net to play them
+        # (that is what happened to the 12 probe games on 2026-11-27). The
+        # spool schema still wants one example per ply, so weak-side plies are
+        # kept as MASKED rows (zero policy, policy_masked=True): value is still
+        # usable, no policy gradient flows.
+        teachable = strong_side is None or board.turn == strong_side
         policy = np.zeros(4672, dtype=np.float32)
-        index = encode_move(board, move)
-        if index is not None:
-            policy[index] = 1.0
+        if teachable:
+            index = encode_move(board, move)
+            if index is not None:
+                policy[index] = 1.0
         planes = encode_v2(board, history)
         records.append(
             {
                 "board_tensor_b64": _b64(planes),
                 "policy_b64": _b64(policy),
                 "value": max(-1.0, min(1.0, eval_norm)),
-                "policy_masked": False,
+                "policy_masked": not teachable,
             }
         )
         ucis.append(move.uci())
@@ -126,6 +135,8 @@ def build_record(
 
     if not ucis:
         raise ValueError("engine produced no legal move; nothing to record")
+    if not records:
+        raise ValueError("no teachable plies (strong_side never moved)")
 
     result = board.result(claim_draw=True) if board.is_game_over() else "1/2-1/2"
     if result not in ("1-0", "0-1", "1/2-1/2"):
@@ -185,6 +196,18 @@ def main() -> int:
 
     written = 0
     black_engine = None
+    # Which side is the teacher? None = full strength (strongest), else the
+    # UCI skill value. Equal strength -> record both sides.
+    def _strength(skill: int | None) -> int:
+        return 100 if skill is None else int(skill)
+
+    strong_side: chess.Color | None = None
+    if args.skill_black is not None and args.skill_black != args.skill:
+        strong_side = (
+            chess.WHITE
+            if _strength(args.skill) >= _strength(args.skill_black)
+            else chess.BLACK
+        )
     with StockfishPlayer(depth=args.depth, skill=args.skill) as engine:
         if args.skill_black is not None and args.skill_black != args.skill:
             black_engine = StockfishPlayer(depth=args.depth, skill=args.skill_black)
@@ -198,6 +221,7 @@ def main() -> int:
                     max_plies=args.max_plies,
                     opening_plies=args.opening_plies,
                     black_engine=black_engine,
+                    strong_side=strong_side,
                 )
                 path = write_game_record(args.spool_dir, record)
                 written += 1
