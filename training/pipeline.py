@@ -338,7 +338,12 @@ NIGHT_V2_PROFILE = replace(
             num_simulations=96,
             parallel=8,
             sprt_early_stop=False,
-            search_backend="rust",
+            # PYTHON search path, not rust: the rust arena bridge hands leaves to
+            # the encoder as bare FENs with no move stack, so a v2 net sees 76 of
+            # its 104 planes zeroed (prev-position, deep history, repetition) -
+            # i.e. the gate would evaluate a different function than the one
+            # trained and served. Slower, but apples-to-apples.
+            search_backend="python",
         ),
     ),
 )
