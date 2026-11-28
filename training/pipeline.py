@@ -1163,6 +1163,18 @@ def run_training(
 
             # --- ladder + arena gate (§5.1) ---------------------------------
             model.eval()
+            # Dashboard freshness: metrics.json used to be written ONLY inside
+            # the gate branch, so between gates the site showed Elo/games from
+            # days earlier (994 games while the run was at 31k). update() merges,
+            # so this per-iteration write is cheap and non-destructive.
+            metrics.update(
+                elo=champion_elo,
+                games_played=summary.games_played + arena_games_total,
+                loss=summary.final_loss,
+                champion=champion_tag,
+                regime=regime.name,
+                parallel_games=effective_parallel,
+            )
             elapsed_minutes = (time.monotonic() - started) / 60.0
             # Gate cadence is measured in ITERATIONS, not process-uptime: the
             # wall-clock marker restarts at 0 on every resume, and with the
